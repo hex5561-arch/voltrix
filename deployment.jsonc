@@ -22,7 +22,7 @@
   "access": {
     "issuer": "https://voltrix.cloudflareaccess.com",
     "audience": "REPLACE_WITH_ACCESS_AUDIENCE",
-    "admins": ["captain8888ping@gmail.com"]
+    "admins": ["captain"]
   },
 
   // Model catalog served through Cloudflare AI Gateway. Enabled by default: the Workshop reaches

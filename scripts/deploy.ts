@@ -249,11 +249,9 @@ export function validateConfig(config: DeploymentConfig): DeploymentConfig {
   }
 
   // Access validation skipped — using password auth mode (CF_ACCESS_AUD not set).
-  // Only validate admins list which is still used for /admin gating.
-  if (!Array.isArray(config.access.admins) ||
-      !config.access.admins.every((email) =>
-        typeof email === "string" && /^[^@\s]+@[^@\s]+$/.test(email))) {
-    throw new Error("Every Access administrator must be an email address.");
+  // Admins list contains usernames (not emails) since the signup form has no email field.
+  if (!Array.isArray(config.access.admins) || config.access.admins.length === 0) {
+    throw new Error("At least one admin username must be configured.");
   }
 
   validateAiGateway(config);
