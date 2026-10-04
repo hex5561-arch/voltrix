@@ -119,4 +119,10 @@ export interface VoltrixAcademicSession {
 
   /** Search student's documents semantically */
   searchDocuments(query: string): Promise<Array<{ documentId: string; excerpt: string; score: number }>>;
+
+  /** Returns the student's single persistent Voltrix workspace ID, or null if unassigned. */
+  getWorkspaceId(): Promise<string | null>;
+
+  /** Persists the student's workspace ID — call once after workspace creation. */
+  setWorkspaceId(workspaceId: string): Promise<void>;
 }

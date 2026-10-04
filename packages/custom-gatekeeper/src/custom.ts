@@ -496,6 +496,35 @@ Return JSON only: {
       }));
   }
 
+  // ─── Workspace enforcement ─────────────────────────────────────────────────
+  /**
+   * Returns the student's single persistent Voltrix workspace ID from KV,
+   * or null if not yet assigned. Used by the onboarding flow to enforce
+   * one OverseerDO instance per student (prevents unbounded DO creation).
+   */
+  async getWorkspaceId(): Promise<string | null> {
+    await this.#queue.authorizeObservation({
+      title: "Read Voltrix workspace",
+      description: "Retrieve the student's assigned Voltrix workspace ID.",
+    });
+    const key = `workspace:${this.#userId}`;
+    return cache(this.#env).get(key);
+  }
+
+  /**
+   * Stores the student's Voltrix workspace ID in KV so they always return
+   * to the same workspace. Call once after workspace creation.
+   */
+  async setWorkspaceId(workspaceId: string): Promise<void> {
+    await this.#queue.authorizeObservation({
+      title: "Assign Voltrix workspace",
+      description: "Save the student's Voltrix workspace ID for future sessions.",
+    });
+    const key = `workspace:${this.#userId}`;
+    // No expiry — workspace assignment is permanent
+    await cache(this.#env).put(key, workspaceId);
+  }
+
   [Symbol.dispose](): void {
     this.#queue[Symbol.dispose]?.();
   }

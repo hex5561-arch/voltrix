@@ -92,6 +92,8 @@ export interface VoltrixAcademicSession {
   predictExamQuestions(options: ExamPredictOptions): Promise<ExamPrediction[]>;
   auditOriginality(text: string): Promise<OriginalityAuditResult>;
   searchDocuments(query: string): Promise<Array<{ documentId: string; excerpt: string; score: number }>>;
+  getWorkspaceId(): Promise<string | null>;
+  setWorkspaceId(workspaceId: string): Promise<void>;
 }
 `;
 
