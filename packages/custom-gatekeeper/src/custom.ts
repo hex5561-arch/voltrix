@@ -351,21 +351,64 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
    * Call a voltrix.stream endpoint. Routes through our existing, battle-tested
    * coursehero edge function instead of spending Dynamic Worker budget on inference.
    * Cost: one HTTP subrequest (~$0.000001) instead of one Dynamic Worker ($0.002).
+   *
+   * Responses are cached in KV by a hash of the action + payload.
+   * Cache TTLs are tuned per action — deterministic results cache longer.
    */
   #apiUrl(): string {
     return (this.#env as unknown as { VOLTRIX_API_URL?: string }).VOLTRIX_API_URL
       ?? "https://voltrix.stream/api";
   }
 
+  /** TTL in seconds per action. 0 = no cache. */
+  static #cacheTtl: Record<string, number> = {
+    mathSolver:       7 * 24 * 3600,  // 7 days — math is deterministic
+    examPredict:      7 * 24 * 3600,  // 7 days — exam questions are stable
+    paraphrase:           24 * 3600,  // 24 hours
+    proofread:            24 * 3600,  // 24 hours
+    translate:            24 * 3600,  // 24 hours
+    codeReview:           24 * 3600,  // 24 hours
+    debate:                    3600,  // 1 hour
+    originalityAudit:          3600,  // 1 hour
+    createDocument:               0,  // never — personalised per student
+  };
+
+  async #cacheKey(action: string, payload: Record<string, unknown>): Promise<string> {
+    const raw = action + JSON.stringify(payload, Object.keys(payload).sort());
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    return `vcache:${action}:${hex.slice(0, 32)}`;
+  }
+
   async #voltrixFetch<T>(action: string, payload: Record<string, unknown>): Promise<T> {
+    const ttl = VoltrixAcademicSessionImpl.#cacheTtl[action] ?? 3600;
+
+    // Check KV cache first (skip for uncached actions)
+    if (ttl > 0) {
+      const key = await this.#cacheKey(action, payload);
+      const cached = await cache(this.#env).get(key, "json").catch(() => null);
+      if (cached !== null) return cached as T;
+
+      const res = await fetch(this.#apiUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      if (!res.ok) throw new Error(`Voltrix API error ${res.status} for action "${action}"`);
+      const data = await res.json() as T;
+
+      // Write to KV — fire and forget, don't block the response
+      cache(this.#env).put(key, JSON.stringify(data), { expirationTtl: ttl }).catch(() => {});
+      return data;
+    }
+
+    // No cache for this action
     const res = await fetch(this.#apiUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, ...payload }),
     });
-    if (!res.ok) {
-      throw new Error(`Voltrix API error ${res.status} for action "${action}"`);
-    }
+    if (!res.ok) throw new Error(`Voltrix API error ${res.status} for action "${action}"`);
     return res.json() as Promise<T>;
   }
 
