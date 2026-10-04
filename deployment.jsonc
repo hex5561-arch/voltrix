@@ -33,12 +33,11 @@
   // Reference: docs/customization.md#ai-models
   "aiGateway": {
     "enabled": true,
-    // "voltrix-ai" gateway — create this in the CF dashboard AI Gateway section
     "name": "voltrix-ai",
     "accountId": null,
-    // Workers AI (free) + Google Gemini 2.5 Pro for quality academic tasks
-    // Google requires CF_AI_GATEWAY_API_TOKEN — set via wrangler secret
-    "providers": ["cloudflare", "google"]
+    // Workers AI only for initial deploy — no token required.
+    // Add "google" here after creating the AI Gateway in the dashboard.
+    "providers": ["cloudflare"]
   },
 
   "context": {

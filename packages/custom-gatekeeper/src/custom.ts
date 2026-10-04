@@ -4,6 +4,23 @@ import {
   RpcTarget,
   WorkerEntrypoint,
 } from "cloudflare:workers";
+
+// Typed helpers to avoid `any` generic call errors on env bindings
+function db(env: Cloudflare.Env): D1Database {
+  return (env as unknown as { DB: D1Database }).DB;
+}
+function ai(env: Cloudflare.Env): Ai {
+  return (env as unknown as { AI: Ai }).AI;
+}
+function cache(env: Cloudflare.Env): KVNamespace {
+  return (env as unknown as { CACHE: KVNamespace }).CACHE;
+}
+function queue(env: Cloudflare.Env): Queue {
+  return (env as unknown as { TASK_QUEUE: Queue }).TASK_QUEUE;
+}
+function vectorize(env: Cloudflare.Env): VectorizeIndex {
+  return (env as unknown as { VECTORIZE: VectorizeIndex }).VECTORIZE;
+}
 import { skipRpcValidation, validateRpc } from "capnweb-validate";
 import type {
   AccountDescription,
@@ -71,8 +88,8 @@ async function callAI(
   user: string,
   maxTokens = 4096,
 ): Promise<string> {
-  const result = (await (env as any).AI.run(
-    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  const result = (await ai(env).run(
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as Parameters<Ai["run"]>[0],
     {
       messages: [
         { role: "system", content: system },
@@ -84,11 +101,11 @@ async function callAI(
   return result.response ?? "";
 }
 
-// ─── Embedding helper ─────────────────────────────────────────────────────────
 async function embed(env: Cloudflare.Env, text: string): Promise<number[]> {
-  const result = (await (env as any).AI.run("@cf/baai/bge-base-en-v1.5", {
-    text: [text],
-  })) as { data: number[][] };
+  const result = (await ai(env).run(
+    "@cf/baai/bge-base-en-v1.5" as Parameters<Ai["run"]>[0],
+    { text: [text] },
+  )) as { data: number[][] };
   return result.data[0];
 }
 
@@ -118,7 +135,7 @@ export class VoltrixAcademicSessionImpl
       title: "Read student profile",
       description: "Read name, university, course, and year of study.",
     });
-    const row = await (this.#env as any).DB.prepare(
+    const row = await db(this.#env).prepare(
       "SELECT id, email, name, university, course, year, plan FROM users WHERE id = ?",
     )
       .bind(this.#userId)
@@ -134,7 +151,7 @@ export class VoltrixAcademicSessionImpl
       description: "Fetch cards scheduled for review today.",
     });
     const now = Math.floor(Date.now() / 1000);
-    const rows = await (this.#env as any).DB.prepare(
+    const rows = await db(this.#env).prepare(
       `SELECT id, front, back, easiness, interval, repetitions, next_review
        FROM flashcards WHERE user_id = ? AND next_review <= ?
        ORDER BY next_review ASC LIMIT 50`,
@@ -192,13 +209,13 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
     if (cards.length === 0) throw new Error("Failed to generate flashcards");
 
     const now = Math.floor(Date.now() / 1000);
-    const db = (this.#env as any).DB;
-    const stmt = db.prepare(
+    const d = db(this.#env);
+    const stmt = d.prepare(
       "INSERT INTO flashcards (id, user_id, course_id, front, back, next_review, created_at) VALUES (?,?,?,?,?,?,?)",
     );
 
     const inserted: Flashcard[] = [];
-    await db.batch(
+    await d.batch(
       cards.map((c) => {
         const id = crypto.randomUUID();
         inserted.push({
@@ -235,7 +252,7 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
       description: `Submit quality ${quality}/5 for card ${cardId}.`,
     });
 
-    const card = await (this.#env as any).DB.prepare(
+    const card = await db(this.#env).prepare(
       "SELECT easiness, interval, repetitions FROM flashcards WHERE id = ? AND user_id = ?",
     )
       .bind(cardId, this.#userId)
@@ -252,7 +269,7 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
     const nextReview =
       Math.floor(Date.now() / 1000) + result.interval * 86400;
 
-    await (this.#env as any).DB.prepare(
+    await db(this.#env).prepare(
       "UPDATE flashcards SET easiness=?, interval=?, repetitions=?, next_review=?, last_reviewed=? WHERE id=?",
     )
       .bind(
@@ -280,7 +297,7 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
       title: "List documents",
       description: "Fetch the student's uploaded documents.",
     });
-    const rows = await (this.#env as any).DB.prepare(
+    const rows = await db(this.#env).prepare(
       `SELECT id, name, type, size_bytes, vectorized, created_at
        FROM documents WHERE user_id = ? ORDER BY created_at DESC`,
     )
@@ -320,7 +337,7 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
       courseId,
     } = options;
 
-    const profile = await (this.#env as any).DB.prepare(
+    const profile = await db(this.#env).prepare(
       "SELECT university, course, year FROM users WHERE id = ?",
     )
       .bind(this.#userId)
@@ -328,14 +345,13 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
 
     const docId = crypto.randomUUID();
 
-    await (this.#env as any).DB.prepare(
+    await db(this.#env).prepare(
       "INSERT INTO generated_docs (id, user_id, type, title) VALUES (?,?,?,?)",
     )
       .bind(docId, this.#userId, type, title)
       .run();
 
-    // Queue generation — TASK_QUEUE binding
-    await (this.#env as any).TASK_QUEUE.send({
+    await queue(this.#env).send({
       type: "generate-doc",
       payload: {
         docId,
@@ -358,7 +374,7 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
       description: `Check if document ${docId} is ready.`,
     });
 
-    const cached = await (this.#env as any).CACHE.get(`doc-ready:${docId}`);
+    const cached = await cache(this.#env).get(`doc-ready:${docId}`);
     if (cached) {
       const data = JSON.parse(cached) as {
         ready: boolean;
@@ -387,7 +403,7 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
     });
 
     const { course, topics } = options;
-    const profile = await (this.#env as any).DB.prepare(
+    const profile = await db(this.#env).prepare(
       "SELECT university FROM users WHERE id = ?",
     )
       .bind(this.#userId)
@@ -465,7 +481,7 @@ Return JSON only: {
     });
 
     const queryVector = await embed(this.#env, query);
-    const results = await (this.#env as any).VECTORIZE.query(queryVector, {
+    const results = await vectorize(this.#env).query(queryVector, {
       topK: 5,
       filter: { userId: this.#userId },
       returnMetadata: "all",
