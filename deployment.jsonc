@@ -2,14 +2,12 @@
   // Cloudflare account that owns every Worker and provisioned resource.
   "accountId": "84f114e1b747a07d247ceb17b0c1dc14",
 
-  // Voltrix production domain. null derives from customDomain below.
   "publicBaseUrl": null,
 
   "workers": {
     "router": {
       "name": "voltrix-router",
-      // Production domain — Wrangler will create DNS + TLS on first deploy
-      "route": { "customDomain": "voltrix.stream" }
+      "route": { "customDomain": "os.voltrix.stream" }
     },
     "workshop":        { "name": "voltrix-workshop" },
     "context":         { "name": "voltrix-context" },
@@ -77,9 +75,9 @@
   // null values use Wrangler automatic provisioning. Set IDs/names to reuse owned resources.
   // https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning
   "resources": {
-    "blueprintsKvNamespaceId": null,
-    "avatarsKvNamespaceId": null,
-    "blueprintContentBucket": null
+    "blueprintsKvNamespaceId": "8b03b72e6b864d6c853e3a14f0ac90f0",
+    "avatarsKvNamespaceId": "95afee60f1a24fdd811f86d5e28a87bb",
+    "blueprintContentBucket": "voltrix-workshop-blueprint-content"
   },
 
   // Structured custom logs stay enabled. Invocation logs and traces are separate volume controls.
