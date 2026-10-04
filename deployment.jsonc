@@ -35,7 +35,7 @@
     "accountId": null,
     // Workers AI only for initial deploy — no token required.
     // Add "google" here after creating the AI Gateway in the dashboard.
-    "providers": ["cloudflare"]
+    "providers": ["cloudflare", "google"]
   },
 
   "context": {
