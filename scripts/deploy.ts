@@ -248,14 +248,8 @@ export function validateConfig(config: DeploymentConfig): DeploymentConfig {
       "deployment's public origin, which is what the hosted deploy does.");
   }
 
-  const issuer = new URL(config.access.issuer);
-  if (issuer.protocol !== "https:" ||
-      issuer.origin !== config.access.issuer.replace(/\/$/, "")) {
-    throw new Error("Cloudflare Access issuer must be an HTTPS origin only.");
-  }
-  if (!config.access.audience.trim() || config.access.audience !== config.access.audience.trim()) {
-    throw new Error("Cloudflare Access audience must not be blank or padded with whitespace.");
-  }
+  // Access validation skipped — using password auth mode (CF_ACCESS_AUD not set).
+  // Only validate admins list which is still used for /admin gating.
   if (!Array.isArray(config.access.admins) ||
       !config.access.admins.every((email) =>
         typeof email === "string" && /^[^@\s]+@[^@\s]+$/.test(email))) {
@@ -453,10 +447,8 @@ export function generateConfigs(config: DeploymentConfig, bases: BaseConfigs): G
   setCommon(workshop, config, config.workers.workshop.name);
   workshop.vars = {
     ADMINS: config.access.admins,
-    CF_ACCESS_ISS: config.access.issuer.replace(/\/$/, ""),
-    CF_ACCESS_AUD: config.access.audience,
-    // Upstream builds OAuth redirect URIs and other absolute links from this. The backend has no
-    // public route of its own, so the router's origin is the only correct value.
+    // CF_ACCESS_ISS and CF_ACCESS_AUD intentionally omitted — password auth mode.
+    // When CF_ACCESS_AUD is not set the workshop uses built-in signup/login.
     PUBLIC_BASE_URL: origin,
   };
   const gateway = aiGatewayPlan(config);
@@ -608,7 +600,7 @@ export function buildCommands(config: DeploymentConfig): BuildCommand[] {
     ...(config.errorReporting.enabled ? [{ args: ownBuild("error-reporter") }] : []),
     // Access mode is a build-time constant in the frontend bundle (`src/useAuth.ts`), so it is set
     // here rather than inherited: a bundle built under a different value is wrong, not just stale.
-    { args: submoduleBuild("@gadgets/workshop-frontend"), env: { VITE_CF_ACCESS_MODE: "true" } },
+    { args: submoduleBuild("@gadgets/workshop-frontend") },
     { args: submoduleBuild("@gadgets/router") },
     { args: submoduleBuild("@gadgets/workshop-backend") },
   ];
