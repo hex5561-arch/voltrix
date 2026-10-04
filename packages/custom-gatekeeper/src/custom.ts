@@ -321,156 +321,6 @@ Return a JSON array only: [{"front":"question","back":"answer"}]. No extra text.
     }));
   }
 
-  async generateDocument(
-    options: GenerateDocumentOptions,
-  ): Promise<GeneratedDocumentResult> {
-    await this.#queue.authorizeObservation({
-      title: "Generate document",
-      description: `Generate a ${options.type}: "${options.title}" (${options.wordCount ?? 1500} words).`,
-    });
-
-    const {
-      type,
-      title,
-      instructions,
-      wordCount = 1500,
-      courseId,
-    } = options;
-
-    const profile = await db(this.#env).prepare(
-      "SELECT university, course, year FROM users WHERE id = ?",
-    )
-      .bind(this.#userId)
-      .first<{ university: string; course: string; year: number }>();
-
-    const docId = crypto.randomUUID();
-
-    await db(this.#env).prepare(
-      "INSERT INTO generated_docs (id, user_id, type, title) VALUES (?,?,?,?)",
-    )
-      .bind(docId, this.#userId, type, title)
-      .run();
-
-    await queue(this.#env).send({
-      type: "generate-doc",
-      payload: {
-        docId,
-        userId: this.#userId,
-        type,
-        title,
-        prompt: instructions,
-        wordCount,
-        profile: profile ?? {},
-        courseId: courseId ?? null,
-      },
-    });
-
-    return { docId, status: "queued" };
-  }
-
-  async getDocumentStatus(docId: string): Promise<GeneratedDocumentResult> {
-    await this.#queue.authorizeObservation({
-      title: "Check document status",
-      description: `Check if document ${docId} is ready.`,
-    });
-
-    const cached = await cache(this.#env).get(`doc-ready:${docId}`);
-    if (cached) {
-      const data = JSON.parse(cached) as {
-        ready: boolean;
-        r2Key?: string;
-        wordCount?: number;
-      };
-      return {
-        docId,
-        status: data.ready ? "ready" : "queued",
-        downloadUrl: data.r2Key
-          ? `/api/generated/${docId}/download`
-          : undefined,
-        wordCount: data.wordCount,
-      };
-    }
-    return { docId, status: "queued" };
-  }
-
-  // ─── Exam prediction ───────────────────────────────────────────────────────
-  async predictExamQuestions(
-    options: ExamPredictOptions,
-  ): Promise<ExamPrediction[]> {
-    await this.#queue.authorizeObservation({
-      title: "Predict exam questions",
-      description: `Predict questions for ${options.course}.`,
-    });
-
-    const { course, topics } = options;
-    const profile = await db(this.#env).prepare(
-      "SELECT university FROM users WHERE id = ?",
-    )
-      .bind(this.#userId)
-      .first<{ university: string }>();
-
-    const systemPrompt = `You are an expert examiner at ${profile?.university ?? "university"}.
-Predict likely exam questions for ${course} based on these topics: ${topics.join(", ")}.
-Return JSON only: {"predictions":[{"question":"...","topic":"...","likelihood":"high|medium|low","keyPoints":["..."]}]}`;
-
-    const raw = await callAI(
-      this.#env,
-      systemPrompt,
-      `Generate exam predictions for ${course}`,
-      2048,
-    );
-
-    try {
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]) as {
-          predictions: ExamPrediction[];
-        };
-        return parsed.predictions ?? [];
-      }
-    } catch {
-      // fall through
-    }
-    return [];
-  }
-
-  // ─── Originality audit ─────────────────────────────────────────────────────
-  async auditOriginality(text: string): Promise<OriginalityAuditResult> {
-    await this.#queue.authorizeObservation({
-      title: "Originality audit",
-      description: "Analyse text for originality and flag suspicious passages.",
-    });
-
-    const systemPrompt = `You are an academic integrity AI. Analyse the text for originality.
-Return JSON only: {
-  "overallScore": 0-100,
-  "riskLevel": "low|medium|high",
-  "flaggedPassages": [{"text":"...","reason":"..."}],
-  "recommendations": ["..."]
-}`;
-
-    const raw = await callAI(
-      this.#env,
-      systemPrompt,
-      `Analyse this text for originality:\n\n${text.slice(0, 6000)}`,
-      1024,
-    );
-
-    try {
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) return JSON.parse(match[0]) as OriginalityAuditResult;
-    } catch {
-      // fall through
-    }
-
-    return {
-      overallScore: 75,
-      riskLevel: "low",
-      flaggedPassages: [],
-      recommendations: ["Unable to fully analyse — please review manually."],
-    };
-  }
-
   // ─── Semantic search ───────────────────────────────────────────────────────
   async searchDocuments(
     query: string,
@@ -494,6 +344,214 @@ Return JSON only: {
         excerpt: (m.metadata?.["text"] as string) ?? "",
         score: m.score,
       }));
+  }
+
+  // ─── voltrix.stream API proxy ─────────────────────────────────────────────
+  /**
+   * Call a voltrix.stream endpoint. Routes through our existing, battle-tested
+   * coursehero edge function instead of spending Dynamic Worker budget on inference.
+   * Cost: one HTTP subrequest (~$0.000001) instead of one Dynamic Worker ($0.002).
+   */
+  #apiUrl(): string {
+    return (this.#env as unknown as { VOLTRIX_API_URL?: string }).VOLTRIX_API_URL
+      ?? "https://voltrix.stream/api";
+  }
+
+  async #voltrixFetch<T>(action: string, payload: Record<string, unknown>): Promise<T> {
+    const res = await fetch(this.#apiUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    if (!res.ok) {
+      throw new Error(`Voltrix API error ${res.status} for action "${action}"`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  // ─── Document generation (via voltrix.stream) ────────────────────────────
+  async generateDocument(
+    options: import("./types.js").GenerateDocumentOptions,
+  ): Promise<import("./types.js").GeneratedDocumentResult> {
+    await this.#queue.authorizeObservation({
+      title: "Generate document",
+      description: `Generate ${options.type}: "${options.title}"`,
+    });
+    const profile = await db(this.#env).prepare(
+      "SELECT university, course FROM users WHERE id = ?",
+    ).bind(this.#userId).first<{ university: string; course: string }>();
+
+    return this.#voltrixFetch("createDocument", {
+      action: "createDocument",
+      docType: "docx",
+      title: options.title,
+      content: options.instructions,
+      prompt: options.instructions,
+      wordCount: options.wordCount ?? 1500,
+      institutionalProfile: {
+        university: options.university ?? profile?.university ?? "",
+        courseName: options.courseName ?? profile?.course ?? "",
+        courseCode: options.courseCode ?? "",
+      },
+    });
+  }
+
+  async getDocumentStatus(docId: string): Promise<import("./types.js").GeneratedDocumentResult> {
+    await this.#queue.authorizeObservation({
+      title: "Check document status",
+      description: `Check if document ${docId} is ready.`,
+    });
+    const cached = await cache(this.#env).get(`doc-ready:${docId}`);
+    if (cached) {
+      const data = JSON.parse(cached) as { ready: boolean; r2Key?: string; wordCount?: number };
+      return {
+        docId,
+        status: data.ready ? "ready" : "queued",
+        downloadUrl: data.r2Key ? `/api/generated/${docId}/download` : undefined,
+        wordCount: data.wordCount,
+      };
+    }
+    return { docId, status: "queued" };
+  }
+
+  // ─── Math solver ──────────────────────────────────────────────────────────
+  async solveMath(options: import("./types.js").MathSolveOptions): Promise<import("./types.js").MathSolveResult> {
+    await this.#queue.authorizeObservation({
+      title: "Solve math problem",
+      description: `Solve: "${options.problem.slice(0, 80)}"`,
+    });
+    return this.#voltrixFetch("mathSolver", {
+      problem: options.problem,
+      topic: options.topic ?? "Mathematics",
+      stepByStep: options.stepByStep !== false,
+    });
+  }
+
+  // ─── Code review ──────────────────────────────────────────────────────────
+  async reviewCode(options: import("./types.js").CodeReviewOptions): Promise<import("./types.js").CodeReviewResult> {
+    await this.#queue.authorizeObservation({
+      title: "Review code",
+      description: `Review ${options.language ?? "code"} (${options.code.length} chars)`,
+    });
+    const result = await this.#voltrixFetch<{ review?: string; content?: string }>("codeReview", {
+      codeSnippet: options.code,
+      codeLanguage: options.language ?? "Python",
+      hintMode: options.hintMode ?? false,
+    });
+    return {
+      review: result.review ?? result.content ?? "",
+      language: options.language ?? "Python",
+    };
+  }
+
+  // ─── Paraphrase ───────────────────────────────────────────────────────────
+  async paraphrase(options: import("./types.js").ParaphraseOptions): Promise<import("./types.js").ParaphraseResult> {
+    await this.#queue.authorizeObservation({
+      title: "Paraphrase text",
+      description: `Paraphrase in ${options.tone ?? "academic"} tone`,
+    });
+    return this.#voltrixFetch("paraphrase", {
+      originalText: options.text,
+      tone: options.tone ?? "academic",
+      intensity: options.intensity ?? "medium",
+    });
+  }
+
+  // ─── Proofread ────────────────────────────────────────────────────────────
+  async proofread(text: string): Promise<import("./types.js").ProofreadResult> {
+    await this.#queue.authorizeObservation({
+      title: "Proofread text",
+      description: `Proofread ${text.length} characters`,
+    });
+    const result = await this.#voltrixFetch<{
+      correctedText?: string; content?: string;
+      changes?: Array<{ original: string; corrected: string; reason: string }>;
+      overallScore?: number; summary?: string;
+    }>("proofread", { prompt: text, text });
+    return {
+      correctedText: result.correctedText ?? result.content ?? text,
+      changes: result.changes ?? [],
+      overallScore: result.overallScore ?? 80,
+      summary: result.summary ?? "Proofread complete.",
+    };
+  }
+
+  // ─── Originality audit ────────────────────────────────────────────────────
+  async auditOriginality(text: string): Promise<import("./types.js").OriginalityAuditResult> {
+    await this.#queue.authorizeObservation({
+      title: "Originality audit",
+      description: "Analyse text for originality and flag suspicious passages.",
+    });
+    return this.#voltrixFetch("originalityAudit", { text, prompt: text });
+  }
+
+  // ─── Exam prediction ──────────────────────────────────────────────────────
+  async predictExamQuestions(
+    options: import("./types.js").ExamPredictOptions,
+  ): Promise<import("./types.js").ExamPrediction[]> {
+    await this.#queue.authorizeObservation({
+      title: "Predict exam questions",
+      description: `Predict questions for ${options.course}`,
+    });
+    // Fetch student profile for university context if not provided
+    const university = options.university
+      ?? (await db(this.#env).prepare("SELECT university FROM users WHERE id = ?")
+          .bind(this.#userId).first<{ university: string }>())?.university
+      ?? "";
+
+    const result = await this.#voltrixFetch<{
+      predictions?: import("./types.js").ExamPrediction[];
+      questions?: import("./types.js").ExamPrediction[];
+    }>("examPredict", {
+      course: options.course,
+      university,
+      topics: options.topics,
+      prompt: `Predict exam questions for ${options.course} covering: ${options.topics.join(", ")}`,
+    });
+    return result.predictions ?? result.questions ?? [];
+  }
+
+  // ─── Debate ───────────────────────────────────────────────────────────────
+  async debate(options: import("./types.js").DebateOptions): Promise<import("./types.js").DebateResult> {
+    await this.#queue.authorizeObservation({
+      title: "Academic debate",
+      description: `Multi-agent debate: "${options.topic.slice(0, 60)}"`,
+    });
+    const result = await this.#voltrixFetch<{
+      rounds?: Array<{ persona: string; argument: string }>;
+      synthesis?: string;
+    }>("debate", {
+      topic: options.topic,
+      rounds: options.rounds ?? 3,
+      prompt: options.topic,
+    });
+    return {
+      topic: options.topic,
+      rounds: result.rounds ?? [],
+      synthesis: result.synthesis ?? "",
+    };
+  }
+
+  // ─── Translation ──────────────────────────────────────────────────────────
+  async translate(options: import("./types.js").TranslateOptions): Promise<import("./types.js").TranslateResult> {
+    await this.#queue.authorizeObservation({
+      title: "Translate text",
+      description: `Translate to ${options.targetLanguage}`,
+    });
+    const result = await this.#voltrixFetch<{
+      translatedText?: string; content?: string;
+      sourceLanguage?: string; targetLanguage?: string;
+    }>("translate", {
+      text: options.text,
+      targetLanguage: options.targetLanguage,
+      sourceLanguage: options.sourceLanguage ?? "auto",
+      prompt: options.text,
+    });
+    return {
+      translatedText: result.translatedText ?? result.content ?? options.text,
+      sourceLanguage: result.sourceLanguage ?? options.sourceLanguage ?? "auto",
+      targetLanguage: result.targetLanguage ?? options.targetLanguage,
+    };
   }
 
   // ─── Workspace enforcement ─────────────────────────────────────────────────
