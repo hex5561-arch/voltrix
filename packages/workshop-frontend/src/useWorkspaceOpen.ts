@@ -18,10 +18,17 @@ import {
 /**
  * How long the workspace RPC session stays open with no user activity.
  * After this period the overseer DO hibernates, stopping duration charges.
- * The session reconnects automatically on the next user action.
- * 3 minutes balances cost vs. UX — reconnect on return is ~200ms.
+ * The session reconnects automatically on the next user action (~200ms).
+ * 30 seconds is the general fallback; after an agent turn completes the
+ * caller should trigger a short disconnect via disconnectAfterAgentTurn().
  */
-const IDLE_DISCONNECT_MS = 3 * 60 * 1000
+const IDLE_DISCONNECT_MS = 30 * 1000
+
+/**
+ * How long to wait after an agent turn completes before disconnecting.
+ * Short enough to avoid DO charges, long enough for the user to start typing.
+ */
+const POST_TURN_DISCONNECT_MS = 10 * 1000
 
 const OBSERVER_CANCELLED = 'OBSERVER_CONFIG_CANCELLED'
 
@@ -240,6 +247,19 @@ export function useWorkspaceOpen({
     observerConfig,
     /** Reset the idle disconnect timer on user activity. */
     bumpIdleTimer: bumpIdleTimer.current,
+    /**
+     * Called when an agent turn completes. Schedules a fast disconnect
+     * (POST_TURN_DISCONNECT_MS) so the DO hibernates quickly while still
+     * giving the user a moment to start their next message before reconnect.
+     */
+    disconnectAfterAgentTurn() {
+      if (!idleActiveRef.current) return
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(() => {
+        idleActiveRef.current = false
+        setReloadNonce(n => -(Math.abs(n) + 1))
+      }, POST_TURN_DISCONNECT_MS)
+    },
     retry() {
       setError(null)
       setReloadNonce(value => Math.abs(value) + 1)

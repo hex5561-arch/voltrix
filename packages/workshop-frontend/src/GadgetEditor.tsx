@@ -455,6 +455,7 @@ export default function GadgetEditor() {
     observerConfig,
     retry: retryOpen,
     bumpIdleTimer,
+    disconnectAfterAgentTurn,
     cancelObserverConfig,
     updateTitle,
   } = useWorkspaceOpen({
@@ -945,6 +946,8 @@ export default function GadgetEditor() {
       }
       return
     }
+    // Agent turn complete — schedule fast DO disconnect
+    disconnectAfterAgentTurn()
 
     let output = turnOutputRef.current
     turnOutputRef.current = null
