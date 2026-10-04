@@ -21,7 +21,7 @@
     {
       "binding": "DB",
       "database_name": "voltrix-db",
-      "database_id": "YOUR_D1_DATABASE_ID"
+      "database_id": "f6221b5e-3087-4b78-a232-7e471c0d63de"
     }
   ],
 
@@ -60,7 +60,7 @@
   "kv_namespaces": [
     {
       "binding": "CACHE",
-      "id": "YOUR_KV_NAMESPACE_ID"
+      "id": "4882c9b680b74569b19e8b816406f7fb"
     }
   ],
 
