@@ -33,9 +33,7 @@
     "enabled": true,
     "name": "voltrix-ai",
     "accountId": null,
-    // Workers AI only for initial deploy — no token required.
-    // Add "google" here after creating the AI Gateway in the dashboard.
-    "providers": ["cloudflare"]
+    "providers": ["cloudflare", "google"]
   },
 
   "context": {
@@ -45,7 +43,7 @@
 
     // null: Wrangler provisions and remembers a KV namespace on first deploy.
     // string: bind an existing namespace by ID.
-    "kvNamespaceId": null
+    "kvNamespaceId": "730da4b510f8493580628b93b189718b"
 
     // Optional Git-compatible storage for Context collections. To enable it, add a comma after
     // kvNamespaceId and uncomment this object. Requires Artifacts account access.

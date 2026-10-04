@@ -724,15 +724,29 @@ async function main(): Promise<void> {
     if (check) run(["test"]);
     build(config);
     const deployArgs = check ? ["--dry-run"] : [];
-    if (config.errorReporting.enabled) {
-      deployWorker(packageDirs.errorReporter, deployArgs);
+
+    function deployWithRetry(dir: string, args: string[], retries = 3): void {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          deployWorker(dir, args);
+          return;
+        } catch (err) {
+          if (attempt === retries) throw err;
+          console.warn(`\nDeploy of ${dir} failed (attempt ${attempt}/${retries}), retrying in 5s...`);
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+        }
+      }
     }
-    deployWorker(packageDirs.context, deployArgs);
-    deployWorker(packageDirs.scheduler, deployArgs);
-    deployWorker(packageDirs.customGatekeeper, deployArgs);
-    deployWorker(packageDirs.workshop, deployArgs);
+
+    if (config.errorReporting.enabled) {
+      deployWithRetry(packageDirs.errorReporter, deployArgs);
+    }
+    deployWithRetry(packageDirs.context, deployArgs);
+    deployWithRetry(packageDirs.scheduler, deployArgs);
+    deployWithRetry(packageDirs.customGatekeeper, deployArgs);
+    deployWithRetry(packageDirs.workshop, deployArgs);
     // Last: it binds every one of the above.
-    deployWorker(packageDirs.router, deployArgs);
+    deployWithRetry(packageDirs.router, deployArgs);
   } finally {
     await Promise.all(Object.values(generatedPaths).map((path) => rm(path, { force: true })));
   }
