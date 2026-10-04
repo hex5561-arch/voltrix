@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "custom-gatekeeper",
+  "name": "voltrix-academic",
   "main": ".wrangler/validate/src/index.ts",
   "build": {
     "command": "pnpm exec capnweb-validate build --out .wrangler/validate",
@@ -8,16 +8,67 @@
   },
   "compatibility_date": "2026-08-04",
   "compatibility_flags": ["allow_irrevocable_stub_storage", "nodejs_compat"],
+
   "migrations": [
     {
       "tag": "v0",
-      "new_sqlite_classes": ["CustomGatekeeper"]
+      "new_sqlite_classes": ["VoltrixAcademicGatekeeper"]
     }
   ],
-  "vars": {
-    "CUSTOM_NAME": "Example organization",
-    "CUSTOM_MESSAGE": "Replace this with information useful to your organization."
+
+  // D1 — student data (shared with workshop via service binding)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "voltrix-db",
+      "database_id": "YOUR_D1_DATABASE_ID"
+    }
+  ],
+
+  // R2 — documents and generated files
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "voltrix-documents"
+    }
+  ],
+
+  // Vectorize — semantic search
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "voltrix-docs"
+    }
+  ],
+
+  // Workers AI — llama inference + whisper + embeddings
+  "ai": {
+    "binding": "AI"
   },
+
+  // Queues — async document generation + flashcard gen
+  "queues": {
+    "producers": [
+      {
+        "binding": "TASK_QUEUE",
+        "queue": "voltrix-tasks"
+      }
+    ]
+  },
+
+  // KV — doc-ready polling, rate limits
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+
+  "vars": {
+    "CUSTOM_NAME": "Voltrix Academic",
+    "CUSTOM_MESSAGE": "You are Volt, an expert AI academic copilot for university students. Help with essays, reports, flashcards, exam prediction, and all coursework. Always address the student by name. Be thorough, accurate, and encouraging."
+  },
+
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
