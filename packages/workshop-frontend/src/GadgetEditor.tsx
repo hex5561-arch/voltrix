@@ -454,6 +454,7 @@ export default function GadgetEditor() {
     connectionLost,
     observerConfig,
     retry: retryOpen,
+    bumpIdleTimer,
     cancelObserverConfig,
     updateTitle,
   } = useWorkspaceOpen({
@@ -1325,7 +1326,11 @@ export default function GadgetEditor() {
 
   // ── always render the full two-pane edit layout; preview overlays on top ──────
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-kumo-base relative">
+    <div
+      className="flex flex-col h-screen overflow-hidden bg-kumo-base relative"
+      onPointerDown={bumpIdleTimer}
+      onKeyDown={bumpIdleTimer}
+    >
       {/* ═══ SHARED TOP BAR (visible in both modes) ════════════════════════════ */}
       <div
         className="relative flex items-center justify-between px-4 sm:px-6 backdrop-blur-md border-b border-kumo-line flex-shrink-0 gap-3"

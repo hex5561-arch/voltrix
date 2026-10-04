@@ -15,6 +15,14 @@ import {
   type WorkspaceOpenFailureKind,
 } from './components/WorkspaceOpenErrorPage'
 
+/**
+ * How long the workspace RPC session stays open with no user activity.
+ * After this period the overseer DO hibernates, stopping duration charges.
+ * The session reconnects automatically on the next user action.
+ * 3 minutes balances cost vs. UX — reconnect on return is ~200ms.
+ */
+const IDLE_DISCONNECT_MS = 3 * 60 * 1000
+
 const OBSERVER_CANCELLED = 'OBSERVER_CONFIG_CANCELLED'
 
 export type WorkspaceLoadError =
@@ -55,6 +63,7 @@ export function useWorkspaceOpen({
 
   useDocumentTitle(error ? '' : metadata?.title)
 
+  // ── Connection lifecycle ──────────────────────────────────────────────────
   useEffect(() => {
     let overseerStub: RpcStub<Overseer> | null = null
     let metadataSubscription: RpcStub<{}> | null = null
@@ -136,8 +145,6 @@ export function useWorkspaceOpen({
         if (cancelled) return
         console.error('Failed to load gadget:', caught)
 
-        // TODO: Give share-link and observer failures stable codes so this remaining legacy
-        // message classification can be removed.
         const message = caught instanceof Error ? caught.message : ''
         if (message.includes('Invalid or expired share key')) {
           callbacksRef.current.onInvalidShareKey()
@@ -177,15 +184,65 @@ export function useWorkspaceOpen({
     }
   }, [id, authenticatedApi, reloadNonce])
 
+  // ── Idle disconnect + tab-hidden disconnect ───────────────────────────────
+  // Dispose the RPC session after IDLE_DISCONNECT_MS with no user activity
+  // so the overseer DO can hibernate and stop accruing duration charges.
+  // Reconnects automatically (~200ms) on the next user action.
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const idleActiveRef = useRef(false)
+
+  /** Reset the idle timer. Call on every user action (keydown, pointerdown, send). */
+  const bumpIdleTimer = useRef(() => {
+    if (!idleActiveRef.current) return
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = setTimeout(() => {
+      idleActiveRef.current = false
+      // Negative nonce triggers a fresh reconnect without resetting error state.
+      setReloadNonce(n => -(Math.abs(n) + 1))
+    }, IDLE_DISCONNECT_MS)
+  })
+
+  useEffect(() => {
+    if (overseer) {
+      idleActiveRef.current = true
+      bumpIdleTimer.current()
+    } else {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current)
+        idleTimerRef.current = null
+      }
+    }
+  }, [overseer])
+
+  // Disconnect when tab is hidden; reconnect when it becomes visible again.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden && overseer) {
+        idleActiveRef.current = false
+        if (idleTimerRef.current) {
+          clearTimeout(idleTimerRef.current)
+          idleTimerRef.current = null
+        }
+        setReloadNonce(n => -(Math.abs(n) + 1))
+      } else if (!document.hidden && !overseer && !error) {
+        setReloadNonce(n => Math.abs(n) + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [overseer, error])
+
   return {
     overseer,
     metadata,
     error,
     connectionLost,
     observerConfig,
+    /** Reset the idle disconnect timer on user activity. */
+    bumpIdleTimer: bumpIdleTimer.current,
     retry() {
       setError(null)
-      setReloadNonce(value => value + 1)
+      setReloadNonce(value => Math.abs(value) + 1)
     },
     cancelObserverConfig() {
       observerConfig?.reject(new Error(OBSERVER_CANCELLED))
