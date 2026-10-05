@@ -14,11 +14,11 @@ import type {
 } from "../cloudflare-os/scripts/release/manifest-lib.ts";
 
 /** A model provider the Workshop can serve through AI Gateway with deployment-managed keys. */
-export type AiGatewayProvider = "anthropic" | "openai" | "google" | "cloudflare";
+export type AiGatewayProvider = "anthropic" | "openai" | "google" | "cloudflare" | "thehive";
 
 /** Every provider {@link AiGatewayProvider} allows, for validation and for error messages. */
 export const AI_GATEWAY_PROVIDERS: readonly AiGatewayProvider[] =
-  ["anthropic", "openai", "google", "cloudflare"];
+  ["anthropic", "openai", "google", "cloudflare", "thehive"];
 
 /**
  * The public address of the router Worker. Exactly one field is set; `validateConfig` enforces
