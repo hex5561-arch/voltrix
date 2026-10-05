@@ -487,6 +487,19 @@ function getModelViaGateway(
     );
   }
 
+  // Per-request cache headers.
+  //   - thread-title / gadget-title: deterministic one-shot calls, cache 24h.
+  //     Same model + same prompt → same output every time.
+  //   - chat (agent turns): conversational, skip cache entirely so every turn
+  //     gets a fresh response. The gateway default TTL would otherwise cache
+  //     an agent reply and serve it to a different user with the same messages.
+  //   - model-binding: code execution context, skip cache (dynamic).
+  const source = options.metadata?.source;
+  const cacheHeaders: Record<string, string | null> =
+    source === "thread-title" || source === "gadget-title"
+      ? { "cf-aig-cache-ttl": "86400" }          // 24h — titles are stable
+      : { "cf-aig-skip-cache": "true" };          // agent turns / model-binding — always fresh
+
   return makeHandle({
     model,
     // The google API impl requires an apiKey (it doesn't recognize header-owned auth), and the
@@ -496,7 +509,7 @@ function getModelViaGateway(
     // documented stored-key flow for this SDK is to pass the *gateway token* as the SDK API key:
     // the gateway recognizes its own token there and applies the stored Google key instead.
     ...(config.provider === "google" ? { apiKey: gwConfig.apiToken } : {}),
-    headers: gatewayAuthHeaders,
+    headers: { ...gatewayAuthHeaders, ...cacheHeaders },
     ...(binding ? { fetch: bindingFetch(binding) } : {}),
     gatewayMetadata: metadata,
     sessionAffinity: options.sessionAffinity,
