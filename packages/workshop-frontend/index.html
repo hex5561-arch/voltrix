@@ -6,9 +6,13 @@
 
     <!-- Prevents Gadget UI frames from navigating away from their srcdoc. DO NOT REMOVE. -->
     <meta http-equiv="Content-Security-Policy" content="frame-src srcdoc:;">
+    <!-- Prevent browsers from serving a stale version of this shell after a deploy. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Cloudflare OS</title>
+    <title>Voltrix</title>
   </head>
   <body>
     <div id="root"></div>

@@ -25,6 +25,22 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
+    // Redirect plain HTTP to HTTPS. Cloudflare Workers on a custom domain can receive HTTP
+    // requests when "Always Use HTTPS" is not enabled at the zone level. A persistent HTTP
+    // session also causes the frontend to open a ws:// WebSocket (not wss://), which modern
+    // browsers block as mixed content once the page is known to be an HTTPS origin.
+    // The HSTS header tells browsers to never try HTTP again for a year.
+    if (url.protocol === "http:" && env.ASSETS) {
+      url.protocol = "https:";
+      return new Response(null, {
+        status: 301,
+        headers: {
+          Location: url.toString(),
+          "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        },
+      });
+    }
+
     for (const key of Object.keys(env)) {
       if (!key.startsWith("GATEKEEPER_")) continue;
       const suffix = key.slice("GATEKEEPER_".length).toLowerCase().replaceAll("_", "-");
@@ -45,7 +61,11 @@ export default {
     // callbacks.
 
     if (env.ASSETS) {
-      return env.ASSETS.fetch(req);
+      const response = await env.ASSETS.fetch(req);
+      // Add HSTS so browsers remember to use HTTPS for a year.
+      const headers = new Headers(response.headers);
+      headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+      return new Response(response.body, { status: response.status, headers });
     }
 
     // Dev only: with no assets binding here, everything else goes to the backend.
