@@ -244,20 +244,13 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         compat: workersAiCompat(catalog),
       };
     case "thehive":
-      // TheHive OpenAI-compatible endpoint routed through the custom-thehive gateway provider.
-      // base_url on the gateway is https://api-cdn.thehive.ai/api/v3, so appending
-      // /chat/completions gives the correct upstream path.
-      return {
-        id: config.model,
-        name: catalog?.name ?? config.model,
-        api: "openai-completions",
-        provider: "openai",
-        baseUrl: `${gatewayUrl}/custom-thehive/chat/completions`,
-        reasoning: false,
-        input: ["text", "image"],
-        cost: ZERO_COST,
-        ...window,
-      };
+      // TheHive's OpenAI-compatible endpoint. The CF AI Gateway custom-provider route returns
+      // 502 because CF validates upstream responses against a strict OpenAI schema and TheHive
+      // responses include non-standard fields (reasoning_content, reasoning, content:null, etc.)
+      // that fail validation. We therefore bypass the gateway and call TheHive directly from the
+      // worker; see getModelViaThehiveDirect(). Returning undefined signals the caller to take
+      // the direct path.
+      return undefined;
     default:
       return undefined;
   }
@@ -497,6 +490,12 @@ function getModelViaGateway(
       : `${gatewayBase}/${gateway}`;
   const model = gatewayNativeModel(config, gatewayUrl);
   if (!model) {
+    // gatewayNativeModel returns undefined for providers the gateway cannot serve correctly.
+    // For thehive, CF Gateway validates responses against a strict OpenAI schema and rejects
+    // TheHive's non-standard fields; fall through to the direct path.
+    if (config.provider === "thehive") {
+      return getModelViaThehiveDirect(config, env);
+    }
     throw new Error(
       `Provider "${config.provider}" is not supported through AI Gateway. ` +
       `Configured providers: ${[...gwConfig.providers].join(", ")}`
@@ -516,16 +515,6 @@ function getModelViaGateway(
       ? { "cf-aig-cache-ttl": "86400" }          // 24h — titles are stable
       : { "cf-aig-skip-cache": "true" };          // agent turns / model-binding — always fresh
 
-  // TheHive requires its own API key as the provider Authorization header.
-  // The gateway forwards it verbatim to https://api-cdn.thehive.ai/api/v3.
-  const theHiveKey = config.provider === "thehive"
-    ? (env as unknown as { THEHIVE_API_KEY?: string }).THEHIVE_API_KEY
-    : undefined;
-
-  const providerAuthOverride: Record<string, string | null> = theHiveKey
-    ? { Authorization: `Bearer ${theHiveKey}`, "x-api-key": null }
-    : {};
-
   return makeHandle({
     model,
     // The google API impl requires an apiKey (it doesn't recognize header-owned auth), and the
@@ -535,11 +524,59 @@ function getModelViaGateway(
     // documented stored-key flow for this SDK is to pass the *gateway token* as the SDK API key:
     // the gateway recognizes its own token there and applies the stored Google key instead.
     ...(config.provider === "google" ? { apiKey: gwConfig.apiToken } : {}),
-    headers: { ...gatewayAuthHeaders, ...providerAuthOverride, ...cacheHeaders },
+    headers: { ...gatewayAuthHeaders, ...cacheHeaders },
     ...(binding ? { fetch: bindingFetch(binding) } : {}),
     gatewayMetadata: metadata,
     sessionAffinity: options.sessionAffinity,
     aiGatewayLogRoute: logRoute(gateway),
+  });
+}
+
+// Direct TheHive access — bypasses the AI Gateway entirely.
+// CF's Gateway custom-provider response validator rejects TheHive's non-standard fields
+// (reasoning_content, reasoning, content:null, extra usage keys), so we call the provider
+// directly. No gateway logs or cost attribution for these calls; they're cheap enough
+// (~$0.001/turn) that the absence of gateway observability is acceptable.
+//
+// `apiKey` priority: env secret (platform path) > explicit argument (direct/BYOK path).
+function getModelViaThehiveDirect(
+  config: AiModelConfig,
+  env: Cloudflare.Env | undefined,
+  apiKey?: string,
+): ModelHandle {
+  const key = (env as unknown as { THEHIVE_API_KEY?: string } | undefined)?.THEHIVE_API_KEY
+    ?? apiKey;
+  if (!key) {
+    throw new Error(
+      "THEHIVE_API_KEY is not configured. Add it as a secret on the workshop-backend worker."
+    );
+  }
+  const suggested = SUGGESTED_MODELS["thehive"]?.[config.model];
+  const window = {
+    contextWindow: suggested?.contextWindow ?? 128_000,
+    maxTokens: suggested?.outputLimit ?? 4096,
+  };
+  return makeHandle({
+    model: {
+      id: config.model,
+      name: config.model,
+      api: "openai-completions",
+      provider: "openai",
+      baseUrl: "https://api-cdn.thehive.ai/api/v3",
+      reasoning: false,
+      input: ["text", "image"],
+      cost: ZERO_COST,
+      ...window,
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsLongCacheRetention: false,
+        sendSessionAffinityHeaders: false,
+      },
+    },
+    // Inject the API key as a real Authorization header; suppress SDK-derived auth so
+    // pi doesn't add a second one.
+    apiKey: key,
   });
 }
 
@@ -679,9 +716,10 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
         sessionAffinity,
       });
     case "thehive":
-      // TheHive is only available via the platform AI Gateway (custom-thehive provider).
-      // Direct access is not supported — getModelDirect should never be called for thehive.
-      throw new Error("TheHive models require the platform AI Gateway to be configured.");
+      // TheHive is only available via direct access (the CF AI Gateway custom-provider route is
+      // unusable — see gatewayNativeModel). Without a platform gateway, the config's own API
+      // token is used (BYOK-style).
+      return getModelViaThehiveDirect(config, undefined, config.apiToken);
     default:
       config.provider satisfies never;
       throw new Error(`Unknown provider "${config.provider}".`);
