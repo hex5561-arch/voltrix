@@ -1133,7 +1133,7 @@ export type CloudflareAccountOption = {
 };
 
 /** Supported AI providers. */
-export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama";
+export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama" | "thehive";
 
 /** Information about the AI gateway configuration. Returned by `AuthenticatedApi.getAiConfig()`. */
 export type AiGatewayInfo = {
@@ -1206,6 +1206,10 @@ export const SUGGESTED_MODELS: Record<
   },
   "google": {
     "gemini-3.6-flash": {name: "Gemini 3.6 Flash", contextWindow: 1048576},
+  },
+  "thehive": {
+    "deepseek-ai/deepseek-v4.1-flash": {name: "DeepSeek 4.1 Flash (TheHive)", contextWindow: 1000000},
+    "zai-org/glm-5.3-flash": {name: "GLM 5.3 Flash (TheHive)", contextWindow: 1000000},
   },
   "ollama": {
   },

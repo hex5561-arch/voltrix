@@ -243,6 +243,21 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         ...window,
         compat: workersAiCompat(catalog),
       };
+    case "thehive":
+      // TheHive OpenAI-compatible endpoint routed through the custom-thehive gateway provider.
+      // base_url on the gateway is https://api-cdn.thehive.ai/api/v3, so appending
+      // /chat/completions gives the correct upstream path.
+      return {
+        id: config.model,
+        name: catalog?.name ?? config.model,
+        api: "openai-completions",
+        provider: "openai",
+        baseUrl: `${gatewayUrl}/custom-thehive/chat/completions`,
+        reasoning: false,
+        input: ["text", "image"],
+        cost: ZERO_COST,
+        ...window,
+      };
     default:
       return undefined;
   }
@@ -369,7 +384,7 @@ export function getModel(env: Cloudflare.Env, config: AiModelConfig,
   // tier). The config's apiToken/apiUrl are ignored in that mode.
   let gwConfig = getAiGatewayConfig(env);
   if (gwConfig) {
-    return getModelViaGateway(gwConfig, config, initiator, options);
+    return getModelViaGateway(gwConfig, env, config, initiator, options);
   }
 
   return getModelDirect(config, options.sessionAffinity);
@@ -441,6 +456,7 @@ function bindingFetch(binding: Ai): FetchFunction {
 // Used only for requests that are NOT billed to a connected user's account.
 function getModelViaGateway(
   gwConfig: AiGatewayConfig,
+  env: Cloudflare.Env,
   config: AiModelConfig,
   initiator: AiChatAuthorInfo,
   options: ModelRoutingOptions,
@@ -500,6 +516,16 @@ function getModelViaGateway(
       ? { "cf-aig-cache-ttl": "86400" }          // 24h — titles are stable
       : { "cf-aig-skip-cache": "true" };          // agent turns / model-binding — always fresh
 
+  // TheHive requires its own API key as the provider Authorization header.
+  // The gateway forwards it verbatim to https://api-cdn.thehive.ai/api/v3.
+  const theHiveKey = config.provider === "thehive"
+    ? (env as unknown as { THEHIVE_API_KEY?: string }).THEHIVE_API_KEY
+    : undefined;
+
+  const providerAuthOverride: Record<string, string | null> = theHiveKey
+    ? { Authorization: `Bearer ${theHiveKey}`, "x-api-key": null }
+    : {};
+
   return makeHandle({
     model,
     // The google API impl requires an apiKey (it doesn't recognize header-owned auth), and the
@@ -509,7 +535,7 @@ function getModelViaGateway(
     // documented stored-key flow for this SDK is to pass the *gateway token* as the SDK API key:
     // the gateway recognizes its own token there and applies the stored Google key instead.
     ...(config.provider === "google" ? { apiKey: gwConfig.apiToken } : {}),
-    headers: { ...gatewayAuthHeaders, ...cacheHeaders },
+    headers: { ...gatewayAuthHeaders, ...providerAuthOverride, ...cacheHeaders },
     ...(binding ? { fetch: bindingFetch(binding) } : {}),
     gatewayMetadata: metadata,
     sessionAffinity: options.sessionAffinity,
@@ -652,6 +678,10 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
         apiKey: config.apiToken,
         sessionAffinity,
       });
+    case "thehive":
+      // TheHive is only available via the platform AI Gateway (custom-thehive provider).
+      // Direct access is not supported — getModelDirect should never be called for thehive.
+      throw new Error("TheHive models require the platform AI Gateway to be configured.");
     default:
       config.provider satisfies never;
       throw new Error(`Unknown provider "${config.provider}".`);
