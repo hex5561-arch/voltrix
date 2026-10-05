@@ -553,9 +553,12 @@ function getModelViaThehiveDirect(
   }
   const suggested = SUGGESTED_MODELS["thehive"]?.[config.model];
   const window = {
-    contextWindow: suggested?.contextWindow ?? 128_000,
+    contextWindow: suggested?.contextWindow ?? 1_000_000,
     maxTokens: suggested?.outputLimit ?? 4096,
   };
+  // GLM-5.3-Flash supports video input natively, but pi's Model.input type is constrained to
+  // ("text" | "image")[] in the current version. Video stays as a todo for when pi adds the
+  // modality; the attachment validator already permits video MIME types for thehive.
   return makeHandle({
     model: {
       id: config.model,

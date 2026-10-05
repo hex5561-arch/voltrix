@@ -1209,7 +1209,7 @@ export const SUGGESTED_MODELS: Record<
   },
   "thehive": {
     "deepseek-ai/deepseek-v4.1-flash": {name: "DeepSeek 4.1 Flash (TheHive)", contextWindow: 1000000},
-    "zai-org/glm-5.3-flash": {name: "GLM 5.3 Flash (TheHive)", contextWindow: 1000000},
+    "zai-org/glm-5.3-flash": {name: "GLM 5.3 Flash (TheHive) — text, image, video", contextWindow: 1_000_000},
   },
   "ollama": {
   },

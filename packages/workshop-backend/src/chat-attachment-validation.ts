@@ -22,11 +22,22 @@ const CONTENT_SIGNATURES = new Map<string, readonly (number | null)[]>([
   [PDF_MIME_TYPE, [0x25, 0x50, 0x44, 0x46, 0x2D]],
 ]);
 
+// Common video MIME types supported by GLM-5.3-Flash on TheHive.
+const VIDEO_MIME_TYPES = new Set([
+  "video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska",
+]);
+
 const isTextOrImageMime = (mimeType: string) =>
   isTextLikeAttachmentMimeType(mimeType) || IMAGE_SIGNATURES.has(mimeType);
 
 const isTextImageOrPdfMime = (mimeType: string) =>
   isTextOrImageMime(mimeType) || mimeType === PDF_MIME_TYPE;
+
+// TheHive: GLM-5.3-Flash supports text, image, and video; DeepSeek-4.1-Flash supports text
+// and image. We permit video here (the gate is additive) — the API itself rejects video sent
+// to a text/image-only model, which is an acceptable fallback at this granularity.
+const isTextImageOrVideoMime = (mimeType: string) =>
+  isTextOrImageMime(mimeType) || VIDEO_MIME_TYPES.has(mimeType);
 
 // pi-ai encodes only text and image content parts, so text + images are universal. PDFs ride an
 // image part and are bridged to a provider's native document input where one exists: Gemini takes
@@ -38,7 +49,7 @@ const ATTACHMENT_SUPPORT_BY_PROVIDER = {
   google: isTextImageOrPdfMime,
   cloudflare: isTextOrImageMime,
   ollama: isTextOrImageMime,
-  thehive: isTextOrImageMime,
+  thehive: isTextImageOrVideoMime,
 } satisfies Record<AiModelProvider, (mimeType: string) => boolean>;
 
 function sanitizeChatAttachmentMimeType(mimeType: string | undefined): string {
