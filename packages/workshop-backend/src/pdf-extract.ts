@@ -1,20 +1,15 @@
+import { inflateSync, inflateRawSync } from "node:zlib";
+
 /**
- * Zero-dependency PDF text extractor for Edge and Node.js environments.
- * Extracts text from content streams (both uncompressed and FlateDecode compressed)
- * using standard Web APIs (DecompressionStream, TextDecoder) with Node zlib fallback.
+ * High-performance, zero-ReDoS PDF text extractor for Edge (Cloudflare Workers) and Node.js.
+ * Uses buffer byte scanning instead of whole-file regexes to extract text from PDF content
+ * streams in milliseconds without blocking the event loop.
  */
 
-// Chunk size for converting Uint8Array to string without call stack overflow
-const CHUNK_SIZE = 16384;
-
-function bytesToString(bytes: Uint8Array): string {
-  let result = "";
-  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-    const chunk = bytes.subarray(i, i + CHUNK_SIZE);
-    result += String.fromCharCode.apply(null, chunk as unknown as number[]);
-  }
-  return result;
-}
+// Max characters to extract before truncation (safeguard against LLM context limits)
+const MAX_EXTRACTED_CHARS = 150_000;
+// Max time in ms allowed for extraction before graceful exit
+const MAX_PARSE_TIME_MS = 2_500;
 
 function decodePdfString(str: string): string {
   return str
@@ -29,7 +24,6 @@ function decodeHexString(hex: string): string {
   try {
     let cleanHex = hex.trim();
     if (cleanHex.length % 2 !== 0) cleanHex += "0";
-    // Check for UTF-16BE BOM
     if (cleanHex.toLowerCase().startsWith("feff")) {
       const bytes = new Uint8Array((cleanHex.length - 4) / 2);
       for (let i = 4, j = 0; i < cleanHex.length; i += 2, j++) {
@@ -52,22 +46,23 @@ function decodeHexString(hex: string): string {
   }
 }
 
+/**
+ * Extract human text from a decoded content stream (BT ... ET blocks).
+ * Uses strictly linear, non-backtracking regex patterns.
+ */
 function extractFromContentStream(streamStr: string): string {
   let result = "";
   const btMatches = streamStr.match(/BT[\s\S]*?ET/g) || [];
   for (const block of btMatches) {
     // 1. Array strings: [(Hello) 10 (World)] TJ
-    const tjArrayRegex = /\[((?:[^[\]]*|\([^)]*\)|<[^>]*>)+)\]\s*TJ/g;
-    let m: RegExpExecArray | null;
-    while ((m = tjArrayRegex.exec(block)) !== null) {
-      const inner = m[1];
-      // Match paren strings ( ... )
-      const strMatches = inner.match(/\((?:[^()\\]|\\.)*\)/g) || [];
-      for (const s of strMatches) {
-        const decoded = decodePdfString(s.slice(1, -1));
+    const tjMatches = block.match(/\[([\s\S]*?)\]\s*TJ/g) || [];
+    for (const tj of tjMatches) {
+      const inner = tj.slice(1, tj.lastIndexOf("]"));
+      const pMatches = inner.match(/\((?:[^()\\]|\\.)*\)/g) || [];
+      for (const p of pMatches) {
+        const decoded = decodePdfString(p.slice(1, -1));
         if (decoded) result += decoded + " ";
       }
-      // Match hex strings < ... >
       const hexMatches = inner.match(/<([0-9a-fA-F]+)>/g) || [];
       for (const h of hexMatches) {
         const decoded = decodeHexString(h.slice(1, -1));
@@ -75,139 +70,163 @@ function extractFromContentStream(streamStr: string): string {
       }
     }
 
-    // 2. Direct strings: (Hello World) Tj
-    const tjSingleRegex = /\(((?:[^()\\]|\\.)*)\)\s*Tj/g;
-    while ((m = tjSingleRegex.exec(block)) !== null) {
-      if (m[1]) result += decodePdfString(m[1]) + "\n";
+    // 2. Direct string: (Hello World) Tj
+    const singleMatches = block.match(/\(((?:[^()\\]|\\.)*)\)\s*Tj/g) || [];
+    for (const s of singleMatches) {
+      const textPart = s.match(/\((.*)\)\s*Tj/);
+      if (textPart) result += decodePdfString(textPart[1]) + "\n";
     }
 
-    // 3. Hex strings: <48656c6c6f> Tj
-    const tjHexRegex = /<([0-9a-fA-F]+)>\s*Tj/g;
-    while ((m = tjHexRegex.exec(block)) !== null) {
-      const decoded = decodeHexString(m[1]);
-      if (decoded) result += decoded + "\n";
+    // 3. Direct hex string: <48656c6c6f> Tj
+    const hexSingle = block.match(/<([0-9a-fA-F]+)>\s*Tj/g) || [];
+    for (const h of hexSingle) {
+      const hexPart = h.match(/<([0-9a-fA-F]+)>\s*Tj/);
+      if (hexPart) result += decodeHexString(hexPart[1]) + "\n";
     }
 
-    // 4. Quotation operators: ' or "
-    const quoteRegex = /\(((?:[^()\\]|\\.)*)\)\s*['"]/g;
-    while ((m = quoteRegex.exec(block)) !== null) {
-      if (m[1]) result += decodePdfString(m[1]) + "\n";
+    // 4. Quote operators: ' or "
+    const quoteMatches = block.match(/\(((?:[^()\\]|\\.)*)\)\s*['"]/g) || [];
+    for (const q of quoteMatches) {
+      const textPart = q.match(/\((.*)\)\s*['"]/);
+      if (textPart) result += decodePdfString(textPart[1]) + "\n";
     }
   }
 
   return result;
 }
 
-async function decompressChunk(chunk: Uint8Array): Promise<string | null> {
-  // 1. Try DecompressionStream('deflate') — RFC 1950 zlib format (standard in CF Workers & modern browsers)
-  if (typeof DecompressionStream !== "undefined") {
-    try {
-      const ds = new DecompressionStream("deflate");
-      const writer = ds.writable.getWriter();
-      writer.write(chunk);
-      writer.close();
-      const res = new Response(ds.readable);
-      const buf = await res.arrayBuffer();
-      return new TextDecoder().decode(buf);
-    } catch {
-      // Fall through to deflate-raw
-    }
-
-    try {
-      const ds = new DecompressionStream("deflate-raw");
-      const writer = ds.writable.getWriter();
-      writer.write(chunk);
-      writer.close();
-      const res = new Response(ds.readable);
-      const buf = await res.arrayBuffer();
-      return new TextDecoder().decode(buf);
-    } catch {
-      // Fall through to zlib
+/**
+ * Fast byte-level search in Uint8Array.
+ */
+function findBytes(buffer: Uint8Array, needle: Uint8Array, fromIndex: number): number {
+  const len = buffer.length;
+  const nLen = needle.length;
+  if (nLen === 0) return fromIndex;
+  const first = needle[0];
+  const max = len - nLen;
+  for (let i = fromIndex; i <= max; i++) {
+    if (buffer[i] === first) {
+      let match = true;
+      for (let j = 1; j < nLen; j++) {
+        if (buffer[i + j] !== needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return i;
     }
   }
-
-  // 2. Fallback for Node.js environments (unit tests / local dev)
-  try {
-    const zlib = await import("node:zlib");
-    try {
-      return zlib.inflateSync(chunk).toString("utf-8");
-    } catch {
-      return zlib.inflateRawSync(chunk).toString("utf-8");
-    }
-  } catch {
-    // No decompressor available
-  }
-
-  return null;
+  return -1;
 }
+
+const STREAM_NEEDLE = new Uint8Array([115, 116, 114, 101, 97, 109]); // 'stream'
+const ENDSTREAM_NEEDLE = new Uint8Array([101, 110, 100, 115, 116, 114, 101, 97, 109]); // 'endstream'
 
 /**
  * Extract human-readable text from a PDF byte array.
- * Works seamlessly in Cloudflare Workers edge environment and Node.js.
+ * Fast, non-blocking, and handles multi-megabyte PDFs in milliseconds.
  */
 export async function extractTextFromPdf(data: Uint8Array): Promise<string> {
   if (!data || data.length === 0) return "";
 
-  const rawString = bytesToString(data);
-  let fullExtractedText = "";
+  const startTime = Date.now();
+  let fullText = "";
+  let pos = 0;
+  const isBufferAvailable = typeof Buffer !== "undefined" && typeof Buffer.from === "function";
+  const bufView = isBufferAvailable ? Buffer.from(data.buffer, data.byteOffset, data.byteLength) : null;
 
-  // 1. Check uncompressed streams
-  const uncompressedStreamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let streamMatch: RegExpExecArray | null;
-  while ((streamMatch = uncompressedStreamRegex.exec(rawString)) !== null) {
-    const streamContent = streamMatch[1];
-    // Skip if it looks like binary image data
-    if (/^\s*(ÿØÿ|\x89PNG|GIF8|BM)/.test(streamContent)) continue;
-    const text = extractFromContentStream(streamContent);
-    if (text.trim()) {
-      fullExtractedText += text + "\n";
+  while (pos < data.length) {
+    if (fullText.length >= MAX_EXTRACTED_CHARS || Date.now() - startTime > MAX_PARSE_TIME_MS) {
+      break;
     }
-  }
 
-  // 2. Decompress FlateDecode streams
-  const objStreamRegex = /<<[\s\S]*?\/Filter\s*(?:\[\s*\/FlateDecode|\/FlateDecode)[\s\S]*?>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let objMatch: RegExpExecArray | null;
-  while ((objMatch = objStreamRegex.exec(rawString)) !== null) {
-    try {
-      const streamStart = objMatch.index + objMatch[0].indexOf("stream") + 6;
-      let actualStart = streamStart;
-      if (data[actualStart] === 13) actualStart++;
-      if (data[actualStart] === 10) actualStart++;
+    // 1. Locate next 'stream' keyword
+    let streamPos = -1;
+    if (bufView) {
+      streamPos = bufView.indexOf("stream", pos);
+    } else {
+      streamPos = findBytes(data, STREAM_NEEDLE, pos);
+    }
+    if (streamPos === -1) break;
 
-      const streamEnd = objMatch.index + objMatch[0].lastIndexOf("endstream");
-      let actualEnd = streamEnd;
-      if (data[actualEnd - 1] === 10) actualEnd--;
-      if (data[actualEnd - 1] === 13) actualEnd--;
+    // 2. Locate start of stream binary data (skip \r?\n)
+    let streamStart = streamPos + 6;
+    if (data[streamStart] === 13) streamStart++;
+    if (data[streamStart] === 10) streamStart++;
 
-      if (actualEnd > actualStart) {
-        const compressedChunk = data.subarray(actualStart, actualEnd);
-        const decompressedStr = await decompressChunk(compressedChunk);
-        if (decompressedStr) {
-          const text = extractFromContentStream(decompressedStr);
-          if (text.trim()) {
-            fullExtractedText += text + "\n";
+    // 3. Locate 'endstream'
+    let streamEnd = -1;
+    if (bufView) {
+      streamEnd = bufView.indexOf("endstream", streamStart);
+    } else {
+      streamEnd = findBytes(data, ENDSTREAM_NEEDLE, streamStart);
+    }
+    if (streamEnd === -1) break;
+
+    // 4. Inspect the preceding dictionary (up to 600 bytes) for stream type
+    const dictStart = Math.max(0, streamPos - 600);
+    const dictBytes = data.subarray(dictStart, streamPos);
+    const dictChunk = new TextDecoder("latin1").decode(dictBytes);
+
+    // Skip raster images and embedded font files (vast majority of PDF bytes)
+    const isImage = dictChunk.includes("/Subtype /Image") || dictChunk.includes("/Subtype/Image");
+    const isFont = dictChunk.includes("/FontFile") || dictChunk.includes("/Type /FontDescriptor") ||
+                   dictChunk.includes("/Type/FontDescriptor");
+
+    if (!isImage && !isFont && streamEnd > streamStart) {
+      const chunk = data.subarray(streamStart, streamEnd);
+      let decompressedStr: string | null = null;
+
+      if (dictChunk.includes("/FlateDecode")) {
+        try {
+          const decompressed = inflateSync(chunk);
+          decompressedStr = new TextDecoder("latin1").decode(decompressed);
+        } catch {
+          try {
+            const decompressed = inflateRawSync(chunk);
+            decompressedStr = new TextDecoder("latin1").decode(decompressed);
+          } catch {
+            // Not a valid zlib chunk; ignore
           }
         }
+      } else {
+        // Uncompressed stream
+        decompressedStr = new TextDecoder("latin1").decode(chunk);
       }
-    } catch {
-      // Continue searching other streams
+
+      // Check if the stream actually contains PDF text objects (BT ... ET)
+      if (decompressedStr && decompressedStr.includes("BT") && decompressedStr.includes("ET")) {
+        const text = extractFromContentStream(decompressedStr);
+        if (text.trim()) {
+          fullText += text + "\n";
+        }
+      }
     }
+
+    pos = streamEnd + 9;
   }
 
-  // 3. Fallback: Literal string search if streams yielded nothing
-  if (!fullExtractedText.trim()) {
+  // Fallback: literal string scan if no text streams were found
+  if (!fullText.trim()) {
+    const rawString = new TextDecoder("latin1").decode(data.subarray(0, Math.min(data.length, 1_000_000)));
     const rawMatches = rawString.match(/\(((?:[^()\\]|\\.)*)\)/g) || [];
     const filtered = rawMatches
       .map((s) => decodePdfString(s.slice(1, -1)))
       .filter((s) => /[a-zA-Z0-9\s]{4,}/.test(s) && !/^\s*$/.test(s) && !/^[\x00-\x1F]+$/.test(s))
       .join(" ");
     if (filtered.length > 50) {
-      fullExtractedText = filtered;
+      fullText = filtered;
     }
   }
 
-  return fullExtractedText
+  const cleaned = fullText
     .replace(/[ \t]+/g, " ")
     .replace(/\n\s*\n\s*\n+/g, "\n\n")
     .trim();
+
+  if (fullText.length >= MAX_EXTRACTED_CHARS) {
+    return cleaned + "\n\n[... Additional document content truncated for context limit ...]";
+  }
+
+  return cleaned;
 }

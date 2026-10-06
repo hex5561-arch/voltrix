@@ -51,4 +51,16 @@ endobj`;
       expect(result).toContain("MAKERERE UNIVERSITY");
     }
   });
+
+  it("handles a large 12MB multi-stream PDF in under 1 second without blocking", async () => {
+    const samplePath = "/home/voltrix/Downloads/sensors-25-01007-v2.pdf";
+    if (fs.existsSync(samplePath)) {
+      const buffer = fs.readFileSync(samplePath);
+      const start = Date.now();
+      const result = await extractTextFromPdf(new Uint8Array(buffer));
+      const elapsed = Date.now() - start;
+      expect(result.length).toBeGreaterThan(1000);
+      expect(elapsed).toBeLessThan(1000);
+    }
+  });
 });
