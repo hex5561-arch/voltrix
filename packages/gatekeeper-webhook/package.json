@@ -1,0 +1,27 @@
+{
+  "name": "@gadgets/gatekeeper-webhook",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "echo \"run 'pnpm dev-server' in the root directory instead\" >&2 && exit 1",
+    "deploy": "wrangler deploy",
+    "build:worker": "pnpm exec capnweb-validate build --out .wrangler/validate",
+    "clean": "rm -rf dist .wrangler",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@gadgets/backend-utils": "workspace:*",
+    "@gadgets/error-reporting": "workspace:*",
+    "@gadgets/workshop-shared": "workspace:*",
+    "capnweb": "catalog:",
+    "capnweb-validate": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "catalog:",
+    "@types/node": "^26.1.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

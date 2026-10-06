@@ -8,6 +8,14 @@
     {
       "binding": "WORKSHOP_BACKEND",
       "service": "voltrix-workshop"
+    },
+    {
+      "binding": "GATEKEEPER_WEBHOOK",
+      "service": "voltrix-webhook"
+    },
+    {
+      "binding": "GATEKEEPER_EMAIL",
+      "service": "voltrix-email"
     }
   ],
 

@@ -5,6 +5,10 @@ import { DurableObject } from "cloudflare:workers";
 import { createTypedStorage, collection } from "@gadgets/typed-storage";
 import { ContextCollectionSummary } from "./context-types.js";
 import { publicCollectionsKvKey } from "./collection-kv.js";
+import {
+  KENYA_ACADEMIC_COLLECTION_ID,
+  ensureKenyaAcademicSeeded,
+} from "./kenya-academic-seed.js";
 
 function makeRegistryStorage(storage: DurableObjectStorage) {
   return createTypedStorage(storage, {
@@ -54,6 +58,17 @@ export class LibraryRegistryDurableObject extends DurableObject<Cloudflare.Env> 
     if (existing.lastUpdated.valueOf() !== summary.lastUpdated.valueOf()) {
       this.storage.publicCollections.put(summary);
       await this.#writeSnapshot(domain);
+    }
+  }
+
+  async ensureSeeded(domain: string): Promise<void> {
+    if (!this.storage.publicCollections.get(KENYA_ACADEMIC_COLLECTION_ID)) {
+      await ensureKenyaAcademicSeeded(
+        this.env,
+        domain,
+        this.ctx.exports.ContextCollectionDurableObject,
+        this.ctx.exports.LibraryRegistryDurableObject,
+      );
     }
   }
 }

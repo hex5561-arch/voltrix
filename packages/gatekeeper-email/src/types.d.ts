@@ -36,10 +36,32 @@ export type IncomingEmail = {
   attachments: EmailAttachment[];
 }
 
-/** Session interface for an email binding. Provides the email address. */
+export interface OutboundEmail {
+  to: string | string[];
+  subject: string;
+  html?: string;
+  text?: string;
+  from?: string;
+  cc?: string[];
+  bcc?: string[];
+  replyTo?: string;
+}
+
+export interface SendEmailResult {
+  id: string;
+  success: boolean;
+  error?: string;
+}
+
+/** Session interface for an email binding. Provides the email address and sending/receiving capabilities. */
 export interface EmailSession {
   /** Returns the full email address (e.g. "name@example.com"). */
   getAddress(): Promise<string>;
+
+  /**
+   * Send an outbound email via Resend API.
+   */
+  sendEmail(options: OutboundEmail): Promise<SendEmailResult>;
 
   /**
    * Request a callback on each inbound email.

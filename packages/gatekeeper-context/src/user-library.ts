@@ -6,6 +6,8 @@ import {
   ContextCollectionSummary, ContextCollectionVisibility, OwnedCollectionRecord,
 } from "./context-types.js";
 import { listPublicCollectionsFromKv } from "./collection-kv.js";
+import { KENYA_ACADEMIC_COLLECTION_ID } from "./kenya-academic-seed.js";
+import type { LibraryRegistryDurableObject } from "./registry-do.js";
 
 type OwnedRecord = {
   id: string;
@@ -84,7 +86,18 @@ export class UserLibraryDurableObject extends DurableObject<Cloudflare.Env> {
   async getEnabledCollections(domain: string): Promise<Map<string, ContextCollectionVisibility>> {
     let result = new Map<string, ContextCollectionVisibility>();
     for (let record of this.storage.ownedCollections.list()) result.set(record.id, "private");
-    for (let entry of await listPublicCollectionsFromKv(this.env, domain)) {
+    let publicList = await listPublicCollectionsFromKv(this.env, domain);
+    if (!publicList.some(entry => entry.id === KENYA_ACADEMIC_COLLECTION_ID)) {
+      try {
+        let registry: DurableObjectStub<LibraryRegistryDurableObject> =
+          this.ctx.exports.LibraryRegistryDurableObject.getByName(domain);
+        await registry.ensureSeeded(domain);
+        publicList = await listPublicCollectionsFromKv(this.env, domain);
+      } catch (err) {
+        console.warn("Failed ensuring Kenya academic seed collections:", err);
+      }
+    }
+    for (let entry of publicList) {
       if (!result.has(entry.id)) result.set(entry.id, "public");
     }
     return result;

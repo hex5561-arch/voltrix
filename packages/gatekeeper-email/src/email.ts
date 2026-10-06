@@ -23,6 +23,8 @@ import {
   IncomingEmail,
   EmailAddress as EmailAddressType,
   EmailAttachment,
+  OutboundEmail,
+  SendEmailResult,
 } from "./types";
 import PostalMime from "postal-mime";
 import type { Email } from "postal-mime";
@@ -62,6 +64,9 @@ type Env = Cloudflare.Env & {
   // Base URL (protocol+host+optional path) at which the default fetch handler is served. Should
   // NOT include a trailing slash. Omit for localhost dev server.
   BASE_URL?: string,
+  PUBLIC_BASE_URL?: string,
+  RESEND_API_KEY?: string,
+  DEFAULT_FROM?: string,
 }
 
 function getBaseUrl(env: Env) {
@@ -161,6 +166,15 @@ const INVALID_LINK_HTML = `<!DOCTYPE html>
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
+    if (url.pathname.endsWith("/_health") || url.pathname.endsWith("/health")) {
+      return new Response(JSON.stringify({
+        status: "healthy",
+        resendConfigured: !!env.RESEND_API_KEY,
+        timestamp: new Date().toISOString(),
+      }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     let basePath = getBasePath(env);
     if (!url.pathname.startsWith(basePath + "/") && url.pathname !== basePath) {
       throw new Error(`Request path ${url.pathname} does not match BASE_URL path ${basePath}`);
@@ -484,15 +498,18 @@ class EmailSessionImpl extends RpcTarget implements EmailSession {
   #emailHost: string;
   #ctx: DurableObjectState<EmailGatekeeperImplProps>;
   #approvalQueue: RpcStub<ApprovalQueue>;
+  #env: Env;
 
   constructor(emailName: string, emailHost: string,
       ctx: DurableObjectState<EmailGatekeeperImplProps>,
-      approvalQueue: RpcStub<ApprovalQueue>) {
+      approvalQueue: RpcStub<ApprovalQueue>,
+      env: Env) {
     super();
     this.#emailName = emailName;
     this.#emailHost = emailHost;
     this.#ctx = ctx;
     this.#approvalQueue = approvalQueue;
+    this.#env = env;
   }
 
   [Symbol.dispose]() {
@@ -501,6 +518,62 @@ class EmailSessionImpl extends RpcTarget implements EmailSession {
 
   async getAddress(): Promise<string> {
     return `${this.#emailName}@${this.#emailHost}`;
+  }
+
+  async sendEmail(options: OutboundEmail): Promise<SendEmailResult> {
+    const apiKey = this.#env.RESEND_API_KEY;
+    if (!apiKey) {
+      throw new Error("Resend API key is not configured (RESEND_API_KEY missing).");
+    }
+
+    const defaultFrom = this.#env.DEFAULT_FROM || `${this.#emailName}@${this.#emailHost}`;
+    const from = options.from || defaultFrom;
+    const to = Array.isArray(options.to) ? options.to : [options.to];
+
+    await this.#approvalQueue.authorizeObservation({
+      title: `Send Email: ${options.subject}`,
+      description: `Sending email to ${to.join(", ")} via Resend from ${from}`,
+    });
+
+    const payload: Record<string, unknown> = {
+      from,
+      to,
+      subject: options.subject,
+    };
+    if (options.html) payload.html = options.html;
+    if (options.text) payload.text = options.text;
+    if (options.cc) payload.cc = options.cc;
+    if (options.bcc) payload.bcc = options.bcc;
+    if (options.replyTo) payload.reply_to = options.replyTo;
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      logger.error("Failed to send email via Resend", {
+        event: "email.send.failed",
+        status: res.status,
+        error: errorText,
+      });
+      return {
+        id: "",
+        success: false,
+        error: `Resend API error (${res.status}): ${errorText}`,
+      };
+    }
+
+    const data = (await res.json()) as { id: string };
+    return {
+      id: data.id,
+      success: true,
+    };
   }
 
   async subscribe(callback: RpcStub<EmailHookTarget>): Promise<void> {
@@ -556,7 +629,7 @@ export class EmailGatekeeperImpl extends DurableObject<Env, EmailGatekeeperImplP
   async startSession(approvalQueue: RpcStub<ApprovalQueue>): Promise<EmailSession> {
     let emailName = this.ctx.props.emailName;
     let host = getEmailHost(this.env);
-    return new EmailSessionImpl(emailName, host, this.ctx, approvalQueue.dup());
+    return new EmailSessionImpl(emailName, host, this.ctx, approvalQueue.dup(), this.env);
   }
 
   // ---------------------------------------------------------------------------
