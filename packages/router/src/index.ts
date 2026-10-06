@@ -25,6 +25,18 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
+    // Redirect os.voltrix.stream → voltrix.stream (domain swap — keep path + query).
+    if (url.hostname === "os.voltrix.stream" && env.ASSETS) {
+      url.hostname = "voltrix.stream";
+      return new Response(null, {
+        status: 301,
+        headers: {
+          Location: url.toString(),
+          "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        },
+      });
+    }
+
     // Redirect plain HTTP to HTTPS. Cloudflare Workers on a custom domain can receive HTTP
     // requests when "Always Use HTTPS" is not enabled at the zone level. A persistent HTTP
     // session also causes the frontend to open a ws:// WebSocket (not wss://), which modern

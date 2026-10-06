@@ -18,7 +18,16 @@
     "run_worker_first": true
   },
 
+  // Primary domain + www + legacy os. subdomain (os. redirects to root via worker code)
   "routes": [
+    {
+      "pattern": "voltrix.stream/*",
+      "zone_id": "fe7a85ed87c3eb7ef5b03aaa769b7a8a"
+    },
+    {
+      "pattern": "www.voltrix.stream/*",
+      "zone_id": "fe7a85ed87c3eb7ef5b03aaa769b7a8a"
+    },
     {
       "pattern": "os.voltrix.stream/*",
       "zone_id": "fe7a85ed87c3eb7ef5b03aaa769b7a8a"
