@@ -10,13 +10,32 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Mic, MicOff, X, Minimize2, Maximize2, Sparkles, RotateCcw as _RotateCcw,
-  MessageSquare, Check, ChevronDown, Camera, CameraOff, Radio,
-  ArrowUpRight, AlertCircle, Move, Scan, Maximize, Minimize,
+  Microphone, MicrophoneSlash, X, ArrowsIn, ArrowsOut, Sparkle,
+  ArrowCounterClockwise, ChatCircle, Check, CaretDown, Camera, CameraSlash,
+  Broadcast, ArrowUpRight, WarningCircle, ArrowsOutCardinal, Crosshair,
 } from '@phosphor-icons/react'
 import type { RpcStub } from 'capnweb'
 import type { Overseer } from '@gadgets/workshop-shared/api'
 import { voiceService, normalizeLatexForSpeech } from '../services/voiceService'
+
+// ── SpeechRecognition shim (not in all TS libs) ───────────────────────────────
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  onstart: ((e: Event) => void) | null;
+  onresult: ((e: SpeechRecognitionEvent) => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEvent) => void) | null;
+  onend: ((e: Event) => void) | null;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+const getSpeechRecognition = (): SpeechRecognitionCtor | undefined => {
+  const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,7 +101,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
   const [resizing,       setResizing]       = useState(false)
 
   const canvasRef      = useRef<HTMLCanvasElement>(null)
-  const recognRef      = useRef<SpeechRecognition|null>(null)
+  const recognRef      = useRef<SpeechRecognitionInstance|null>(null)
   const audioCtxRef    = useRef<AudioContext|null>(null)
   const analyserRef    = useRef<AnalyserNode|null>(null)
   const micStreamRef   = useRef<MediaStream|null>(null)
@@ -170,11 +189,12 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
   // ── Speech recognition ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen||minimized||muted){stopListening();return;}
-    const SR=(window as unknown as {SpeechRecognition?:typeof SpeechRecognition;webkitSpeechRecognition?:typeof SpeechRecognition}).SpeechRecognition??(window as unknown as {SpeechRecognition?:typeof SpeechRecognition;webkitSpeechRecognition?:typeof SpeechRecognition}).webkitSpeechRecognition;
-    if (!SR) return;
-    const rec=new SR(); rec.continuous=true; rec.interimResults=true; rec.lang='en-US'; rec.maxAlternatives=1;
+    const SRCtor = getSpeechRecognition();
+    if (!SRCtor) return;
+    const rec = new SRCtor();
+    rec.continuous=true; rec.interimResults=true; rec.lang='en-US'; rec.maxAlternatives=1;
     rec.onstart=()=>{isListeningRef.current=true;if(!isSpeakingRef.current&&!muted)setMode('listening');};
-    rec.onresult=e=>{
+    rec.onresult=(e: SpeechRecognitionEvent)=>{
       let fin='',interim='';
       for(let i=e.resultIndex;i<e.results.length;i++){e.results[i].isFinal?(fin+=e.results[i][0].transcript):(interim+=e.results[i][0].transcript);}
       const active=(fin||interim).trim(); if(!active)return;
@@ -184,7 +204,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
       if(fin.trim()){accRef.current='';handleUtterance(fin.trim());return;}
       vadRef.current=setTimeout(()=>{if(accRef.current&&!isSpeakingRef.current){const q=accRef.current.trim();accRef.current='';if(isExecRef.current){voiceService.stop();isExecRef.current=false;}handleUtterance(q);}},1200);
     };
-    rec.onerror=e=>{isListeningRef.current=false;if(e.error!=='no-speech'&&e.error!=='aborted')console.warn('[Voice]',e.error);};
+    rec.onerror=(e: SpeechRecognitionErrorEvent)=>{isListeningRef.current=false;if(e.error!=='no-speech'&&e.error!=='aborted')console.warn('[Voice]',e.error);};
     rec.onend=()=>{isListeningRef.current=false;if(isOpen&&!muted&&!isSpeakingRef.current&&!minimized){if(restartRef.current)clearTimeout(restartRef.current);restartRef.current=setTimeout(()=>{if(isOpen&&!muted&&!isSpeakingRef.current&&!minimized)startListening();},800);}};
     recognRef.current=rec; startListening();
     return ()=>{if(vadRef.current){clearTimeout(vadRef.current);vadRef.current=null;}if(restartRef.current){clearTimeout(restartRef.current);restartRef.current=null;}stopListening();recognRef.current=null;};
@@ -270,6 +290,8 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
     if (!response?.trim()) response="That's a great question. Tell me more about what you're working on and I'll help you work through it step by step.";
     const clean=normalizeLatexForSpeech(response);
     setHistory(prev=>[...prev,{id:`a-${Date.now()}`,role:'assistant',text:response,ts:ts()}]);
+    // Show vision OCR result in the overlay if camera was active
+    if (visualUrl) { setVisionText(response); setShowVision(true); }
     setSubtitle(clean.slice(0,160)); setMode('speaking');
     await voiceService.speak(clean,'Volt Voice',{rate:persona.rate,pitch:persona.pitch});
     isExecRef.current=false;
@@ -293,15 +315,15 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
         style={{background:'rgba(18,18,18,.95)',backdropFilter:'blur(20px)',borderColor:'rgba(255,255,255,.15)',boxShadow:`0 12px 36px rgba(0,0,0,.7),0 0 24px ${persona.glow}`}}>
         <div onClick={()=>setMinimized(false)} className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform"
           style={{background:`radial-gradient(circle at 30% 30%,#fff 0%,${mode==='speaking'?'#c084fc':'#38bdf8'} 50%,#4f46e5 100%)`,boxShadow:`0 0 16px ${persona.glow}`}}>
-          <Sparkles size={14} className="text-white drop-shadow" />
+          <Sparkle size={14} className="text-white drop-shadow" />
         </div>
         <div onClick={()=>setMinimized(false)} className="flex flex-col cursor-pointer min-w-0 pr-1">
           <div className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${modeColor}`}/><span className="text-xs font-bold text-white tracking-wide">{persona.name} Voice</span></div>
           <span className="text-[10px] text-zinc-400 truncate max-w-[140px]">{transcript?<span className="text-cyan-300">"{transcript.slice(0,40)}…"</span>:mode==='speaking'?subtitle?.slice(0,40)||'Speaking…':mode==='thinking'?'Thinking…':mode==='muted'?'Muted':'Listening…'}</span>
         </div>
         <div className="flex items-center gap-1 pl-1 border-l border-white/10">
-          <button onClick={toggleMute} className={`p-1.5 rounded-full transition ${muted?'bg-red-500/20 text-red-400':'text-zinc-300 hover:text-white hover:bg-white/10'}`}>{muted?<MicOff size={14}/>:<Mic size={14}/>}</button>
-          <button onClick={()=>setMinimized(false)} className="p-1.5 rounded-full text-zinc-300 hover:text-white hover:bg-white/10 transition"><Maximize2 size={14}/></button>
+          <button onClick={toggleMute} className={`p-1.5 rounded-full transition ${muted?'bg-red-500/20 text-red-400':'text-zinc-300 hover:text-white hover:bg-white/10'}`}>{muted?<MicrophoneSlash size={14}/>:<Microphone size={14}/>}</button>
+          <button onClick={()=>setMinimized(false)} className="p-1.5 rounded-full text-zinc-300 hover:text-white hover:bg-white/10 transition"><ArrowsOut size={14}/></button>
           <button onClick={close} className="p-1.5 rounded-full text-zinc-400 hover:text-red-400 hover:bg-white/10 transition"><X size={15}/></button>
         </div>
       </div>
@@ -317,7 +339,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
       <header className="relative z-10 flex items-center justify-between p-3.5 sm:p-5 border-b border-white/5 backdrop-blur-md bg-black/20 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0">
-            <Radio size={16} className="text-cyan-400 animate-pulse"/>
+            <Broadcast size={16} className="text-cyan-400 animate-pulse"/>
           </div>
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
@@ -333,7 +355,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
             <button onClick={()=>setShowPersonas(p=>!p)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-xs font-semibold text-zinc-200 border border-white/10 cursor-pointer transition">
               <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${persona.gradient} shrink-0`}/>
               <span className="truncate max-w-[60px] sm:max-w-none">{persona.name}</span>
-              <ChevronDown size={13} className="text-zinc-400 shrink-0"/>
+              <CaretDown size={13} className="text-zinc-400 shrink-0"/>
             </button>
             {showPersonas&&(
               <div className="absolute right-0 mt-2 w-64 rounded-2xl p-2 bg-[#1c1c24] border border-white/15 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150" style={{backdropFilter:'blur(20px)'}}>
@@ -342,7 +364,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
                   <button key={p.id} onClick={()=>{setPersona(p);voiceService.setRate(p.rate);voiceService.setPitch(p.pitch);setShowPersonas(false);}}
                     className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition cursor-pointer ${persona.id===p.id?'bg-white/15 text-white':'hover:bg-white/5 text-zinc-300'}`}>
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className={`w-7 h-7 rounded-full bg-gradient-to-tr ${p.gradient} flex items-center justify-center shrink-0`}><Sparkles size={12} className="text-white"/></div>
+                      <div className={`w-7 h-7 rounded-full bg-gradient-to-tr ${p.gradient} flex items-center justify-center shrink-0`}><Sparkle size={12} className="text-white"/></div>
                       <div className="flex flex-col min-w-0"><span className="text-xs font-bold truncate">{p.name}</span><span className="text-[10px] text-zinc-400 truncate">{p.role}</span></div>
                     </div>
                     {persona.id===p.id&&<Check size={14} className="text-cyan-400 shrink-0"/>}
@@ -351,15 +373,15 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
               </div>
             )}
           </div>
-          <button onClick={()=>setShowTranscript(p=>!p)} className={`p-1.5 sm:p-2.5 rounded-full border transition cursor-pointer ${showTranscript?'bg-indigo-600 text-white border-indigo-500':'bg-white/10 hover:bg-white/15 text-zinc-300 border-white/10'}`}><MessageSquare size={16}/></button>
-          <button onClick={()=>setMinimized(true)} className="p-1.5 sm:p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 border border-white/10 transition cursor-pointer"><Minimize2 size={16}/></button>
+          <button onClick={()=>setShowTranscript(p=>!p)} className={`p-1.5 sm:p-2.5 rounded-full border transition cursor-pointer ${showTranscript?'bg-indigo-600 text-white border-indigo-500':'bg-white/10 hover:bg-white/15 text-zinc-300 border-white/10'}`}><ChatCircle size={16}/></button>
+          <button onClick={()=>setMinimized(true)} className="p-1.5 sm:p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 border border-white/10 transition cursor-pointer"><ArrowsIn size={16}/></button>
           <button onClick={close} className="p-1.5 sm:p-2.5 rounded-full bg-white/10 hover:bg-red-500/20 text-zinc-300 hover:text-red-400 border border-white/10 transition cursor-pointer"><X size={16}/></button>
         </div>
       </header>
 
       {micState==='denied'&&(
         <div className="z-20 mx-auto mt-3 px-4 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2 max-w-md">
-          <AlertCircle size={15} className="shrink-0 text-amber-400"/>
+          <WarningCircle size={15} className="shrink-0 text-amber-400"/>
           <span className="flex-1">Microphone blocked. Allow mic permissions in your browser.</span>
         </div>
       )}
@@ -373,10 +395,10 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
         {cameraOn&&(
           <div style={{top:camPos.y,left:camPos.x,width:camSize.w,height:camSize.h}} className="absolute z-40 rounded-3xl overflow-hidden border-2 border-indigo-500/80 shadow-2xl bg-black flex flex-col animate-in fade-in duration-200 select-none group/cam">
             <div onMouseDown={onCamDragStart} onTouchStart={onCamDragStart} className="flex items-center justify-between px-3.5 py-2.5 bg-black/85 border-b border-white/15 cursor-grab active:cursor-grabbing z-20 text-white select-none touch-none">
-              <div className="flex items-center gap-2 pointer-events-none"><div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0"/><span className="text-[11px] font-bold text-emerald-300">VOLT LIVE SCANNER</span><Move size={12} className="text-zinc-400 opacity-60"/></div>
+              <div className="flex items-center gap-2 pointer-events-none"><div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0"/><span className="text-[11px] font-bold text-emerald-300">VOLT LIVE SCANNER</span><ArrowsOutCardinal size={12} className="text-zinc-400 opacity-60"/></div>
               <div className="flex items-center gap-1.5" onMouseDown={e=>e.stopPropagation()}>
-                <button type="button" onClick={()=>setCamSize(prev=>prev.w>450?{w:320,h:210}:{w:560,h:360})} className="p-1 rounded-lg hover:bg-white/10 text-zinc-300 transition cursor-pointer">{camSize.w>450?<Minimize size={13}/>:<Maximize size={13}/>}</button>
-                <button type="button" onClick={()=>setCameraFacing(f=>f==='environment'?'user':'environment')} className="p-1 rounded-lg hover:bg-white/10 text-zinc-300 transition cursor-pointer"><RotateCcw size={13}/></button>
+                <button type="button" onClick={()=>setCamSize(prev=>prev.w>450?{w:320,h:210}:{w:560,h:360})} className="p-1 rounded-lg hover:bg-white/10 text-zinc-300 transition cursor-pointer">{camSize.w>450?<ArrowsIn size={13}/>:<ArrowsOut size={13}/>}</button>
+                <button type="button" onClick={()=>setCameraFacing(f=>f==='environment'?'user':'environment')} className="p-1 rounded-lg hover:bg-white/10 text-zinc-300 transition cursor-pointer"><ArrowCounterClockwise size={13}/></button>
                 <button type="button" onClick={()=>setCameraOn(false)} className="p-1 rounded-lg hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition cursor-pointer"><X size={14}/></button>
               </div>
             </div>
@@ -389,10 +411,10 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
               </div>
               <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between gap-1.5 z-20" onMouseDown={e=>e.stopPropagation()}>
                 <button type="button" disabled={capturing} onClick={()=>{setCapturing(true);handleUtterance('Transcribe all equations and text in this image.').finally(()=>setCapturing(false));}} className="flex-1 py-1.5 px-2.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer">
-                  <Scan size={12}/>{capturing?'Transcribing…':'⚡ Transcribe'}
+                  <Crosshair size={12}/>{capturing?'Transcribing…':'⚡ Transcribe'}
                 </button>
                 <button type="button" disabled={capturing} onClick={()=>handleUtterance('Solve the mathematical equation or problem shown step-by-step.')} className="flex-1 py-1.5 px-2.5 rounded-xl bg-cyan-600/90 hover:bg-cyan-500 text-white text-[10px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer">
-                  <Sparkles size={12}/>Solve
+                  <Sparkle size={12}/>Solve
                 </button>
               </div>
               <div onMouseDown={onResizeStart} onTouchStart={onResizeStart} className="absolute bottom-0 right-0 w-8 h-8 cursor-se-resize flex items-end justify-end p-1.5 z-30 touch-none">
@@ -435,7 +457,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
         <div className="w-full max-w-2xl px-4 z-10">
           <div className={`flex items-start gap-2.5 rounded-2xl border px-3.5 py-2.5 transition-all duration-300 ${transcript?'bg-cyan-500/10 border-cyan-500/30':'bg-white/[.03] border-white/[.06]'}`}>
             <div className="flex-shrink-0 mt-0.5">
-              {muted?<MicOff size={14} className="text-red-400 mt-0.5"/>:mode==='listening'?(
+              {muted?<MicrophoneSlash size={14} className="text-red-400 mt-0.5"/>:mode==='listening'?(
                 <span className="flex h-3 w-3 mt-0.5">
                   <span className={`animate-ping absolute inline-flex h-3 w-3 rounded-full opacity-75 ${transcript?'bg-cyan-400':'bg-zinc-500'}`}/>
                   <span className={`relative inline-flex rounded-full h-3 w-3 ${transcript?'bg-cyan-400':'bg-zinc-600'}`}/>
@@ -465,7 +487,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
 
         {/* Camera toggle chip */}
         <button onClick={()=>{unlock();setCameraOn(p=>!p);}} className={`mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer z-10 ${cameraOn?'bg-emerald-600/20 text-emerald-300 border-emerald-500/40':'bg-white/5 text-zinc-400 hover:text-zinc-200 border-white/10'}`}>
-          {cameraOn?<Camera size={12}/>:<CameraOff size={12}/>}{cameraOn?'Vision On':'Vision Off'}
+          {cameraOn?<Camera size={12}/>:<CameraSlash size={12}/>}{cameraOn?'Vision On':'Vision Off'}
         </button>
       </main>
 
@@ -473,7 +495,7 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
       {showTranscript&&(
         <div className="absolute inset-x-0 bottom-24 top-20 z-30 mx-auto max-w-2xl p-4 flex flex-col bg-[#181820]/95 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-2xl animate-in slide-in-from-bottom-8 duration-200">
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
-            <div className="flex items-center gap-2"><MessageSquare size={16} className="text-indigo-400"/><span className="text-sm font-bold text-white">Transcript</span><span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 font-mono">{history.length} turns</span></div>
+            <div className="flex items-center gap-2"><ChatCircle size={16} className="text-indigo-400"/><span className="text-sm font-bold text-white">Transcript</span><span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 font-mono">{history.length} turns</span></div>
             <button onClick={()=>setShowTranscript(false)} className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition"><X size={16}/></button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-3 py-3 px-1">
@@ -500,9 +522,4 @@ export default function VoiceModal({ isOpen, onClose, overseer, chatId, modelId 
       </footer>
     </div>
   );
-}
-
-// Need a local RotateCcw since we imported RotateCcw as _RotateCcw above (unused check)
-function RotateCcw(props: { size: number }) {
-  return <_RotateCcw {...props}/>;
 }
