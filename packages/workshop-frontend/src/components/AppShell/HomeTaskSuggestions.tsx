@@ -1,16 +1,15 @@
 import { useMemo } from 'react'
 import {
-  AppWindow,
-  ChartLineUp,
+  BookOpen,
+  Calculator,
+  Cards,
   FileText,
-  Lightning,
-  Presentation,
+  GraduationCap,
   type Icon,
 } from '@phosphor-icons/react'
 
-// A few example work tasks shown under the Home composer, so a new user immediately sees the kind
-// of thing they can ask for. Picking one drops a starter prompt into the composer (it does not
-// auto-send) so the user can tweak it before running.
+// A few example academic tasks shown under the Home composer, so a student immediately sees the kind
+// of thing they can ask for. Picking one drops a starter prompt into the composer.
 type TaskSuggestion = {
   id: string
   label: string
@@ -19,48 +18,46 @@ type TaskSuggestion = {
   icon: Icon
 }
 
-// Formats are advertised by example rather than by a row of "Start with Docs" buttons, so the
-// first move isn't "pick a file type". The formats themselves are in the composer's `+` menu.
 const SUGGESTIONS: TaskSuggestion[] = [
   {
-    id: 'one-on-one',
-    label: 'Write a 1:1 pre-read',
-    description: 'A doc with a snapshot, things to inspect, and one ask',
+    id: 'math-solver',
+    label: 'Solve STEM or math problem',
+    description: 'Step-by-step derivation with formulas and clear explanations',
+    icon: Calculator,
+    prompt:
+      'Solve this problem step-by-step with clear derivations, definitions, and LaTeX formulas. Highlight the final answer clearly.',
+  },
+  {
+    id: 'flashcards',
+    label: 'Generate flashcards (SM-2)',
+    description: 'Turn notes or topics into active recall flashcards with spaced repetition',
+    icon: Cards,
+    prompt:
+      'Create 15 high-yield active recall flashcards on this topic with clear questions and concise answers for spaced repetition review.',
+  },
+  {
+    id: 'exam-predict',
+    label: 'Predict exam questions',
+    description: 'Forecast likely exam questions, essay prompts, and marking guides',
+    icon: GraduationCap,
+    prompt:
+      'Predict the most probable university exam questions for this subject, including both short conceptual questions and long problems with sample solutions.',
+  },
+  {
+    id: 'essay-review',
+    label: 'Review academic paper / draft',
+    description: 'Audit structure, argument coherence, academic tone, and originality',
     icon: FileText,
     prompt:
-      'Create a document to prepare for my next 1:1 with a direct report: a current snapshot, a coaching frame, things to inspect, carryover items from last time, and one clear ask.',
+      'Review my attached draft for academic tone, structural flow, argument strength, and suggest concrete improvements.',
   },
   {
-    id: 'team-meeting',
-    label: 'Build a team meeting deck',
-    description: 'Slides with progress, risks, and what needs a decision',
-    icon: Presentation,
+    id: 'research',
+    label: 'Scholarly literature & citations',
+    description: 'Explore research findings and format citations in APA, IEEE, or Chicago',
+    icon: BookOpen,
     prompt:
-      'Create a slide deck for my next team meeting: where things stand, what shipped, risks and blockers, and the decisions I need from the room. Ask me what the team is working on first.',
-  },
-  {
-    id: 'insights',
-    label: 'Find insights in my data',
-    description: 'Turn a spreadsheet or CSV into trends and recommendations',
-    icon: ChartLineUp,
-    prompt:
-      'Turn a dataset I will share (a spreadsheet, CSV, or pasted table) into a narrative analysis: key trends, anomalies, the "so what", and concrete recommendations.',
-  },
-  {
-    id: 'workflow',
-    label: 'Automate a workflow',
-    description: 'Trigger an agent when a new email arrives',
-    icon: Lightning,
-    prompt:
-      'Create an agent workflow that runs automatically when a new email arrives: read the message, decide what to do, and take action or draft a reply. Ask me which inbox to watch and what it should handle.',
-  },
-  {
-    id: 'app',
-    label: 'Build a quick tool',
-    description: 'A small interactive app, calculator, or dashboard',
-    icon: AppWindow,
-    prompt:
-      'Build a small interactive tool I can use right here — a calculator, dashboard, or explorer. Ask me what it should do, then create it.',
+      'Summarize current scholarly literature on this topic with key findings, methodology comparisons, and standard citations.',
   },
 ]
 

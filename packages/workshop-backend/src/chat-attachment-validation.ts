@@ -3,7 +3,7 @@ import type { AiModelConfig, AiModelProvider, ChatAttachmentUpload } from "@gadg
 import { PDF_MIME_TYPE } from "./chat-attachment-pdf";
 
 // Bounds attachment storage and the bytes replayed into model requests.
-const MAX_CHAT_ATTACHMENT_BYTES = 1024 * 1024;
+export const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 const IMAGE_SIGNATURES = new Map<string, readonly (number | null)[]>([
   ["image/jpeg", [0xFF, 0xD8, 0xFF]],
@@ -22,34 +22,37 @@ const CONTENT_SIGNATURES = new Map<string, readonly (number | null)[]>([
   [PDF_MIME_TYPE, [0x25, 0x50, 0x44, 0x46, 0x2D]],
 ]);
 
-// Common video MIME types supported by GLM-5.3-Flash on TheHive.
-const VIDEO_MIME_TYPES = new Set([
+// Common video MIME types supported by GLM-5.3-Flash, Gemini, and multimedia models.
+export const VIDEO_MIME_TYPES = new Set([
   "video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska",
 ]);
 
-const isTextOrImageMime = (mimeType: string) =>
+// Common audio MIME types supported by Gemini and multimedia models.
+export const AUDIO_MIME_TYPES = new Set([
+  "audio/mp3", "audio/mpeg", "audio/wav", "audio/ogg", "audio/aac", "audio/m4a", "audio/webm", "audio/x-m4a",
+]);
+
+export const isMediaMime = (mimeType: string) =>
+  VIDEO_MIME_TYPES.has(mimeType) || AUDIO_MIME_TYPES.has(mimeType);
+
+export const isTextOrImageMime = (mimeType: string) =>
   isTextLikeAttachmentMimeType(mimeType) || IMAGE_SIGNATURES.has(mimeType);
 
-const isTextImageOrPdfMime = (mimeType: string) =>
+export const isTextImageOrPdfMime = (mimeType: string) =>
   isTextOrImageMime(mimeType) || mimeType === PDF_MIME_TYPE;
 
-// TheHive: GLM-5.3-Flash supports text, image, and video; DeepSeek-4.1-Flash supports text
-// and image. We permit video here (the gate is additive) — the API itself rejects video sent
-// to a text/image-only model, which is an acceptable fallback at this granularity.
-const isTextImageOrVideoMime = (mimeType: string) =>
-  isTextOrImageMime(mimeType) || VIDEO_MIME_TYPES.has(mimeType);
+export const isTextImagePdfOrMediaMime = (mimeType: string) =>
+  isTextImageOrPdfMime(mimeType) || isMediaMime(mimeType);
 
-// pi-ai encodes only text and image content parts, so text + images are universal. PDFs ride an
-// image part and are bridged to a provider's native document input where one exists: Gemini takes
-// application/pdf inline data as-is, and Anthropic/OpenAI payloads are rewritten in flight (see
-// chat-attachment-pdf.ts). Workers AI and Ollama chat endpoints have no document input at all.
+// pi-ai encodes only text and image content parts, so text + images are universal. PDFs and media
+// ride an image part and are bridged to a provider's native document/video input where one exists.
 const ATTACHMENT_SUPPORT_BY_PROVIDER = {
   anthropic: isTextImageOrPdfMime,
-  openai: isTextImageOrPdfMime,
-  google: isTextImageOrPdfMime,
+  openai: isTextImagePdfOrMediaMime,
+  google: isTextImagePdfOrMediaMime,
   cloudflare: isTextOrImageMime,
   ollama: isTextOrImageMime,
-  thehive: isTextImageOrVideoMime,
+  thehive: isTextImagePdfOrMediaMime,
 } satisfies Record<AiModelProvider, (mimeType: string) => boolean>;
 
 function sanitizeChatAttachmentMimeType(mimeType: string | undefined): string {

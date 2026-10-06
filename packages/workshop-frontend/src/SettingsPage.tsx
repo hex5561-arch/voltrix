@@ -4,11 +4,24 @@ import { useState, useEffect, useRef } from 'react'
 import { AiChatAuthorInfo } from '@gadgets/workshop-shared/api'
 import { hashPassword } from './passwordHash'
 import { CF_ACCESS_MODE } from './useAuth'
-import { User, Pencil, Check, X, Lock, Camera, Copy, Eye, EyeSlash } from '@phosphor-icons/react'
+import { User, Pencil, Check, X, Lock, Camera, Copy, Eye, EyeSlash, GraduationCap, Plus, Trash } from '@phosphor-icons/react'
 import { useAvatar, invalidateAvatarCache } from './useAvatar'
 import { compressAvatar, avatarBlobUrl } from './avatarUtils'
 import UsageSettings from './components/billing/UsageSettings'
 import { useDocumentTitle } from './useDocumentTitle'
+import {
+  getStudentProfile,
+  saveStudentProfile,
+  subscribeStudentProfile,
+  StudentProfile,
+  EnrolledCourse,
+  getDefaultStudentProfile,
+} from './services/studentProfile'
+import {
+  CITATION_STYLES,
+  SEMESTERS,
+  COURSE_COLORS,
+} from './data/academicData'
 
 // Shared, on-language control classes (match the rest of the app: Workspaces/Blueprints headers,
 // the gatekeepers toolbar, the command palette). Kept here so the profile page reads as part of the
@@ -114,6 +127,70 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   // Whether this account has a password (false for OAuth-created accounts). Null while loading.
   const [hasPassword, setHasPassword] = useState<boolean | null>(null)
+
+  // Academic Profile State
+  const [studentProfile, setStudentProfile] = useState<StudentProfile>(() => {
+    return getStudentProfile() || getDefaultStudentProfile()
+  })
+  const [isEditingAcademic, setIsEditingAcademic] = useState(false)
+  const [academicUni, setAcademicUni] = useState(studentProfile.university)
+  const [academicDegree, setAcademicDegree] = useState(studentProfile.degreeProgram)
+  const [academicYear, setAcademicYear] = useState(studentProfile.academicYear)
+  const [academicSemester, setAcademicSemester] = useState(studentProfile.semester)
+  const [academicCitation, setAcademicCitation] = useState(studentProfile.citationStyle)
+  const [academicCourses, setAcademicCourses] = useState<EnrolledCourse[]>(studentProfile.courses)
+  const [newCourseCode, setNewCourseCode] = useState('')
+  const [newCourseName, setNewCourseName] = useState('')
+  const [newCourseColor, setNewCourseColor] = useState(COURSE_COLORS[0])
+  const [showAddCourse, setShowAddCourse] = useState(false)
+
+  useEffect(() => {
+    return subscribeStudentProfile((p) => {
+      if (p) {
+        setStudentProfile(p)
+        setAcademicUni(p.university)
+        setAcademicDegree(p.degreeProgram)
+        setAcademicYear(p.academicYear)
+        setAcademicSemester(p.semester)
+        setAcademicCitation(p.citationStyle)
+        setAcademicCourses(p.courses)
+      }
+    })
+  }, [])
+
+  const handleSaveAcademic = () => {
+    const updated = saveStudentProfile({
+      university: academicUni.trim() || 'My University',
+      degreeProgram: academicDegree.trim() || 'Degree Program',
+      academicYear,
+      semester: academicSemester,
+      citationStyle: academicCitation,
+      courses: academicCourses,
+    })
+    setStudentProfile(updated)
+    setIsEditingAcademic(false)
+    toasts.add({ title: 'Academic profile updated', variant: 'success' })
+  }
+
+  const handleAddCourse = () => {
+    if (!newCourseCode.trim() || !newCourseName.trim()) return
+    const course: EnrolledCourse = {
+      id: `course-${Date.now()}`,
+      code: newCourseCode.trim().toUpperCase(),
+      name: newCourseName.trim(),
+      color: newCourseColor,
+      semester: academicSemester,
+      selected: true,
+    }
+    setAcademicCourses(prev => [...prev, course])
+    setNewCourseCode('')
+    setNewCourseName('')
+    setShowAddCourse(false)
+  }
+
+  const handleRemoveCourse = (id: string) => {
+    setAcademicCourses(prev => prev.filter(c => c.id !== id))
+  }
 
   const avatarUrl = useAvatar(authenticatedApi, userInfo?.id)
 
@@ -373,6 +450,202 @@ export default function SettingsPage() {
               >
                 <Copy size={14} />
               </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Academic & Student Profile */}
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between px-1">
+            <SectionLabel>Academic &amp; Student Profile</SectionLabel>
+            <button
+              type="button"
+              onClick={() => setIsEditingAcademic(!isEditingAcademic)}
+              className="text-[12px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Pencil size={13} />
+              {isEditingAcademic ? 'Cancel' : 'Edit Academic Setup'}
+            </button>
+          </div>
+
+          <div className="divide-y divide-kumo-line overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
+            {/* Campus & Degree Card */}
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/15 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                  <GraduationCap size={22} weight="fill" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  {isEditingAcademic ? (
+                    <div className="space-y-2">
+                      <FieldLabel>University or College Campus</FieldLabel>
+                      <input
+                        value={academicUni}
+                        onChange={(e) => setAcademicUni(e.target.value)}
+                        placeholder="e.g. University of Nairobi, JKUAT, MIT..."
+                        className={INPUT}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <h3 className="text-[15px] font-semibold tracking-[-0.25px] text-kumo-default truncate">
+                        {studentProfile.university}
+                      </h3>
+                      <p className="text-[12px] text-indigo-400 font-medium truncate mt-0.5">
+                        {studentProfile.degreeProgram} · {studentProfile.academicYear}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {isEditingAcademic && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <FieldLabel>Degree Program</FieldLabel>
+                    <input
+                      value={academicDegree}
+                      onChange={(e) => setAcademicDegree(e.target.value)}
+                      placeholder="e.g. B.Sc. Computer Science"
+                      className={`mt-1.5 ${INPUT}`}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Academic Standing / Year</FieldLabel>
+                    <input
+                      value={academicYear}
+                      onChange={(e) => setAcademicYear(e.target.value)}
+                      placeholder="e.g. 3rd Year (Junior)"
+                      className={`mt-1.5 ${INPUT}`}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Semester / Term</FieldLabel>
+                    <select
+                      value={academicSemester}
+                      onChange={(e) => setAcademicSemester(e.target.value)}
+                      className={`mt-1.5 ${INPUT}`}
+                    >
+                      {SEMESTERS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel>Citation Standard</FieldLabel>
+                    <select
+                      value={academicCitation}
+                      onChange={(e) => setAcademicCitation(e.target.value)}
+                      className={`mt-1.5 ${INPUT}`}
+                    >
+                      {CITATION_STYLES.map((c) => (
+                        <option key={c.id} value={c.id}>{c.label} ({c.id})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Enrolled Courses */}
+            <div className="p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <FieldLabel>Enrolled Courses ({academicCourses.length})</FieldLabel>
+                {isEditingAcademic && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCourse(!showAddCourse)}
+                    className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus size={12} weight="bold" />
+                    Add Course
+                  </button>
+                )}
+              </div>
+
+              {isEditingAcademic && showAddCourse && (
+                <div className="p-3 rounded-lg border border-indigo-500/30 bg-indigo-500/5 space-y-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      value={newCourseCode}
+                      onChange={(e) => setNewCourseCode(e.target.value)}
+                      placeholder="Code (e.g. CS 301)"
+                      className="px-2.5 py-1.5 text-xs rounded-md border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none"
+                    />
+                    <input
+                      value={newCourseName}
+                      onChange={(e) => setNewCourseName(e.target.value)}
+                      placeholder="Course Name"
+                      className="col-span-2 px-2.5 py-1.5 text-xs rounded-md border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-1">
+                      {COURSE_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setNewCourseColor(c)}
+                          className={`w-3.5 h-3.5 rounded-full transition-transform ${
+                            newCourseColor === c ? 'ring-2 ring-white scale-110' : ''
+                          }`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddCourse}
+                      disabled={!newCourseCode.trim() || !newCourseName.trim()}
+                      className="text-[11px] font-semibold bg-indigo-600 text-white px-3 py-1 rounded-md hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      Save Course
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {academicCourses.map((c) => (
+                  <span
+                    key={c.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-kumo-line bg-kumo-tint text-[12px] font-medium text-kumo-default"
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: c.color }}
+                    />
+                    <strong className="font-semibold">{c.code}</strong>
+                    <span className="text-kumo-subtle truncate max-w-[150px]">{c.name}</span>
+                    {isEditingAcademic && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCourse(c.id)}
+                        className="text-kumo-inactive hover:text-red-400 ml-1 cursor-pointer"
+                        title="Remove course"
+                      >
+                        <Trash size={12} />
+                      </button>
+                    )}
+                  </span>
+                ))}
+                {academicCourses.length === 0 && (
+                  <p className="text-xs text-kumo-subtle italic">No courses currently enrolled.</p>
+                )}
+              </div>
+
+              {isEditingAcademic && (
+                <div className="pt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSaveAcademic}
+                    className={PRIMARY_BTN}
+                  >
+                    <Check size={14} weight="bold" />
+                    Save Academic Profile
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </section>

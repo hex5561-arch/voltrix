@@ -1,0 +1,1271 @@
+import type { Icon } from '@phosphor-icons/react';
+import {
+  Code,
+  Scales,
+  TrendUp,
+  Stethoscope,
+  BookOpen,
+  Buildings,
+  Cpu,
+} from '@phosphor-icons/react';
+
+export interface University {
+  id: string;
+  name: string;
+  country: string;
+  countryCode: string;
+  code: string;
+  region: string;
+  domains: string[];
+  city: string;
+  acronyms?: string[];
+  website?: string;
+}
+
+export interface DefaultCourse {
+  code: string;
+  name: string;
+  instructor: string;
+  color: string;
+  selected: boolean;
+}
+
+export interface Persona {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: Icon;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  citation: string;
+  defaultDegrees: string[];
+  defaultCourses: DefaultCourse[];
+  focusFeatures: string[];
+}
+
+export interface AcademicLevel {
+  id: string;
+  label: string;
+  years: string[];
+}
+
+export interface CitationStyle {
+  id: string;
+  label: string;
+  desc: string;
+}
+
+
+export const UNIVERSITIES: University[] = [
+  // ── Global Top Tier (North America, Europe, Asia-Pacific) ──
+  {
+    id: 'mit',
+    name: 'Massachusetts Institute of Technology (MIT)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'MIT',
+    region: 'Global',
+    domains: ['mit.edu'],
+    city: 'Cambridge, MA',
+    acronyms: ['MIT']
+  },
+  {
+    id: 'stanford',
+    name: 'Stanford University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Stanford',
+    region: 'Global',
+    domains: ['stanford.edu'],
+    city: 'Stanford, CA',
+    acronyms: ['Stanford']
+  },
+  {
+    id: 'harvard',
+    name: 'Harvard University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Harvard',
+    region: 'Global',
+    domains: ['harvard.edu'],
+    city: 'Cambridge, MA',
+    acronyms: ['Harvard']
+  },
+  {
+    id: 'oxford',
+    name: 'University of Oxford',
+    country: 'United Kingdom',
+    countryCode: 'GB',
+    code: 'Oxford',
+    region: 'Global',
+    domains: ['ox.ac.uk'],
+    city: 'Oxford',
+    acronyms: ['Oxford', 'Oxon']
+  },
+  {
+    id: 'cambridge',
+    name: 'University of Cambridge',
+    country: 'United Kingdom',
+    countryCode: 'GB',
+    code: 'Cambridge',
+    region: 'Global',
+    domains: ['cam.ac.uk'],
+    city: 'Cambridge',
+    acronyms: ['Cambridge', 'Cantab']
+  },
+  {
+    id: 'berkeley',
+    name: 'University of California, Berkeley (UC Berkeley)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'UC Berkeley',
+    region: 'Global',
+    domains: ['berkeley.edu'],
+    city: 'Berkeley, CA',
+    acronyms: ['UCB', 'Cal', 'Berkeley']
+  },
+  {
+    id: 'imperial',
+    name: 'Imperial College London',
+    country: 'United Kingdom',
+    countryCode: 'GB',
+    code: 'Imperial',
+    region: 'Global',
+    domains: ['imperial.ac.uk'],
+    city: 'London',
+    acronyms: ['Imperial', 'ICL']
+  },
+  {
+    id: 'toronto',
+    name: 'University of Toronto',
+    country: 'Canada',
+    countryCode: 'CA',
+    code: 'UofT',
+    region: 'Global',
+    domains: ['utoronto.ca'],
+    city: 'Toronto',
+    acronyms: ['UofT', 'UToronto']
+  },
+  {
+    id: 'eth_zurich',
+    name: 'ETH Zürich (Swiss Federal Institute of Technology)',
+    country: 'Switzerland',
+    countryCode: 'CH',
+    code: 'ETH',
+    region: 'Global',
+    domains: ['ethz.ch'],
+    city: 'Zürich',
+    acronyms: ['ETH', 'ETHZ']
+  },
+  {
+    id: 'nus',
+    name: 'National University of Singapore (NUS)',
+    country: 'Singapore',
+    countryCode: 'SG',
+    code: 'NUS',
+    region: 'Global',
+    domains: ['nus.edu.sg'],
+    city: 'Singapore',
+    acronyms: ['NUS']
+  },
+  {
+    id: 'columbia',
+    name: 'Columbia University in the City of New York',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Columbia',
+    region: 'Global',
+    domains: ['columbia.edu'],
+    city: 'New York, NY',
+    acronyms: ['Columbia']
+  },
+  {
+    id: 'cmu',
+    name: 'Carnegie Mellon University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'CMU',
+    region: 'Global',
+    domains: ['cmu.edu'],
+    city: 'Pittsburgh, PA',
+    acronyms: ['CMU']
+  },
+  {
+    id: 'ucla',
+    name: 'University of California, Los Angeles (UCLA)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'UCLA',
+    region: 'Global',
+    domains: ['ucla.edu'],
+    city: 'Los Angeles, CA',
+    acronyms: ['UCLA']
+  },
+  {
+    id: 'princeton',
+    name: 'Princeton University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Princeton',
+    region: 'Global',
+    domains: ['princeton.edu'],
+    city: 'Princeton, NJ',
+    acronyms: ['Princeton']
+  },
+  {
+    id: 'yale',
+    name: 'Yale University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Yale',
+    region: 'Global',
+    domains: ['yale.edu'],
+    city: 'New Haven, CT',
+    acronyms: ['Yale']
+  },
+  {
+    id: 'nyu',
+    name: 'New York University (NYU)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'NYU',
+    region: 'Global',
+    domains: ['nyu.edu'],
+    city: 'New York, NY',
+    acronyms: ['NYU']
+  },
+  {
+    id: 'waterloo',
+    name: 'University of Waterloo',
+    country: 'Canada',
+    countryCode: 'CA',
+    code: 'UWaterloo',
+    region: 'Global',
+    domains: ['uwaterloo.ca'],
+    city: 'Waterloo',
+    acronyms: ['UW', 'UWaterloo']
+  },
+  {
+    id: 'melbourne',
+    name: 'University of Melbourne',
+    country: 'Australia',
+    countryCode: 'AU',
+    code: 'UniMelb',
+    region: 'Global',
+    domains: ['unimelb.edu.au'],
+    city: 'Melbourne',
+    acronyms: ['UniMelb']
+  },
+  {
+    id: 'tsinghua',
+    name: 'Tsinghua University',
+    country: 'China',
+    countryCode: 'CN',
+    code: 'THU',
+    region: 'Global',
+    domains: ['tsinghua.edu.cn'],
+    city: 'Beijing',
+    acronyms: ['THU']
+  },
+  {
+    id: 'pku',
+    name: 'Peking University',
+    country: 'China',
+    countryCode: 'CN',
+    code: 'PKU',
+    region: 'Global',
+    domains: ['pku.edu.cn'],
+    city: 'Beijing',
+    acronyms: ['PKU']
+  },
+  {
+    id: 'edinburgh',
+    name: 'University of Edinburgh',
+    country: 'United Kingdom',
+    countryCode: 'GB',
+    code: 'Edinburgh',
+    region: 'Global',
+    domains: ['ed.ac.uk'],
+    city: 'Edinburgh',
+    acronyms: ['Edinburgh']
+  },
+  {
+    id: 'ucl',
+    name: 'University College London (UCL)',
+    country: 'United Kingdom',
+    countryCode: 'GB',
+    code: 'UCL',
+    region: 'Global',
+    domains: ['ucl.ac.uk'],
+    city: 'London',
+    acronyms: ['UCL']
+  },
+  {
+    id: 'lse',
+    name: 'London School of Economics and Political Science (LSE)',
+    country: 'United Kingdom',
+    countryCode: 'GB',
+    code: 'LSE',
+    region: 'Global',
+    domains: ['lse.ac.uk'],
+    city: 'London',
+    acronyms: ['LSE']
+  },
+  {
+    id: 'cornell',
+    name: 'Cornell University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Cornell',
+    region: 'Global',
+    domains: ['cornell.edu'],
+    city: 'Ithaca, NY',
+    acronyms: ['Cornell']
+  },
+  {
+    id: 'caltech',
+    name: 'California Institute of Technology (Caltech)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Caltech',
+    region: 'Global',
+    domains: ['caltech.edu'],
+    city: 'Pasadena, CA',
+    acronyms: ['Caltech']
+  },
+  {
+    id: 'upenn',
+    name: 'University of Pennsylvania (Penn)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'UPenn',
+    region: 'Global',
+    domains: ['upenn.edu'],
+    city: 'Philadelphia, PA',
+    acronyms: ['UPenn', 'Penn']
+  },
+  {
+    id: 'brown',
+    name: 'Brown University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Brown',
+    region: 'Global',
+    domains: ['brown.edu'],
+    city: 'Providence, RI',
+    acronyms: ['Brown']
+  },
+  {
+    id: 'dartmouth',
+    name: 'Dartmouth College',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Dartmouth',
+    region: 'Global',
+    domains: ['dartmouth.edu'],
+    city: 'Hanover, NH',
+    acronyms: ['Dartmouth']
+  },
+  {
+    id: 'northwestern',
+    name: 'Northwestern University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'Northwestern',
+    region: 'Global',
+    domains: ['northwestern.edu'],
+    city: 'Evanston, IL',
+    acronyms: ['NU']
+  },
+  {
+    id: 'uchicago',
+    name: 'University of Chicago',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'UChicago',
+    region: 'Global',
+    domains: ['uchicago.edu'],
+    city: 'Chicago, IL',
+    acronyms: ['UChicago', 'UC']
+  },
+  {
+    id: 'jhu',
+    name: 'Johns Hopkins University',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'JHU',
+    region: 'Global',
+    domains: ['jhu.edu'],
+    city: 'Baltimore, MD',
+    acronyms: ['JHU']
+  },
+  {
+    id: 'umich',
+    name: 'University of Michigan (Ann Arbor)',
+    country: 'United States',
+    countryCode: 'US',
+    code: 'UMich',
+    region: 'Global',
+    domains: ['umich.edu'],
+    city: 'Ann Arbor, MI',
+    acronyms: ['UMich']
+  },
+  {
+    id: 'ubc',
+    name: 'University of British Columbia',
+    country: 'Canada',
+    countryCode: 'CA',
+    code: 'UBC',
+    region: 'Global',
+    domains: ['ubc.ca'],
+    city: 'Vancouver',
+    acronyms: ['UBC']
+  },
+  {
+    id: 'mcgill',
+    name: 'McGill University',
+    country: 'Canada',
+    countryCode: 'CA',
+    code: 'McGill',
+    region: 'Global',
+    domains: ['mcgill.ca'],
+    city: 'Montreal',
+    acronyms: ['McGill']
+  },
+  {
+    id: 'sydney',
+    name: 'University of Sydney',
+    country: 'Australia',
+    countryCode: 'AU',
+    code: 'USYD',
+    region: 'Global',
+    domains: ['sydney.edu.au'],
+    city: 'Sydney',
+    acronyms: ['USYD']
+  },
+  {
+    id: 'anu',
+    name: 'Australian National University (ANU)',
+    country: 'Australia',
+    countryCode: 'AU',
+    code: 'ANU',
+    region: 'Global',
+    domains: ['anu.edu.au'],
+    city: 'Canberra',
+    acronyms: ['ANU']
+  },
+  {
+    id: 'utokyo',
+    name: 'University of Tokyo',
+    country: 'Japan',
+    countryCode: 'JP',
+    code: 'UTokyo',
+    region: 'Global',
+    domains: ['u-tokyo.ac.jp'],
+    city: 'Tokyo',
+    acronyms: ['Todai', 'UTokyo']
+  },
+  {
+    id: 'tum',
+    name: 'Technical University of Munich (TUM)',
+    country: 'Germany',
+    countryCode: 'DE',
+    code: 'TUM',
+    region: 'Global',
+    domains: ['tum.de'],
+    city: 'Munich',
+    acronyms: ['TUM']
+  },
+  {
+    id: 'epfl',
+    name: 'École Polytechnique Fédérale de Lausanne (EPFL)',
+    country: 'Switzerland',
+    countryCode: 'CH',
+    code: 'EPFL',
+    region: 'Global',
+    domains: ['epfl.ch'],
+    city: 'Lausanne',
+    acronyms: ['EPFL']
+  },
+
+  // ── East & Central Africa ──
+  {
+    id: 'makerere',
+    name: 'Makerere University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'MAK',
+    region: 'East Africa',
+    domains: ['mak.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['MAK']
+  },
+  {
+    id: 'uon',
+    name: 'University of Nairobi',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'UoN',
+    region: 'East Africa',
+    domains: ['uonbi.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['UoN', 'UON']
+  },
+  {
+    id: 'mubs',
+    name: 'Makerere University Business School (MUBS)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'MUBS',
+    region: 'East Africa',
+    domains: ['mubs.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['MUBS']
+  },
+  {
+    id: 'strathmore',
+    name: 'Strathmore University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Strathmore',
+    region: 'East Africa',
+    domains: ['strathmore.edu'],
+    city: 'Nairobi',
+    acronyms: ['SU', 'Strathmore']
+  },
+  {
+    id: 'jkuat',
+    name: 'Jomo Kenyatta University of Agriculture & Technology (JKUAT)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'JKUAT',
+    region: 'East Africa',
+    domains: ['jkuat.ac.ke'],
+    city: 'Juja, Nairobi',
+    acronyms: ['JKUAT']
+  },
+  {
+    id: 'kenyatta',
+    name: 'Kenyatta University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KU',
+    region: 'East Africa',
+    domains: ['ku.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['KU']
+  },
+  {
+    id: 'ucu',
+    name: 'Uganda Christian University (UCU)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'UCU',
+    region: 'East Africa',
+    domains: ['ucu.ac.ug'],
+    city: 'Mukono',
+    acronyms: ['UCU']
+  },
+  {
+    id: 'kyambogo',
+    name: 'Kyambogo University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'KYU',
+    region: 'East Africa',
+    domains: ['kyu.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['KYU']
+  },
+  {
+    id: 'udsm',
+    name: 'University of Dar es Salaam',
+    country: 'Tanzania',
+    countryCode: 'TZ',
+    code: 'UDSM',
+    region: 'East Africa',
+    domains: ['udsm.ac.tz'],
+    city: 'Dar es Salaam',
+    acronyms: ['UDSM']
+  },
+  {
+    id: 'ur',
+    name: 'University of Rwanda',
+    country: 'Rwanda',
+    countryCode: 'RW',
+    code: 'UR',
+    region: 'East Africa',
+    domains: ['ur.ac.rw'],
+    city: 'Kigali',
+    acronyms: ['UR']
+  },
+  {
+    id: 'must_ug',
+    name: 'Mbarara University of Science & Technology (MUST)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'MUST',
+    region: 'East Africa',
+    domains: ['must.ac.ug'],
+    city: 'Mbarara',
+    acronyms: ['MUST']
+  },
+  {
+    id: 'usiu',
+    name: 'United States International University Africa (USIU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'USIU',
+    region: 'East Africa',
+    domains: ['usiu.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['USIU']
+  },
+  {
+    id: 'kiu',
+    name: 'Kampala International University (KIU)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'KIU',
+    region: 'East Africa',
+    domains: ['kiu.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['KIU']
+  },
+  {
+    id: 'kyotoiu',
+    name: 'Kyoto International University',
+    country: 'Japan',
+    countryCode: 'JP',
+    code: 'KIU',
+    region: 'Asia',
+    domains: ['kyotoiu.ac.jp'],
+    website: 'http://www.kyotoiu.ac.jp/',
+    city: 'Kyoto',
+    acronyms: ['KIU']
+  },
+  {
+    id: 'daystar',
+    name: 'Daystar University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Daystar',
+    region: 'East Africa',
+    domains: ['daystar.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['Daystar']
+  },
+  {
+    id: 'cuea',
+    name: 'Catholic University of Eastern Africa (CUEA)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'CUEA',
+    region: 'East Africa',
+    domains: ['cuea.edu'],
+    city: 'Nairobi',
+    acronyms: ['CUEA']
+  },
+  {
+    id: 'egerton',
+    name: 'Egerton University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Egerton',
+    region: 'East Africa',
+    domains: ['egerton.ac.ke'],
+    city: 'Njoro',
+    acronyms: ['Egerton']
+  },
+  {
+    id: 'moi',
+    name: 'Moi University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Moi',
+    region: 'East Africa',
+    domains: ['mu.ac.ke'],
+    city: 'Eldoret',
+    acronyms: ['MU', 'Moi']
+  },
+  {
+    id: 'mku',
+    name: 'Mount Kenya University (MKU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'MKU',
+    region: 'East Africa',
+    domains: ['mku.ac.ke'],
+    city: 'Thika',
+    acronyms: ['MKU']
+  },
+  {
+    id: 'umu',
+    name: 'Uganda Martyrs University (UMU)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'UMU',
+    region: 'East Africa',
+    domains: ['umu.ac.ug'],
+    city: 'Nkozi',
+    acronyms: ['UMU']
+  },
+  {
+    id: 'vu_ug',
+    name: 'Victoria University Uganda',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'VU',
+    region: 'East Africa',
+    domains: ['vu.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['VU']
+  },
+  {
+    id: 'cavendish_ug',
+    name: 'Cavendish University Uganda',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'CUU',
+    region: 'East Africa',
+    domains: ['cavendish.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['CUU']
+  },
+  {
+    id: 'isbat',
+    name: 'ISBAT University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'ISBAT',
+    region: 'East Africa',
+    domains: ['isbat.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['ISBAT']
+  },
+  {
+    id: 'gulu',
+    name: 'Gulu University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'GU',
+    region: 'East Africa',
+    domains: ['gu.ac.ug'],
+    city: 'Gulu',
+    acronyms: ['GU']
+  },
+  {
+    id: 'busitema',
+    name: 'Busitema University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'BU',
+    region: 'East Africa',
+    domains: ['busitema.ac.ug'],
+    city: 'Busia',
+    acronyms: ['BU']
+  },
+  {
+    id: 'kabale',
+    name: 'Kabale University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'KAB',
+    region: 'East Africa',
+    domains: ['kab.ac.ug'],
+    city: 'Kabale',
+    acronyms: ['KAB']
+  },
+  {
+    id: 'sua',
+    name: 'Sokoine University of Agriculture',
+    country: 'Tanzania',
+    countryCode: 'TZ',
+    code: 'SUA',
+    region: 'East Africa',
+    domains: ['sua.ac.tz'],
+    city: 'Morogoro',
+    acronyms: ['SUA']
+  },
+  {
+    id: 'aau_et',
+    name: 'Addis Ababa University',
+    country: 'Ethiopia',
+    countryCode: 'ET',
+    code: 'AAU',
+    region: 'East Africa',
+    domains: ['aau.edu.et'],
+    city: 'Addis Ababa',
+    acronyms: ['AAU']
+  },
+
+  // ── West & Southern & North Africa ──
+  {
+    id: 'uct',
+    name: 'University of Cape Town (UCT)',
+    country: 'South Africa',
+    countryCode: 'ZA',
+    code: 'UCT',
+    region: 'Southern Africa',
+    domains: ['uct.ac.za'],
+    city: 'Cape Town',
+    acronyms: ['UCT']
+  },
+  {
+    id: 'wits',
+    name: 'University of the Witwatersrand (Wits)',
+    country: 'South Africa',
+    countryCode: 'ZA',
+    code: 'Wits',
+    region: 'Southern Africa',
+    domains: ['wits.ac.za'],
+    city: 'Johannesburg',
+    acronyms: ['Wits']
+  },
+  {
+    id: 'stellenbosch',
+    name: 'Stellenbosch University',
+    country: 'South Africa',
+    countryCode: 'ZA',
+    code: 'Stell',
+    region: 'Southern Africa',
+    domains: ['sun.ac.za'],
+    city: 'Stellenbosch',
+    acronyms: ['SU', 'Stell']
+  },
+  {
+    id: 'pretoria',
+    name: 'University of Pretoria',
+    country: 'South Africa',
+    countryCode: 'ZA',
+    code: 'UP',
+    region: 'Southern Africa',
+    domains: ['up.ac.za'],
+    city: 'Pretoria',
+    acronyms: ['UP']
+  },
+  {
+    id: 'ukzn',
+    name: 'University of KwaZulu-Natal',
+    country: 'South Africa',
+    countryCode: 'ZA',
+    code: 'UKZN',
+    region: 'Southern Africa',
+    domains: ['ukzn.ac.za'],
+    city: 'Durban',
+    acronyms: ['UKZN']
+  },
+  {
+    id: 'unilag',
+    name: 'University of Lagos (UNILAG)',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'UNILAG',
+    region: 'West Africa',
+    domains: ['unilag.edu.ng'],
+    city: 'Lagos',
+    acronyms: ['UNILAG']
+  },
+  {
+    id: 'ui_ibadan',
+    name: 'University of Ibadan (UI)',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'UI',
+    region: 'West Africa',
+    domains: ['ui.edu.ng'],
+    city: 'Ibadan',
+    acronyms: ['UI']
+  },
+  {
+    id: 'covenant',
+    name: 'Covenant University',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'Covenant',
+    region: 'West Africa',
+    domains: ['covenantuniversity.edu.ng'],
+    city: 'Ota, Ogun State',
+    acronyms: ['CU', 'Covenant']
+  },
+  {
+    id: 'oau',
+    name: 'Obafemi Awolowo University (OAU)',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'OAU',
+    region: 'West Africa',
+    domains: ['oauife.edu.ng'],
+    city: 'Ile-Ife',
+    acronyms: ['OAU']
+  },
+  {
+    id: 'abu_zaria',
+    name: 'Ahmadu Bello University (ABU)',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'ABU',
+    region: 'West Africa',
+    domains: ['abu.edu.ng'],
+    city: 'Zaria',
+    acronyms: ['ABU']
+  },
+  {
+    id: 'unn',
+    name: 'University of Nigeria, Nsukka (UNN)',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'UNN',
+    region: 'West Africa',
+    domains: ['unn.edu.ng'],
+    city: 'Nsukka',
+    acronyms: ['UNN']
+  },
+  {
+    id: 'futa',
+    name: 'Federal University of Technology Akure (FUTA)',
+    country: 'Nigeria',
+    countryCode: 'NG',
+    code: 'FUTA',
+    region: 'West Africa',
+    domains: ['futa.edu.ng'],
+    city: 'Akure',
+    acronyms: ['FUTA']
+  },
+  {
+    id: 'knust',
+    name: 'Kwame Nkrumah University of Science & Technology (KNUST)',
+    country: 'Ghana',
+    countryCode: 'GH',
+    code: 'KNUST',
+    region: 'West Africa',
+    domains: ['knust.edu.gh'],
+    city: 'Kumasi',
+    acronyms: ['KNUST']
+  },
+  {
+    id: 'ug_legon',
+    name: 'University of Ghana (Legon)',
+    country: 'Ghana',
+    countryCode: 'GH',
+    code: 'UG',
+    region: 'West Africa',
+    domains: ['ug.edu.gh'],
+    city: 'Accra',
+    acronyms: ['UG', 'Legon']
+  },
+  {
+    id: 'ashesi',
+    name: 'Ashesi University',
+    country: 'Ghana',
+    countryCode: 'GH',
+    code: 'Ashesi',
+    region: 'West Africa',
+    domains: ['ashesi.edu.gh'],
+    city: 'Berekuso',
+    acronyms: ['Ashesi']
+  },
+  {
+    id: 'cairo',
+    name: 'Cairo University',
+    country: 'Egypt',
+    countryCode: 'EG',
+    code: 'CU',
+    region: 'North Africa',
+    domains: ['cu.edu.eg'],
+    city: 'Giza',
+    acronyms: ['CU']
+  },
+  {
+    id: 'auc_egypt',
+    name: 'The American University in Cairo (AUC)',
+    country: 'Egypt',
+    countryCode: 'EG',
+    code: 'AUC',
+    region: 'North Africa',
+    domains: ['aucegypt.edu'],
+    city: 'New Cairo',
+    acronyms: ['AUC']
+  },
+  {
+    id: 'unza',
+    name: 'University of Zambia (UNZA)',
+    country: 'Zambia',
+    countryCode: 'ZM',
+    code: 'UNZA',
+    region: 'Southern Africa',
+    domains: ['unza.zm'],
+    city: 'Lusaka',
+    acronyms: ['UNZA']
+  },
+  {
+    id: 'uz_zim',
+    name: 'University of Zimbabwe',
+    country: 'Zimbabwe',
+    countryCode: 'ZW',
+    code: 'UZ',
+    region: 'Southern Africa',
+    domains: ['uz.ac.zw'],
+    city: 'Harare',
+    acronyms: ['UZ']
+  },
+  {
+    id: 'ub_botswana',
+    name: 'University of Botswana',
+    country: 'Botswana',
+    countryCode: 'BW',
+    code: 'UB',
+    region: 'Southern Africa',
+    domains: ['ub.bw'],
+    city: 'Gaborone',
+    acronyms: ['UB']
+  }
+];
+
+export const PERSONAS: Persona[] = [
+  {
+    id: 'engineering',
+    title: 'STEM & Engineering',
+    subtitle: 'Computer Science, Software, Electrical, Mechanical & Math',
+    icon: Code,
+    color: '#6366f1',
+    bgColor: 'from-indigo-950/60 to-slate-900',
+    borderColor: 'border-indigo-500/40',
+    citation: 'IEEE',
+    defaultDegrees: [
+      'B.Sc. Computer Science',
+      'B.Eng. Software Engineering',
+      'B.Sc. Electrical & Electronic Engineering',
+      'B.Sc. Mechanical & Mechatronics Engineering',
+      'B.Sc. Mathematics & Statistics',
+      'M.Sc. Computer Science',
+      'Ph.D. in Computer Science & Robotics'
+    ],
+    defaultCourses: [
+      { code: 'CS 301', name: 'Distributed Systems & Cloud Computing', instructor: 'Dr. Elena Rostova', color: '#6366f1', selected: true },
+      { code: 'MATH 240', name: 'Multivariable Calculus & Linear Optimization', instructor: 'Dr. Sarah Jenkins', color: '#f59e0b', selected: true },
+      { code: 'CS 210', name: 'Data Structures & Algorithmic Complexity', instructor: 'Prof. Alan Thorne', color: '#10b981', selected: true },
+      { code: 'CS 350', name: 'Artificial Intelligence & Machine Learning', instructor: 'Dr. Marcus Vance', color: '#8b5cf6', selected: false },
+      { code: 'ECE 220', name: 'Digital Logic & Computer Organization', instructor: 'Dr. Katherine Wu', color: '#06b6d4', selected: false },
+      { code: 'PHYS 201', name: 'Classical Mechanics & Electromagnetism', instructor: 'Prof. Richard Hall', color: '#ec4899', selected: false }
+    ],
+    focusFeatures: [
+      'Big-O Complexity & Socratic Code Review',
+      'LaTeX Mathematical & Physics Derivations ($$...$$)',
+      'Algorithmic Proofs & Technical Spec Generator',
+      'IEEE Citation Standard'
+    ]
+  },
+  {
+    id: 'datascience',
+    title: 'Data Science & AI',
+    subtitle: 'Machine Learning, Deep Learning, Big Data & Analytics',
+    icon: Cpu,
+    color: '#3b82f6',
+    bgColor: 'from-blue-950/60 to-slate-900',
+    borderColor: 'border-blue-500/40',
+    citation: 'IEEE',
+    defaultDegrees: [
+      'B.Sc. Data Science & Artificial Intelligence',
+      'B.Sc. Applied Statistics & Analytics',
+      'M.Sc. Machine Learning & Neural Systems',
+      'Ph.D. in Data Science'
+    ],
+    defaultCourses: [
+      { code: 'DS 301', name: 'Statistical Learning & Deep Neural Networks', instructor: 'Dr. Andrew Ngoma', color: '#3b82f6', selected: true },
+      { code: 'MATH 310', name: 'Linear Algebra & Probability for Machine Learning', instructor: 'Prof. Gilbert Strang', color: '#f59e0b', selected: true },
+      { code: 'DATA 220', name: 'Big Data Ingestion & Apache Spark Pipelines', instructor: 'Dr. Sophia Chen', color: '#10b981', selected: true },
+      { code: 'NLP 401', name: 'Large Language Models & Natural Language Processing', instructor: 'Dr. Liam Patel', color: '#8b5cf6', selected: false }
+    ],
+    focusFeatures: [
+      'Jupyter / Python Code Optimization & Pandas profiling',
+      'LaTeX Matrix & Tensor Derivations',
+      'Automated Experiment Hypothesis Testing',
+      'IEEE / ACM Citation Standards'
+    ]
+  },
+  {
+    id: 'law',
+    title: 'Law & Jurisprudence',
+    subtitle: 'Constitutional, Corporate, Criminal, Commercial & International Law',
+    icon: Scales,
+    color: '#f59e0b',
+    bgColor: 'from-amber-950/60 to-slate-900',
+    borderColor: 'border-amber-500/40',
+    citation: 'Bluebook',
+    defaultDegrees: [
+      'LL.B. Bachelor of Laws',
+      'LL.M. Corporate & Commercial Law',
+      'LL.M. International Human Rights',
+      'Juris Doctor (J.D.)',
+      'Ph.D. in Jurisprudence'
+    ],
+    defaultCourses: [
+      { code: 'LAW 101', name: 'Constitutional Jurisprudence & Human Rights', instructor: 'Prof. H.L.A. Hart', color: '#f59e0b', selected: true },
+      { code: 'LAW 240', name: 'Tort & Contractual Obligations', instructor: 'Dr. Lord Denning', color: '#6366f1', selected: true },
+      { code: 'LAW 310', name: 'Criminal Law, Procedure & Evidence', instructor: 'Justice Aloma Mukhtar', color: '#ef4444', selected: true },
+      { code: 'LAW 405', name: 'Commercial Arbitration & International Trade', instructor: 'Dr. Christian Owoeye', color: '#10b981', selected: false },
+      { code: 'LAW 330', name: 'Property, Land Law & Equity', instructor: 'Prof. Sandra Day', color: '#8b5cf6', selected: false }
+    ],
+    focusFeatures: [
+      'IRAC Method Analysis (Issue, Rule, Application, Conclusion)',
+      'Statutory & Case Law Precedent Audit',
+      'Bluebook / OSCOLA Citation Standard',
+      'Legal Precision & Appellate Argumentative Rigor'
+    ]
+  },
+  {
+    id: 'bba',
+    title: 'Business & Finance',
+    subtitle: 'Corporate Finance, Accounting, Strategy & MBA Management',
+    icon: TrendUp,
+    color: '#10b981',
+    bgColor: 'from-emerald-950/60 to-slate-900',
+    borderColor: 'border-emerald-500/40',
+    citation: 'Harvard',
+    defaultDegrees: [
+      'Bachelor of Business Administration (BBA)',
+      'B.Sc. Finance & Banking',
+      'B.Sc. Accounting & Forensic Auditing',
+      'Master of Business Administration (MBA)',
+      'M.Sc. Quantitative Finance'
+    ],
+    defaultCourses: [
+      { code: 'FIN 320', name: 'Corporate Valuation & DCF Financial Modeling', instructor: 'Prof. Aswath Damodaran', color: '#10b981', selected: true },
+      { code: 'MGT 401', name: 'Strategic Enterprise Leadership & Governance', instructor: 'Prof. Michael Porter', color: '#6366f1', selected: true },
+      { code: 'ECON 201', name: 'Applied Econometrics & Microeconomic Theory', instructor: 'Dr. Esther Duflo', color: '#f59e0b', selected: true },
+      { code: 'MKT 210', name: 'Global Brand Strategy & Consumer Analytics', instructor: 'Dr. Philip Kotler', color: '#ec4899', selected: false },
+      { code: 'ACC 305', name: 'Managerial Cost Accounting & Auditing Standards', instructor: 'Prof. David Walker', color: '#06b6d4', selected: false }
+    ],
+    focusFeatures: [
+      'Executive Summary & Policy Memo Generator',
+      'DCF, WACC & Pro-Forma Financial Formulas',
+      'SWOT, PESTLE & Porter\'s 5 Forces Frameworks',
+      'Harvard & APA 7th Referencing Standards'
+    ]
+  },
+  {
+    id: 'medical',
+    title: 'Medicine & Health Sciences',
+    subtitle: 'Clinical Medicine, Pharmacy, Nursing, Public Health & Bio-Med',
+    icon: Stethoscope,
+    color: '#06b6d4',
+    bgColor: 'from-cyan-950/60 to-slate-900',
+    borderColor: 'border-cyan-500/40',
+    citation: 'AMA / NLM',
+    defaultDegrees: [
+      'MBChB / M.D. Medicine & Surgery',
+      'Bachelor of Pharmacy (B.Pharm)',
+      'B.Sc. Nursing & Midwifery',
+      'B.Sc. Biomedical Engineering',
+      'Master of Public Health (MPH)'
+    ],
+    defaultCourses: [
+      { code: 'MED 201', name: 'Human Gross Anatomy & Neurophysiology', instructor: 'Dr. William Osler', color: '#06b6d4', selected: true },
+      { code: 'PHARM 310', name: 'Clinical Pharmacology & Pharmacokinetics', instructor: 'Dr. Paul Farmer', color: '#3b82f6', selected: true },
+      { code: 'PATH 220', name: 'General Pathology & Immunopathology', instructor: 'Dr. Rudolf Virchow', color: '#ef4444', selected: true },
+      { code: 'PUBH 110', name: 'Global Epidemiological Models & Biostatistics', instructor: 'Dr. Soumya Swaminathan', color: '#10b981', selected: false },
+      { code: 'BIO 105', name: 'Molecular Genetics & Cellular Biochemistry', instructor: 'Dr. Jennifer Doudna', color: '#8b5cf6', selected: false }
+    ],
+    focusFeatures: [
+      'Clinical Case Synthesis & Differential Diagnosis',
+      'PubMed / AMA / NLM Citation Indexing',
+      'Flashcard Active Recall for Pharmacology & Anatomy',
+      'Bio-statistical Evidence Verification'
+    ]
+  },
+  {
+    id: 'humanities',
+    title: 'Humanities & Social Sciences',
+    subtitle: 'History, International Relations, Philosophy, Sociology & Literature',
+    icon: BookOpen,
+    color: '#ec4899',
+    bgColor: 'from-pink-950/60 to-slate-900',
+    borderColor: 'border-pink-500/40',
+    citation: 'MLA',
+    defaultDegrees: [
+      'B.A. International Relations & Diplomacy',
+      'B.A. Literature & Creative Writing',
+      'B.A. Philosophy, Politics & Economics (PPE)',
+      'B.A. Sociology & Anthropology',
+      'M.A. Global Geopolitics'
+    ],
+    defaultCourses: [
+      { code: 'HIST 205', name: 'Modern Geopolitical Conflicts & Diplomacy', instructor: 'Prof. Eric Hobsbawm', color: '#ec4899', selected: true },
+      { code: 'PHIL 102', name: 'Ethics, Epistemology & Political Philosophy', instructor: 'Dr. Martha Nussbaum', color: '#8b5cf6', selected: true },
+      { code: 'LIT 330', name: 'Post-Colonial & Critical Literary Theory', instructor: 'Prof. Ngũgĩ wa Thiong\'o', color: '#f59e0b', selected: true },
+      { code: 'SOC 210', name: 'Quantitative & Qualitative Social Research', instructor: 'Dr. Max Weber', color: '#10b981', selected: false }
+    ],
+    focusFeatures: [
+      'Thematic Close-Reading & Textual Synthesis',
+      'Historiographical Argument Mapping',
+      'MLA 9th / Chicago Style Citation Verification',
+      'Socratic Tone & Dialectical Essay Proofreader'
+    ]
+  },
+  {
+    id: 'commercial',
+    title: 'Architecture & Built Environment',
+    subtitle: 'Architecture, Urban Planning, Quantity Surveying & Real Estate',
+    icon: Buildings,
+    color: '#8b5cf6',
+    bgColor: 'from-purple-950/60 to-slate-900',
+    borderColor: 'border-purple-500/40',
+    citation: 'APA',
+    defaultDegrees: [
+      'Bachelor of Architecture (B.Arch)',
+      'B.Sc. Construction Management & Quantity Surveying',
+      'B.Sc. Urban & Regional Planning',
+      'B.Sc. Land Economics & Real Estate'
+    ],
+    defaultCourses: [
+      { code: 'ARCH 110', name: 'Architectural Design Studio & Spatial Theory', instructor: 'Prof. Zaha Hadid', color: '#8b5cf6', selected: true },
+      { code: 'URB 301', name: 'Sustainable Urban Planning & Smart Infrastructure', instructor: 'Dr. Jane Jacobs', color: '#10b981', selected: true },
+      { code: 'PROP 220', name: 'Commercial Real Estate Valuation & Investment', instructor: 'Dr. Arthur Jones', color: '#f59e0b', selected: true },
+      { code: 'CIVIL 205', name: 'Structural Mechanics & Building Code Compliance', instructor: 'Eng. David Ochieng', color: '#06b6d4', selected: false }
+    ],
+    focusFeatures: [
+      'Feasibility Study & Pro-Forma Investment Modeling',
+      'Building Code & Zoning Compliance Checklist',
+      'RICS Valuation Standards',
+      'Visual Concept Diagrams & Structural Matrices'
+    ]
+  }
+];
+
+export const ACADEMIC_LEVELS: AcademicLevel[] = [
+  { id: 'Undergraduate', label: 'Undergraduate', years: ['1st Year (Freshman)', '2nd Year (Sophomore)', '3rd Year (Junior)', '4th Year (Senior)', 'Finalist / 5th Year'] },
+  { id: 'Postgraduate', label: 'Postgraduate (Master\'s / MBA / LLM)', years: ['Year 1 (Coursework & Seminars)', 'Year 2 (Thesis / Capstone)', 'Final Defense'] },
+  { id: 'PhD', label: 'PhD / Doctoral Candidate', years: ['Year 1 (Proposal & Comprehensive Exams)', 'Year 2 (Fieldwork & Data Ingestion)', 'Year 3+ (Dissertation Writing)'] },
+];
+
+export const SEMESTERS: string[] = [
+  'Fall Semester 2026',
+  'Spring Semester 2027',
+  'Semester 1 (2026/2027)',
+  'Semester 2 (2026/2027)',
+  'Summer / Trimester Term',
+];
+
+export const CITATION_STYLES: CitationStyle[] = [
+  { id: 'APA', label: 'APA 7th Edition', desc: 'Social Sciences, Business, Psychology, Education' },
+  { id: 'IEEE', label: 'IEEE Style', desc: 'Computer Science, Electrical Engineering, AI, Physics' },
+  { id: 'MLA', label: 'MLA 9th Edition', desc: 'Literature, Humanities, Arts, Cultural Studies' },
+  { id: 'Harvard', label: 'Harvard Referencing', desc: 'Business Schools, Management, Economics' },
+  { id: 'Chicago', label: 'Chicago 17th (Notes & Bib)', desc: 'History, Political Science, Fine Arts' },
+  { id: 'Bluebook', label: 'Bluebook Uniform Legal', desc: 'US Law Schools, Court Briefs, Legal Law Reviews' },
+  { id: 'OSCOLA', label: 'OSCOLA Standard', desc: 'UK & Commonwealth Law, Oxford Legal Research' },
+  { id: 'AMA / NLM', label: 'AMA / NLM (Vancouver)', desc: 'Medicine, Clinical Pharmacology, Public Health' },
+];
+
+export const COURSE_COLORS: string[] = [
+  '#6366f1', // Indigo
+  '#f59e0b', // Amber
+  '#10b981', // Emerald
+  '#06b6d4', // Cyan
+  '#8b5cf6', // Purple
+  '#ec4899', // Pink
+  '#ef4444', // Red
+  '#3b82f6', // Blue
+];

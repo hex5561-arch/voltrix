@@ -19,7 +19,7 @@ import { AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, WORKERS_AI_OUTPUT_LI
   from "@gadgets/workshop-shared/api";
 import { AiGatewayConfig, getAiGatewayConfig, type AiGatewayLogRoute } from "./ai-gateway.js";
 import { completeText } from "./ai-invoke.js";
-import { bridgePdfAttachments } from "./chat-attachment-pdf.js";
+import { bridgePdfAttachments, bridgeMediaAttachments } from "./chat-attachment-pdf.js";
 
  /**
   * Routing to bill a user's own Cloudflare account for inference (BYOK path once the free tier is
@@ -342,11 +342,12 @@ function makeHandle(args: HandleArgs): ModelHandle {
           };
           await options.onResponse?.(response, responseModel);
         },
-        // PDF attachments ride pi image parts and are rewritten here into the provider's native
-        // document blocks (no-op for payloads without one; see chat-attachment-pdf.ts).
+        // PDF and media attachments ride pi image parts and are rewritten here into the provider's native
+        // document/video blocks (see chat-attachment-pdf.ts).
         onPayload: async (payload, payloadModel) => {
           const replaced = await options.onPayload?.(payload, payloadModel);
-          return bridgePdfAttachments(args.model.api, replaced ?? payload) ?? replaced;
+          const withPdf = bridgePdfAttachments(args.model.api, replaced ?? payload) ?? replaced ?? payload;
+          return bridgeMediaAttachments(args.model.api, withPdf) ?? withPdf;
         },
       };
       return streamFn(model, context, merged);

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { DropdownMenu } from '@cloudflare/kumo'
-import { Lightning } from '@phosphor-icons/react'
+import { Lightning, GraduationCap } from '@phosphor-icons/react'
 import { useAuthenticatedApi } from '../AuthContext'
 import { useAvatar } from '../useAvatar'
 import { MENU_CONTENT, MENU_ITEM, MENU_ITEM_DANGER, MENU_POSITIONER_STYLE } from './menuStyles'
@@ -39,9 +39,10 @@ export default function UserMenu() {
         <DropdownMenu.Content className={MENU_CONTENT} style={MENU_POSITIONER_STYLE}>
           <DropdownMenu.Item
             onClick={() => navigate({ to: '/profile' })}
-            className={MENU_ITEM}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-kumo-default hover:bg-kumo-tint rounded-md cursor-pointer transition-colors w-full"
           >
-            Profile
+            <GraduationCap size={14} weight="fill" className="text-indigo-400" />
+            Academic Profile
           </DropdownMenu.Item>
           <DropdownMenu.Item
             onClick={() => navigate({ to: '/providers' })}

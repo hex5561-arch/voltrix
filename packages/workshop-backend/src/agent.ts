@@ -1618,6 +1618,11 @@ export async function runAgent(
                     {type: "text", text: `\n\n[Attached PDF file${filename}]`},
                     {type: "image", data: data.toBase64(), mimeType: attachment.mimeType},
                   ];
+                } else if (attachment.mimeType.startsWith("video/") || attachment.mimeType.startsWith("audio/")) {
+                  return [
+                    {type: "text", text: `\n\n[Attached media file${filename}]`},
+                    {type: "image", data: data.toBase64(), mimeType: attachment.mimeType},
+                  ];
                 } else {
                   // Attachment types the current model can't take -- a PDF after the chat moved
                   // to a Workers AI/Ollama model, or types some providers accepted before the pi

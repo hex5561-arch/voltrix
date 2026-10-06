@@ -16,6 +16,7 @@ import { Route as ContextRouteImport } from './routes/context'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as GatekeepersRouteImport } from './routes/gatekeepers'
 import { Route as OutputsRouteImport } from './routes/outputs'
+import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as SignupRouteImport } from './routes/signup'
@@ -58,6 +59,11 @@ const GatekeepersRoute = GatekeepersRouteImport.update({
 const OutputsRoute = OutputsRouteImport.update({
   id: '/outputs',
   path: '/outputs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/explore': typeof ExploreRoute
   '/gatekeepers': typeof GatekeepersRoute
   '/outputs': typeof OutputsRoute
+  '/pricing': typeof PricingRoute
   '/profile': typeof ProfileRoute
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/explore': typeof ExploreRoute
   '/gatekeepers': typeof GatekeepersRoute
   '/outputs': typeof OutputsRoute
+  '/pricing': typeof PricingRoute
   '/profile': typeof ProfileRoute
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/explore': typeof ExploreRoute
   '/gatekeepers': typeof GatekeepersRoute
   '/outputs': typeof OutputsRoute
+  '/pricing': typeof PricingRoute
   '/profile': typeof ProfileRoute
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
@@ -163,6 +172,7 @@ export interface FileRouteTypes {
     | '/explore'
     | '/gatekeepers'
     | '/outputs'
+    | '/pricing'
     | '/profile'
     | '/providers'
     | '/signup'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/explore'
     | '/gatekeepers'
     | '/outputs'
+    | '/pricing'
     | '/profile'
     | '/providers'
     | '/signup'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/explore'
     | '/gatekeepers'
     | '/outputs'
+    | '/pricing'
     | '/profile'
     | '/providers'
     | '/signup'
@@ -215,6 +227,7 @@ export interface RootRouteChildren {
   ExploreRoute: typeof ExploreRoute
   GatekeepersRoute: typeof GatekeepersRoute
   OutputsRoute: typeof OutputsRoute
+  PricingRoute: typeof PricingRoute
   ProfileRoute: typeof ProfileRoute
   ProvidersRoute: typeof ProvidersRoute
   SignupRoute: typeof SignupRoute
@@ -274,6 +287,13 @@ declare module '@tanstack/react-router' {
       path: '/outputs'
       fullPath: '/outputs'
       preLoaderRoute: typeof OutputsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -343,6 +363,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExploreRoute: ExploreRoute,
   GatekeepersRoute: GatekeepersRoute,
   OutputsRoute: OutputsRoute,
+  PricingRoute: PricingRoute,
   ProfileRoute: ProfileRoute,
   ProvidersRoute: ProvidersRoute,
   SignupRoute: SignupRoute,

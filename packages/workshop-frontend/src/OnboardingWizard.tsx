@@ -1,5 +1,4 @@
-import { logRpcFailure } from './rpcErrors'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useKumoToastManager } from '@cloudflare/kumo'
 import { useAuthenticatedApi } from './AuthContext'
 import {
@@ -7,55 +6,41 @@ import {
   AiGatewayInfo,
 } from '@gadgets/workshop-shared/api'
 import {
-  VendorDescription,
-} from '@gadgets/workshop-shared/gatekeeper'
-import {
-  Camera,
-  ArrowRight,
-  Check,
+  GraduationCap,
+  CheckCircle,
   Plus,
-  PlugsConnected,
+  Trash,
+  MagnifyingGlass,
+  ArrowRight,
+  ArrowLeft,
   Sparkle,
-  UsersThree,
-  Key,
-  Plugs,
-  Hexagon,
+  Camera,
+  Lightning,
 } from '@phosphor-icons/react'
 import AddModelModal from './AddModelModal'
 import { persistSelectedModel } from './modelSelection'
-import { logoComponents } from './components/ConnectionLogos'
-import { getVendorIconBackground } from './components/vendorColors'
 import { compressAvatar, avatarBlobUrl } from './avatarUtils'
 import { invalidateAvatarCache } from './useAvatar'
-import { useTheme } from './ThemeContext'
 import { useSiteName } from './ServerConfigContext'
 import SiteLogo from './components/SiteLogo'
 import { useDocumentTitle } from './useDocumentTitle'
-import { AccountsSubscriberAdapter } from './accountsSubscriber'
+import {
+  UNIVERSITIES,
+  PERSONAS,
+  ACADEMIC_LEVELS,
+  SEMESTERS,
+  CITATION_STYLES,
+  COURSE_COLORS,
+  University,
+  Persona,
+} from './data/academicData'
+import {
+  getStudentProfile,
+  saveStudentProfile,
+  EnrolledCourse,
+} from './services/studentProfile'
 
-// ─── constants ──────────────────────────────────────────────────────────────────
-
-const TOTAL_STEPS_WITH_CONNECTIONS = 4
-
-// Maps RPC vendor IDs to logo keys in our logoComponents map
-const VENDOR_LOGO_MAP: Record<string, string> = {
-  slack: 'slack',
-  discord: 'discord',
-  jira: 'jira',
-  google: 'google',
-  github: 'github',
-  notion: 'notion',
-  linear: 'linear',
-  figma: 'figma',
-}
-
-interface VendorEntry {
-  id: string
-  description: VendorDescription
-  logoKey: string
-}
-
-// ─── component ──────────────────────────────────────────────────────────────────
+const TOTAL_STEPS = 5
 
 export default function OnboardingWizard({
   onComplete,
@@ -63,58 +48,158 @@ export default function OnboardingWizard({
   onComplete: () => void
 }) {
   const { authenticatedApi, currentUser } = useAuthenticatedApi()
-  const { resolvedThemeMode } = useTheme()
   const toasts = useKumoToastManager()
   const siteName = useSiteName()
-  useDocumentTitle('Setup')
+  useDocumentTitle('Academic Setup')
 
-  // Wizard state
-  const [step, setStep] = useState(0) // 0 = avatar, 1 = model, 2 = connections
+  // Existing profile (if any)
+  const existing = useMemo(() => getStudentProfile(), [])
+
+  // Wizard step (0 to 4)
+  const [step, setStep] = useState(0)
   const [mounted, setMounted] = useState(false)
   const [finishing, setFinishing] = useState(false)
 
-  // Profile state
-  const [displayName, setDisplayName] = useState('')
-  const [originalDisplayName, setOriginalDisplayName] = useState('')
+  // ── Step 0: Profile & Discipline ──────────────────────────────────────────
+  const [displayName, setDisplayName] = useState(currentUser?.name || '')
+  const [originalDisplayName, setOriginalDisplayName] = useState(currentUser?.name || '')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [avatarData, setAvatarData] = useState<Uint8Array | null>(null)
   const [avatarProcessing, setAvatarProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Model state
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string>(
+    existing?.discipline || PERSONAS[0].id
+  )
+
+  const activePersona: Persona = useMemo(() => {
+    return PERSONAS.find((p) => p.id === selectedDiscipline) || PERSONAS[0]
+  }, [selectedDiscipline])
+
+  // ── Step 1: Campus & Degree Standing ──────────────────────────────────────
+  const [universitySearch, setUniversitySearch] = useState('')
+  const [universityRegionFilter, setUniversityRegionFilter] = useState('All')
+  const [selectedUniversity, setSelectedUniversity] = useState<string>(
+    existing?.university || 'University of Nairobi'
+  )
+  const [selectedUniversityDetails, setSelectedUniversityDetails] = useState<University | null>(
+    existing?.universityDetails || UNIVERSITIES.find(u => u.name.includes('Nairobi')) || UNIVERSITIES[0]
+  )
+  const [isCustomUniversity, setIsCustomUniversity] = useState(false)
+  const [customUniversityName, setCustomUniversityName] = useState('')
+
+  const [degreeProgram, setDegreeProgram] = useState<string>(
+    existing?.degreeProgram || activePersona.defaultDegrees[0]
+  )
+  const [academicLevel, setAcademicLevel] = useState<string>(
+    existing?.academicLevel || ACADEMIC_LEVELS[0].id
+  )
+  const [academicYear, setAcademicYear] = useState<string>(
+    existing?.academicYear || ACADEMIC_LEVELS[0].years[0]
+  )
+  const [semester, setSemester] = useState<string>(
+    existing?.semester || SEMESTERS[0]
+  )
+
+  // ── Step 2: Enrolled Courses & Citation Standards ─────────────────────────
+  const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourse[]>(() => {
+    if (existing?.courses && existing.courses.length > 0) {
+      return existing.courses
+    }
+    return activePersona.defaultCourses.map((c) => ({
+      id: `course-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code: c.code,
+      name: c.name,
+      instructor: c.instructor,
+      color: c.color,
+      semester: SEMESTERS[0],
+      description: `${c.code} · ${c.name}`,
+      selected: c.selected,
+    }))
+  })
+
+  const [newCourseCode, setNewCourseCode] = useState('')
+  const [newCourseName, setNewCourseName] = useState('')
+  const [newCourseColor, setNewCourseColor] = useState(COURSE_COLORS[0])
+  const [showAddCourseForm, setShowAddCourseForm] = useState(false)
+
+  const [citationStyle, setCitationStyle] = useState<string>(
+    existing?.citationStyle || activePersona.citation
+  )
+  const [citationManuallySet, setCitationManuallySet] = useState(Boolean(existing?.citationStyle))
+
+  // ── Step 3: AI Engine Selection ───────────────────────────────────────────
   const [models, setModels] = useState<AiChatAuthorInfo[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [aiConfig, setAiConfig] = useState<AiGatewayInfo | null>(null)
   const [addModelOpen, setAddModelOpen] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(true)
 
-  // Connections state
-  const [vendors, setVendors] = useState<VendorEntry[]>([])
-  const [connectedVendorIds, setConnectedVendorIds] = useState<Set<string>>(new Set())
-  const [vendorsLoading, setVendorsLoading] = useState(true)
-  const [connectingVendorId, setConnectingVendorId] = useState<string | null>(null)
-
   // Entrance animation
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true))
   }, [])
 
-  // Revoke avatar blob URL on unmount to prevent memory leak
+  // Revoke avatar blob URL on unmount
   useEffect(() => {
     return () => {
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
     }
   }, [avatarPreview])
 
-  // Populate display name from currentUser (fetched once in AuthContext)
+  // Populate display name from currentUser
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser?.name && !displayName) {
       setDisplayName(currentUser.name)
       setOriginalDisplayName(currentUser.name)
     }
-  }, [currentUser])
+  }, [currentUser, displayName])
 
-  // Load models + AI config
+  // When persona changes, update default degree, courses, and citation (if not manually overridden)
+  const handleSelectDiscipline = (personaId: string) => {
+    setSelectedDiscipline(personaId)
+    const p = PERSONAS.find((x) => x.id === personaId) || PERSONAS[0]
+    setDegreeProgram(p.defaultDegrees[0])
+    if (!citationManuallySet) {
+      setCitationStyle(p.citation)
+    }
+    setEnrolledCourses(
+      p.defaultCourses.map((c) => ({
+        id: `course-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        code: c.code,
+        name: c.name,
+        instructor: c.instructor,
+        color: c.color,
+        semester,
+        description: `${c.code} · ${c.name}`,
+        selected: c.selected,
+      }))
+    )
+  }
+
+  // Filtered universities
+  const filteredUniversities = useMemo(() => {
+    const q = universitySearch.toLowerCase().trim()
+    return UNIVERSITIES.filter((u) => {
+      const matchesRegion =
+        universityRegionFilter === 'All' || u.region === universityRegionFilter
+      const matchesQuery =
+        !q ||
+        u.name.toLowerCase().includes(q) ||
+        u.country.toLowerCase().includes(q) ||
+        u.code.toLowerCase().includes(q) ||
+        (u.acronyms && u.acronyms.some((a) => a.toLowerCase().includes(q)))
+      return matchesRegion && matchesQuery
+    })
+  }, [universitySearch, universityRegionFilter])
+
+  // Current academic level years list
+  const activeLevelYears = useMemo(() => {
+    const lvl = ACADEMIC_LEVELS.find((l) => l.id === academicLevel)
+    return lvl ? lvl.years : ACADEMIC_LEVELS[0].years
+  }, [academicLevel])
+
+  // Load models
   const fetchModels = useCallback(async () => {
     try {
       const [modelList, cfg] = await Promise.all([
@@ -123,9 +208,10 @@ export default function OnboardingWizard({
       ])
       setModels(modelList)
       setAiConfig(cfg)
-      // Default to the first model in the list
       if (modelList.length > 0) {
-        setSelectedModelId((prev) => prev ?? modelList[0].id)
+        // Prefer GLM 5.3 Flash or first available
+        const preferred = modelList.find(m => m.id.includes('glm-5.3') || m.id.includes('deepseek'))
+        setSelectedModelId(preferred ? preferred.id : modelList[0].id)
       }
     } catch (err) {
       console.error('Failed to load models:', err)
@@ -138,89 +224,7 @@ export default function OnboardingWizard({
     fetchModels()
   }, [fetchModels])
 
-  // Load vendors and subscribe to connected accounts.
-  // We use a url→vendorId lookup map (built from listGatekeeperVendors) so the
-  // subscriber can resolve vendor IDs reliably instead of guessing from display names.
-  useEffect(() => {
-    let cancelled = false
-    const connectedUrls = new Set<string>()
-    const accountIdToUrl = new Map<number, string>()
-
-    // Lookup populated by listGatekeeperVendors, used by the subscriber.
-    const urlToVendorId = new Map<string, string>()
-    // Pending accounts that arrived before the vendor list loaded.
-    const pendingUrls: string[] = []
-
-    const refreshConnectedIds = () => {
-      const ids = new Set<string>()
-      for (const url of connectedUrls) {
-        const vid = urlToVendorId.get(url)
-        if (vid) ids.add(vid)
-      }
-      if (!cancelled) setConnectedVendorIds(ids)
-    }
-
-    authenticatedApi
-      .listGatekeeperVendors()
-      .then((vendorList) => {
-        if (cancelled) return
-        for (const v of vendorList) {
-          urlToVendorId.set(v.description.url, v.id)
-        }
-        setVendors(
-          vendorList.map((v) => ({
-            id: v.id,
-            description: v.description,
-            logoKey: VENDOR_LOGO_MAP[v.id] ?? v.id.toLowerCase(),
-          })),
-        )
-        // Resolve any accounts that arrived before the vendor list.
-        if (pendingUrls.length > 0) refreshConnectedIds()
-      })
-      .catch((err) => {
-        console.error('Failed to load vendors:', err)
-      })
-      .finally(() => {
-        if (!cancelled) setVendorsLoading(false)
-      })
-
-    const subscriber = new AccountsSubscriberAdapter({
-      add({ id, vendor }) {
-        if (cancelled) return
-        const url = vendor.url
-        accountIdToUrl.set(id, url)
-        connectedUrls.add(url)
-        if (urlToVendorId.size > 0) {
-          refreshConnectedIds()
-        } else {
-          pendingUrls.push(url)
-        }
-      },
-      remove(id) {
-        const url = accountIdToUrl.get(id)
-        if (url) {
-          accountIdToUrl.delete(id)
-          const stillHas = Array.from(accountIdToUrl.values()).includes(url)
-          if (!stillHas) connectedUrls.delete(url)
-          refreshConnectedIds()
-        }
-      },
-    })
-
-    const subscription = authenticatedApi.subscribeConnectedAccounts(subscriber)
-    subscription.catch((err) => {
-      if (cancelled) return
-      logRpcFailure('Failed to subscribe to connected accounts:', err)
-    })
-
-    return () => {
-      cancelled = true
-      subscription[Symbol.dispose]()
-    }
-  }, [authenticatedApi])
-
-  // ── avatar handlers ───────────────────────────────────────────────────────────
-
+  // ── Avatar Handlers ───────────────────────────────────────────────────────
   const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toasts.add({ title: 'Please select an image file', variant: 'error' })
@@ -230,7 +234,6 @@ export default function OnboardingWizard({
     try {
       const compressed = await compressAvatar(file)
       setAvatarData(compressed)
-      // The cleanup effect on avatarPreview handles revoking the previous URL.
       setAvatarPreview(avatarBlobUrl(compressed))
     } catch (err) {
       console.error('Failed to process avatar:', err)
@@ -246,583 +249,885 @@ export default function OnboardingWizard({
     if (file) handleFileSelect(file)
   }
 
-  // ── connection handlers ───────────────────────────────────────────────────────
-
-  const handleConnect = async (vendorId: string) => {
-    setConnectingVendorId(vendorId)
-    try {
-      const { url } = await authenticatedApi.connectAccount(vendorId)
-      window.open(url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      console.error('Failed to start connection:', err)
-      toasts.add({ title: 'Failed to start connection', variant: 'error' })
-    } finally {
-      // Reset after a short delay — the subscription will update the UI when the connection completes
-      setTimeout(() => setConnectingVendorId(null), 2000)
-    }
+  // ── Course Handlers ───────────────────────────────────────────────────────
+  const handleToggleCourse = (id: string) => {
+    setEnrolledCourses((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c))
+    )
   }
 
-  // ── navigation ────────────────────────────────────────────────────────────────
+  const handleAddCustomCourse = () => {
+    if (!newCourseCode.trim() || !newCourseName.trim()) return
+    const newCourse: EnrolledCourse = {
+      id: `course-custom-${Date.now()}`,
+      code: newCourseCode.trim().toUpperCase(),
+      name: newCourseName.trim(),
+      color: newCourseColor,
+      semester,
+      instructor: 'Faculty / Lecturer',
+      selected: true,
+    }
+    setEnrolledCourses((prev) => [newCourse, ...prev])
+    setNewCourseCode('')
+    setNewCourseName('')
+    setShowAddCourseForm(false)
+  }
 
-  const showConnectionsStep = vendorsLoading || vendors.length > 0
-  const totalSteps = showConnectionsStep
-    ? TOTAL_STEPS_WITH_CONNECTIONS
-    : TOTAL_STEPS_WITH_CONNECTIONS - 1
-  const showcaseStep = totalSteps - 1
+  const handleRemoveCourse = (id: string) => {
+    setEnrolledCourses((prev) => prev.filter((c) => c.id !== id))
+  }
 
-  useEffect(() => {
-    setStep((currentStep) => Math.min(currentStep, showcaseStep))
-  }, [showcaseStep])
+  // ── Finish & Provision ────────────────────────────────────────────────────
+  const finalUniversity = isCustomUniversity
+    ? customUniversityName.trim() || 'My University'
+    : selectedUniversity
 
-  const goNext = () => setStep((s) => Math.min(s + 1, totalSteps - 1))
-  const goBack = () => setStep((s) => Math.max(s - 1, 0))
+  const activeEnrolledCourses = enrolledCourses.filter((c) => c.selected)
 
   const handleFinish = async () => {
     setFinishing(true)
     try {
-      // Save display name if changed
+      // 1. Save student profile
+      saveStudentProfile({
+        discipline: selectedDiscipline,
+        disciplineTitle: activePersona.title,
+        university: finalUniversity,
+        universityDetails: isCustomUniversity ? null : selectedUniversityDetails,
+        degreeProgram,
+        academicLevel,
+        academicYear,
+        semester,
+        citationStyle,
+        courses: activeEnrolledCourses,
+        updatedAt: Date.now(),
+      })
+
+      // 2. Save user display name if changed
       const trimmedName = displayName.trim()
       if (trimmedName && trimmedName !== originalDisplayName) {
         await authenticatedApi.setOwnDisplayName(trimmedName)
       }
+
+      // 3. Save avatar
       if (avatarData) {
         await authenticatedApi.setAvatar(avatarData)
         if (currentUser?.id) invalidateAvatarCache(currentUser.id)
       }
-      // selectedModelId is null when the user chose "No agent" or didn't pick one
+
+      // 4. Save preferred model
       await authenticatedApi.setPreferredModel(selectedModelId)
       persistSelectedModel(selectedModelId)
+
+      // 5. Complete onboarding flag
       await authenticatedApi.completeOnboarding()
+
+      toasts.add({
+        title: 'Academic workspace ready!',
+        variant: 'success',
+      })
+
       onComplete()
     } catch (err) {
       console.error('Failed to complete onboarding:', err)
-      toasts.add({ title: 'Something went wrong. Please try again.', variant: 'error' })
+      toasts.add({
+        title: 'Something went wrong. Please try again.',
+        variant: 'error',
+      })
       setFinishing(false)
     }
   }
 
-  // ── derived ───────────────────────────────────────────────────────────────────
-
-  const sortedVendors = [...vendors].toSorted((a, b) => {
-    // Connected ones first
-    const aConnected = connectedVendorIds.has(a.id)
-    const bConnected = connectedVendorIds.has(b.id)
-    if (aConnected !== bConnected) return aConnected ? -1 : 1
-    return a.description.displayName.localeCompare(b.description.displayName)
-  })
-
-  // ── render ────────────────────────────────────────────────────────────────────
+  const goNext = () => setStep((s) => Math.min(s + 1, TOTAL_STEPS - 1))
+  const goBack = () => setStep((s) => Math.max(s - 1, 0))
 
   return (
     <>
-    <div className="fixed inset-0 bg-kumo-base dotted-bg flex items-center justify-center overflow-y-auto py-8">
-      {/* Soft radial glow at the top for depth */}
-      <div
-        className="absolute inset-x-0 top-0 h-[50vh] pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(ellipse 60% 60% at 50% 0%, color-mix(in srgb, var(--color-kumo-brand) 8%, transparent) 0%, transparent 70%)',
-        }}
-      />
-
-      <div
-        className={`relative w-full max-w-lg mx-4 transition-all duration-500 ease-out ${
-          mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-        }`}
-      >
-        {/* Gadgets brand */}
+      <div className="fixed inset-0 bg-kumo-base dotted-bg flex items-center justify-center overflow-y-auto py-8 z-50">
+        {/* Soft radial glow */}
         <div
-          className={`flex items-center justify-center gap-2 mb-10 transition-all duration-500 ${
-            mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1'
+          className="absolute inset-x-0 top-0 h-[50vh] pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(ellipse 60% 60% at 50% 0%, color-mix(in srgb, var(--color-kumo-brand) 10%, transparent) 0%, transparent 70%)',
+          }}
+        />
+
+        <div
+          className={`relative w-full max-w-2xl mx-4 transition-all duration-500 ease-out ${
+            mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
           }`}
         >
-          <SiteLogo size={22}>
-            <Hexagon size={22} className="text-kumo-brand" weight="bold" />
-          </SiteLogo>
-          <span className="text-base font-semibold tracking-tight text-kumo-default">
-            {siteName}
-          </span>
-        </div>
-
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1
-            className={`text-3xl font-semibold text-kumo-default tracking-tight transition-all duration-500 delay-100 ${
-              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-            }`}
-          >
-            Let&apos;s set you up
-          </h1>
-          <p
-            className={`mt-2 text-sm text-kumo-subtle transition-all duration-500 delay-200 ${
-              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-            }`}
-          >
-            Just a few things before you start building
-          </p>
-        </div>
-
-        {/* Step indicator */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          {Array.from({ length: totalSteps }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 rounded-full transition-all duration-400 ${
-                i === step
-                  ? 'w-8 bg-kumo-brand'
-                  : i < step
-                    ? 'w-4 bg-kumo-brand/40'
-                    : 'w-4 bg-kumo-line'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Step content — sliding panel */}
-        <div className="overflow-hidden rounded-2xl border border-kumo-line bg-kumo-elevated shadow-xl shadow-black/[0.04]">
-          <div
-            className="flex transition-transform duration-400 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-            style={{ transform: `translateX(-${step * 100}%)` }}
-          >
-            {/* ── Step 0: Profile ───────────────────────────────────────────── */}
-            <div className="w-full flex-shrink-0 p-8 min-h-[420px]">
-              <h2 className="text-lg font-medium text-kumo-default mb-1">
-                Create your profile
-              </h2>
-              <p className="text-sm text-kumo-subtle mb-12">
-                This is how you&apos;ll appear in conversations
-              </p>
-
-              {/* Avatar + Display name side by side */}
-              <div className="flex items-start gap-5">
-                {/* Avatar */}
-                <div className="flex flex-col items-center flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    className={`
-                      relative w-20 h-20 rounded-full border-2 border-dashed
-                      transition-all duration-200 group cursor-pointer
-                      ${avatarPreview
-                        ? 'border-kumo-brand/50 hover:border-kumo-brand'
-                        : 'border-kumo-line hover:border-kumo-subtle hover:bg-kumo-tint'
-                      }
-                      ${avatarProcessing ? 'opacity-50 pointer-events-none' : ''}
-                    `}
-                  >
-                    {avatarPreview ? (
-                      <>
-                        <img
-                          src={avatarPreview}
-                          alt="Avatar preview"
-                          className="w-full h-full rounded-full object-cover"
-                        />
-                        <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <Camera size={18} className="text-white" />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full">
-                        <Camera size={22} className="text-kumo-inactive group-hover:text-kumo-subtle transition-colors" />
-                      </div>
-                    )}
-                    {avatarProcessing && (
-                      <div className="absolute inset-0 rounded-full bg-kumo-elevated/80 flex items-center justify-center">
-                        <div className="w-5 h-5 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Hidden file inputs */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleFileSelect(file)
-                      e.target.value = ''
-                    }}
-                  />
-                  <p className="text-xs text-kumo-inactive mt-1.5">
-                    {avatarPreview ? 'Change' : 'Add photo'}
-                  </p>
-                </div>
-
-                {/* Name + camera shortcut */}
-                <div className="flex-1 min-w-0 pt-1">
-                  <label
-                    htmlFor="onboarding-display-name"
-                    className="block text-xs font-medium text-kumo-subtle mb-1.5"
-                  >
-                    Display name
-                  </label>
-                  <input
-                    id="onboarding-display-name"
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="How should we call you?"
-                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-kumo-brand transition-colors"
-                  />
-                </div>
+          {/* Brand header */}
+          <div className="flex items-center justify-center gap-2 mb-6">
+            <SiteLogo size={24}>
+              <div className="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/30">
+                <GraduationCap size={16} weight="fill" />
               </div>
-            </div>
+            </SiteLogo>
+            <span className="text-base font-bold tracking-tight text-kumo-default">
+              {siteName} Academic Copilot
+            </span>
+          </div>
 
-            {/* ── Step 1: Model selection ───────────────────────────────────── */}
-            <div className="w-full flex-shrink-0 p-8 min-h-[420px]">
-              <div>
-                <h2 className="text-lg font-medium text-kumo-default mb-1">
-                  Choose your model
-                </h2>
-                <p className="text-sm text-kumo-subtle mb-6">
-                  Pick the AI model you&apos;d like to use by default
-                </p>
+          {/* Stepper Header */}
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-kumo-default tracking-tight">
+              {step === 0 && 'Select Your Academic Discipline'}
+              {step === 1 && 'Campus & Degree Standing'}
+              {step === 2 && 'Courses & Citation Standards'}
+              {step === 3 && 'AI Engine & Profile'}
+              {step === 4 && 'Launch Your Academic Workspace'}
+            </h1>
+            <p className="mt-1 text-xs text-kumo-subtle">
+              {step === 0 && 'Customize Volt for your discipline, proofs, derivations and terminology'}
+              {step === 1 && 'Configure your institution, degree program and academic level'}
+              {step === 2 && 'Enroll semester courses and set your institutional citation format'}
+              {step === 3 && 'Select your default AI model and customize how you appear in chats'}
+              {step === 4 && 'Review your academic copilot configuration before takeoff'}
+            </p>
+          </div>
 
-                {modelsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="w-6 h-6 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                      {models.map((model) => (
-                        <button
-                          key={model.id}
-                          onClick={() => setSelectedModelId(model.id)}
-                          className={`
-                            w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left
-                            transition-all duration-150
-                            ${selectedModelId === model.id
-                              ? 'border-kumo-brand bg-kumo-brand/5 ring-1 ring-kumo-brand/20'
-                              : 'border-kumo-line hover:border-kumo-fill hover:bg-kumo-tint'
-                            }
-                          `}
-                        >
-                          <div
-                            className={`
-                              w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold
-                              transition-colors duration-150
-                              ${selectedModelId === model.id
-                                ? 'bg-kumo-brand text-kumo-inverse'
-                                : 'bg-kumo-tint text-kumo-subtle'
-                              }
-                            `}
-                          >
-                            {model.name[0]?.toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-kumo-default truncate">
-                              {model.name}
-                            </p>
-                            <p className="text-xs text-kumo-subtle truncate">
-                              {model.id}
-                            </p>
-                          </div>
-                          {selectedModelId === model.id && (
-                            <Check
-                              size={18}
-                              weight="bold"
-                              className="text-kumo-brand flex-shrink-0"
-                            />
-                          )}
-                        </button>
-                      ))}
-
-                      {models.length === 0 && (
-                        <div className="text-center py-8">
-                          <p className="text-sm text-kumo-subtle mb-1">
-                            No models configured yet
-                          </p>
-                          <p className="text-xs text-kumo-inactive">
-                            Add a model to get started
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => setAddModelOpen(true)}
-                      className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-kumo-subtle border border-dashed border-kumo-line rounded-xl hover:border-kumo-fill hover:text-kumo-default hover:bg-kumo-tint transition-colors"
-                    >
-                      <Plus size={14} weight="bold" />
-                      Add new model...
-                    </button>
-                  </>
+          {/* Step Progress Indicators */}
+          <div className="flex items-center justify-center gap-2 mb-6">
+            {[
+              'Discipline',
+              'Campus',
+              'Courses',
+              'AI Engine',
+              'Launch',
+            ].map((label, i) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <div
+                  className={`flex items-center justify-center text-[10px] font-bold rounded-full transition-all duration-300 ${
+                    i === step
+                      ? 'w-6 h-6 bg-indigo-600 text-white ring-2 ring-indigo-400/40 shadow-sm'
+                      : i < step
+                      ? 'w-5 h-5 bg-emerald-500 text-white'
+                      : 'w-5 h-5 bg-kumo-line text-kumo-subtle'
+                  }`}
+                >
+                  {i < step ? '✓' : i + 1}
+                </div>
+                <span
+                  className={`text-[11px] font-medium hidden sm:inline ${
+                    i === step
+                      ? 'text-indigo-400 font-semibold'
+                      : 'text-kumo-subtle'
+                  }`}
+                >
+                  {label}
+                </span>
+                {i < TOTAL_STEPS - 1 && (
+                  <div className="w-4 h-[1px] bg-kumo-line mx-1 hidden sm:block" />
                 )}
               </div>
-            </div>
+            ))}
+          </div>
 
-            {/* ── Step 2: Connections ───────────────────────────────────────── */}
-            <div className={`w-full flex-shrink-0 p-8 min-h-[420px] ${showConnectionsStep ? '' : 'hidden'}`}>
-              <div>
-                <h2 className="text-lg font-medium text-kumo-default mb-1">
-                  Connect your services
-                </h2>
-                <p className="text-sm text-kumo-subtle mb-6">
-                  Link your accounts so your gadgets can access them. You can always add more later.
-                </p>
+          {/* Card Body with Sliding/Dynamic Panels */}
+          <div className="overflow-hidden rounded-2xl border border-kumo-line bg-kumo-elevated shadow-2xl">
+            <div className="p-6 sm:p-8 min-h-[440px] max-h-[70vh] overflow-y-auto">
 
-                {vendorsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="w-6 h-6 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : vendors.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-kumo-subtle">
-                      No services available
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
-                    {sortedVendors.map((vendor) => {
-                      const Logo = logoComponents[vendor.logoKey]
-                      const isConnected = connectedVendorIds.has(vendor.id)
-                      const isConnecting = connectingVendorId === vendor.id
+              {/* ══════════════════════════════════════════════════════════════
+                  STEP 0: DISCIPLINE & FIELD OF STUDY
+              ══════════════════════════════════════════════════════════════ */}
+              {step === 0 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {PERSONAS.map((p) => {
+                      const Icon = p.icon
+                      const isSelected = selectedDiscipline === p.id
                       return (
-                        <button
-                          key={vendor.id}
-                          onClick={() => !isConnected && !isConnecting && handleConnect(vendor.id)}
-                          disabled={isConnected || isConnecting}
-                          className={`
-                            flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left
-                            transition-all duration-150
-                            ${isConnected
-                              ? 'border-kumo-brand/40 bg-kumo-brand/5 cursor-default'
-                              : isConnecting
-                                ? 'border-kumo-line bg-kumo-tint cursor-wait'
-                                : 'border-kumo-line hover:border-kumo-fill hover:bg-kumo-tint cursor-pointer'
-                            }
-                          `}
+                        <div
+                          key={p.id}
+                          onClick={() => handleSelectDiscipline(p.id)}
+                          className={`relative p-3.5 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
+                            isSelected
+                              ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30'
+                              : 'border-kumo-line bg-kumo-base hover:border-kumo-fill hover:bg-kumo-tint'
+                          }`}
                         >
-                          <div
-                            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                            style={{ backgroundColor: getVendorIconBackground(vendor.id, resolvedThemeMode) }}
-                          >
-                            {Logo ? (
-                              <Logo size={16} />
-                            ) : (
-                              <span className="text-xs font-bold text-kumo-strong">
-                                {vendor.description.displayName[0]}
-                              </span>
-                            )}
+                          <div className="flex items-start gap-3">
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                              style={{ backgroundColor: `${p.color}20`, color: p.color }}
+                            >
+                              <Icon size={20} weight="bold" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-kumo-default truncate">
+                                  {p.title}
+                                </h3>
+                                {isSelected && (
+                                  <CheckCircle
+                                    size={16}
+                                    weight="fill"
+                                    className="text-indigo-500 shrink-0"
+                                  />
+                                )}
+                              </div>
+                              <p className="text-[11px] text-kumo-subtle mt-0.5 line-clamp-2 leading-relaxed">
+                                {p.subtitle}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className="text-[10px] px-2 py-0.5 rounded-md bg-kumo-tint font-mono text-kumo-subtle">
+                                  {p.citation} Standard
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-kumo-default truncate">
-                              {vendor.description.displayName}
-                            </p>
-                            <p className="text-xs text-kumo-subtle truncate">
-                              {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Not connected'}
-                            </p>
-                          </div>
-                          {isConnected && (
-                            <PlugsConnected
-                              size={14}
-                              className="text-kumo-brand flex-shrink-0"
-                              weight="bold"
-                            />
-                          )}
-                          {isConnecting && (
-                            <div className="w-3.5 h-3.5 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                          )}
-                        </button>
+                        </div>
                       )
                     })}
                   </div>
-                )}
 
-                <p className="text-xs text-kumo-inactive mt-4 text-center">
-                  Optional &middot; you can manage connections any time
-                </p>
-              </div>
+                  {/* Focus Highlights Callout */}
+                  <div className="rounded-xl border border-kumo-line bg-kumo-tint p-3.5 flex items-center gap-3">
+                    <Sparkle size={18} className="text-indigo-400 shrink-0" weight="fill" />
+                    <div className="text-xs text-kumo-subtle">
+                      <strong className="text-kumo-default font-semibold">{activePersona.title} Mode:</strong>{' '}
+                      {activePersona.focusFeatures.join(' · ')}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ══════════════════════════════════════════════════════════════
+                  STEP 1: CAMPUS & DEGREE STANDING
+              ══════════════════════════════════════════════════════════════ */}
+              {step === 1 && (
+                <div className="space-y-5">
+                  {/* University / Campus Picker */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-kumo-default">
+                        University or College Campus
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomUniversity(!isCustomUniversity)}
+                        className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
+                      >
+                        {isCustomUniversity ? 'Select from registry' : 'Enter custom campus'}
+                      </button>
+                    </div>
+
+                    {isCustomUniversity ? (
+                      <input
+                        type="text"
+                        value={customUniversityName}
+                        onChange={(e) => setCustomUniversityName(e.target.value)}
+                        placeholder="e.g. University of Cape Coast, Dedan Kimathi University..."
+                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                      />
+                    ) : (
+                      <>
+                        {/* Search + Region Pills */}
+                        <div className="relative">
+                          <MagnifyingGlass
+                            size={14}
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-kumo-inactive"
+                          />
+                          <input
+                            type="text"
+                            value={universitySearch}
+                            onChange={(e) => setUniversitySearch(e.target.value)}
+                            placeholder="Search by university name, country, or code (e.g. Nairobi, JKUAT, MIT, Makerere)..."
+                            className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        {/* Region Filters */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                          {['All', 'East Africa', 'Global', 'West Africa', 'Southern Africa'].map(
+                            (region) => (
+                              <button
+                                key={region}
+                                type="button"
+                                onClick={() => setUniversityRegionFilter(region)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium whitespace-nowrap transition-colors ${
+                                  universityRegionFilter === region
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-kumo-tint text-kumo-subtle hover:text-kumo-default'
+                                }`}
+                              >
+                                {region}
+                              </button>
+                            )
+                          )}
+                        </div>
+
+                        {/* Universities List */}
+                        <div className="max-h-40 overflow-y-auto space-y-1.5 border border-kumo-line rounded-xl p-2 bg-kumo-base">
+                          {filteredUniversities.slice(0, 40).map((u) => {
+                            const isChosen = selectedUniversity === u.name
+                            return (
+                              <div
+                                key={u.id}
+                                onClick={() => {
+                                  setSelectedUniversity(u.name)
+                                  setSelectedUniversityDetails(u)
+                                }}
+                                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
+                                  isChosen
+                                    ? 'bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30'
+                                    : 'hover:bg-kumo-tint text-kumo-default'
+                                }`}
+                              >
+                                <div className="min-w-0 pr-2">
+                                  <p className="truncate">{u.name}</p>
+                                  <p className="text-[10px] text-kumo-subtle">
+                                    {u.city}, {u.country} · {u.code}
+                                  </p>
+                                </div>
+                                {isChosen && (
+                                  <CheckCircle
+                                    size={14}
+                                    weight="fill"
+                                    className="text-indigo-400 shrink-0"
+                                  />
+                                )}
+                              </div>
+                            )
+                          })}
+                          {filteredUniversities.length === 0 && (
+                            <p className="text-center py-4 text-xs text-kumo-subtle">
+                              No universities matching &ldquo;{universitySearch}&rdquo;
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Degree Program & Level */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-kumo-default mb-1.5">
+                        Degree Program
+                      </label>
+                      <input
+                        type="text"
+                        value={degreeProgram}
+                        onChange={(e) => setDegreeProgram(e.target.value)}
+                        placeholder="e.g. B.Sc. Computer Science"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {activePersona.defaultDegrees.slice(0, 3).map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setDegreeProgram(d)}
+                            className="text-[10px] text-kumo-subtle hover:text-indigo-400 truncate max-w-full"
+                          >
+                            • {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-kumo-default mb-1.5">
+                        Academic Standing / Year
+                      </label>
+                      <select
+                        value={academicYear}
+                        onChange={(e) => setAcademicYear(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        {activeLevelYears.map((y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <select
+                          value={academicLevel}
+                          onChange={(e) => {
+                            setAcademicLevel(e.target.value)
+                            const found = ACADEMIC_LEVELS.find((l) => l.id === e.target.value)
+                            if (found && found.years.length > 0) {
+                              setAcademicYear(found.years[0])
+                            }
+                          }}
+                          className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-kumo-line bg-kumo-tint text-kumo-subtle focus:outline-none"
+                        >
+                          {ACADEMIC_LEVELS.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={semester}
+                          onChange={(e) => setSemester(e.target.value)}
+                          className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-kumo-line bg-kumo-tint text-kumo-subtle focus:outline-none"
+                        >
+                          {SEMESTERS.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ══════════════════════════════════════════════════════════════
+                  STEP 2: ENROLLED COURSES & CITATION STANDARDS
+              ══════════════════════════════════════════════════════════════ */}
+              {step === 2 && (
+                <div className="space-y-5">
+                  {/* Courses */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-semibold text-kumo-default">
+                        Enrolled Courses &amp; Subjects ({activeEnrolledCourses.length} active)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddCourseForm(!showAddCourseForm)}
+                        className="flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
+                      >
+                        <Plus size={12} weight="bold" />
+                        Add Course Code
+                      </button>
+                    </div>
+
+                    {showAddCourseForm && (
+                      <div className="p-3 mb-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 space-y-2.5">
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            value={newCourseCode}
+                            onChange={(e) => setNewCourseCode(e.target.value)}
+                            placeholder="Code (e.g. CS 301)"
+                            className="px-2.5 py-1.5 text-xs rounded-lg border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={newCourseName}
+                            onChange={(e) => setNewCourseName(e.target.value)}
+                            placeholder="Course Name (e.g. Distributed Systems)"
+                            className="col-span-2 px-2.5 py-1.5 text-xs rounded-lg border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1">
+                            {COURSE_COLORS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setNewCourseColor(c)}
+                                className={`w-4 h-4 rounded-full transition-transform ${
+                                  newCourseColor === c ? 'ring-2 ring-white scale-110' : ''
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowAddCourseForm(false)}
+                              className="text-[11px] text-kumo-subtle px-2 py-1"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddCustomCourse}
+                              disabled={!newCourseCode.trim() || !newCourseName.trim()}
+                              className="text-[11px] font-semibold bg-indigo-600 text-white px-3 py-1 rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+                            >
+                              Save Course
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Course items */}
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                      {enrolledCourses.map((c) => (
+                        <div
+                          key={c.id}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition-all ${
+                            c.selected
+                              ? 'border-kumo-line bg-kumo-base'
+                              : 'border-kumo-line/40 bg-kumo-tint opacity-60'
+                          }`}
+                        >
+                          <div
+                            onClick={() => handleToggleCourse(c.id)}
+                            className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer"
+                          >
+                            <div
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: c.color }}
+                            />
+                            <div className="min-w-0">
+                              <span className="font-bold text-kumo-default mr-2">{c.code}</span>
+                              <span className="text-kumo-subtle truncate">{c.name}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(c.selected)}
+                              onChange={() => handleToggleCourse(c.id)}
+                              className="rounded border-kumo-line text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCourse(c.id)}
+                              className="text-kumo-inactive hover:text-red-400 p-1"
+                            >
+                              <Trash size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Citation Standards */}
+                  <div>
+                    <label className="block text-xs font-semibold text-kumo-default mb-2">
+                      Academic Citation Standard
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {CITATION_STYLES.map((cs) => {
+                        const isSelected = citationStyle === cs.id
+                        return (
+                          <div
+                            key={cs.id}
+                            onClick={() => {
+                              setCitationStyle(cs.id)
+                              setCitationManuallySet(true)
+                            }}
+                            className={`p-2.5 rounded-xl border cursor-pointer text-left transition-all ${
+                              isSelected
+                                ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300 font-semibold'
+                                : 'border-kumo-line bg-kumo-base hover:bg-kumo-tint text-kumo-default'
+                            }`}
+                          >
+                            <p className="text-xs font-semibold">{cs.label}</p>
+                            <p className="text-[10px] text-kumo-subtle mt-0.5 line-clamp-1">{cs.desc}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ══════════════════════════════════════════════════════════════
+                  STEP 3: AI ENGINE & PROFILE
+              ══════════════════════════════════════════════════════════════ */}
+              {step === 3 && (
+                <div className="space-y-6">
+                  {/* Avatar & Display Name */}
+                  <div className="flex items-start gap-4 p-4 rounded-xl border border-kumo-line bg-kumo-base">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      onDrop={handleDrop}
+                      onDragOver={(e) => e.preventDefault()}
+                      className={`relative w-16 h-16 rounded-full border-2 border-dashed transition-all group cursor-pointer shrink-0 ${
+                        avatarPreview
+                          ? 'border-indigo-500'
+                          : 'border-kumo-line hover:border-indigo-500/50 hover:bg-kumo-tint'
+                      }`}
+                    >
+                      {avatarPreview ? (
+                        <>
+                          <img
+                            src={avatarPreview}
+                            alt="Avatar preview"
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                          <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Camera size={16} className="text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full">
+                          <Camera size={20} className="text-kumo-inactive" />
+                        </div>
+                      )}
+                      {avatarProcessing && (
+                        <div className="absolute inset-0 rounded-full bg-kumo-elevated/80 flex items-center justify-center">
+                          <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      )}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleFileSelect(file)
+                        e.target.value = ''
+                      }}
+                    />
+
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-xs font-semibold text-kumo-default mb-1">
+                        Student / Researcher Name
+                      </label>
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="How Volt should address you"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-elevated text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-kumo-subtle mt-1">
+                        Used in academic papers, technical reports, and chat dialogue.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* AI Model Selection */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-semibold text-kumo-default">
+                        Primary Academic AI Engine
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setAddModelOpen(true)}
+                        className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
+                      >
+                        + Add Custom Model
+                      </button>
+                    </div>
+
+                    {modelsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {models.map((model) => {
+                          const isSelected = selectedModelId === model.id
+                          const isGlm = model.id.includes('glm-5.3')
+                          return (
+                            <button
+                              key={model.id}
+                              type="button"
+                              onClick={() => setSelectedModelId(model.id)}
+                              className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
+                                isSelected
+                                  ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30'
+                                  : 'border-kumo-line bg-kumo-base hover:bg-kumo-tint'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                    isSelected
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'bg-kumo-tint text-kumo-subtle'
+                                  }`}
+                                >
+                                  ⚡
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs font-semibold text-kumo-default truncate">
+                                      {model.name}
+                                    </p>
+                                    {isGlm && (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold">
+                                        Academic Primary
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-kumo-subtle truncate">{model.id}</p>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <CheckCircle
+                                  size={16}
+                                  weight="fill"
+                                  className="text-indigo-500 shrink-0"
+                                />
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ══════════════════════════════════════════════════════════════
+                  STEP 4: LAUNCH REVIEW & SHOWCASE
+              ══════════════════════════════════════════════════════════════ */}
+              {step === 4 && (
+                <div className="space-y-5">
+                  {/* Identity Review Card */}
+                  <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-kumo-base to-kumo-base p-5 space-y-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-600/30 shrink-0 overflow-hidden">
+                        {avatarPreview ? (
+                          <img
+                            src={avatarPreview}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          displayName.slice(0, 2).toUpperCase() || 'ST'
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-kumo-default truncate">
+                            {displayName || 'Student Scholar'}
+                          </h3>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold">
+                            Verified Scholar
+                          </span>
+                        </div>
+                        <p className="text-xs text-indigo-300 font-medium truncate mt-0.5">
+                          {finalUniversity}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2 border-t border-kumo-line/60">
+                      <div className="p-2.5 rounded-xl bg-kumo-tint">
+                        <p className="text-[10px] text-kumo-subtle">Degree Program</p>
+                        <p className="text-xs font-semibold text-kumo-default truncate mt-0.5">
+                          {degreeProgram}
+                        </p>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-kumo-tint">
+                        <p className="text-[10px] text-kumo-subtle">Standing &amp; Term</p>
+                        <p className="text-xs font-semibold text-kumo-default truncate mt-0.5">
+                          {academicYear}
+                        </p>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-kumo-tint">
+                        <p className="text-[10px] text-kumo-subtle">Citation Standard</p>
+                        <p className="text-xs font-semibold text-indigo-400 truncate mt-0.5">
+                          {citationStyle} Standard
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Enrolled Courses Badges */}
+                    <div>
+                      <p className="text-[10px] font-semibold text-kumo-subtle uppercase tracking-wider mb-1.5">
+                        Enrolled Courses ({activeEnrolledCourses.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {activeEnrolledCourses.map((c) => (
+                          <span
+                            key={c.id}
+                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-kumo-line bg-kumo-base"
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: c.color }}
+                            />
+                            {c.code}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Capabilities Banner */}
+                  <div className="rounded-xl border border-kumo-line bg-kumo-base p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-kumo-default">
+                      <Sparkle size={14} className="text-indigo-400" weight="fill" />
+                      What Volt Will Do For You
+                    </div>
+                    <ul className="text-xs text-kumo-subtle space-y-1 pl-4 list-disc leading-relaxed">
+                      <li>Solve STEM equations with step-by-step LaTeX derivations and proofs.</li>
+                      <li>Generate formatted academic research papers using your {citationStyle} standard.</li>
+                      <li>Predict university exam questions tailored to your enrolled courses.</li>
+                      <li>Keep all chats and documents scoped to {finalUniversity}.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
             </div>
 
-            {/* ── Final step: What you can do ────────────────────────────────── */}
-            <div className="w-full flex-shrink-0 p-8 min-h-[420px]">
-              <ShowcaseStep active={step === showcaseStep} siteName={siteName} />
-            </div>
-          </div>
-
-          {/* Fixed footer — stays put across all steps */}
-          <div className="flex items-center justify-between gap-3 px-8 py-5 border-t border-kumo-line bg-kumo-elevated">
-            {/* Back button (hidden on first step) */}
-            {step > 0 ? (
-              <button
-                onClick={goBack}
-                className="text-sm text-kumo-subtle hover:text-kumo-default transition-colors"
-              >
-                Back
-              </button>
-            ) : (
-              <span />
-            )}
-
-            <div className="flex items-center gap-3">
-              {/* Primary action */}
-              {step < totalSteps - 1 ? (
+            {/* Navigation Footer */}
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-kumo-line bg-kumo-elevated">
+              {step > 0 ? (
                 <button
-                  onClick={goNext}
-                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg transition-all duration-150 text-kumo-inverse bg-kumo-brand hover:bg-kumo-brand-hover"
+                  type="button"
+                  onClick={goBack}
+                  className="flex items-center gap-1 text-xs font-semibold text-kumo-subtle hover:text-kumo-default transition-colors px-3 py-2"
                 >
-                  Next
-                  <ArrowRight size={14} weight="bold" />
+                  <ArrowLeft size={13} weight="bold" />
+                  Back
                 </button>
               ) : (
-                <button
-                  onClick={handleFinish}
-                  disabled={finishing}
-                  className={`
-                    flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg
-                    transition-all duration-150
-                    ${!finishing
-                      ? 'text-kumo-inverse bg-kumo-brand hover:bg-kumo-brand-hover'
-                      : 'text-kumo-inactive bg-kumo-tint cursor-not-allowed'
-                    }
-                  `}
-                >
-                  {finishing ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-kumo-inverse/30 border-t-kumo-inverse rounded-full animate-spin" />
-                      Setting up...
-                    </>
-                  ) : (
-                    <>
-                      Let&apos;s build
-                      <ArrowRight size={14} weight="bold" />
-                    </>
-                  )}
-                </button>
+                <div />
               )}
+
+              <div className="flex items-center gap-2">
+                {step < TOTAL_STEPS - 1 ? (
+                  <button
+                    type="button"
+                    onClick={goNext}
+                    className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl text-white bg-indigo-600 hover:bg-indigo-500 transition-all shadow-md shadow-indigo-600/25"
+                  >
+                    Continue
+                    <ArrowRight size={13} weight="bold" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleFinish}
+                    disabled={finishing}
+                    className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 transition-all shadow-lg shadow-indigo-600/30 disabled:opacity-50"
+                  >
+                    {finishing ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Provisioning Workspace...
+                      </>
+                    ) : (
+                      <>
+                        <Lightning size={14} weight="fill" />
+                        Launch Academic Workspace
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-    </div>
-
-    {/* Add Model Modal — outside the wizard's inner content so it's not
-        clipped by overflow-hidden on the sliding panel */}
-    <AddModelModal
-      visible={addModelOpen}
-      onCancel={() => setAddModelOpen(false)}
-      onSuccess={() => {
-        setAddModelOpen(false)
-        fetchModels()
-      }}
-      authenticatedApi={authenticatedApi}
-      aiConfig={aiConfig}
-    />
+      <AddModelModal
+        visible={addModelOpen}
+        onCancel={() => setAddModelOpen(false)}
+        onSuccess={() => {
+          setAddModelOpen(false)
+          fetchModels()
+        }}
+        authenticatedApi={authenticatedApi}
+        aiConfig={aiConfig}
+      />
     </>
-  )
-}
-
-// ─── showcase step ──────────────────────────────────────────────────────────────
-
-interface ShowcaseFeature {
-  icon: typeof Sparkle
-  iconColor: string
-  iconBg: string
-  title: string
-  description: string
-}
-
-const SHOWCASE_FEATURES: ShowcaseFeature[] = [
-  {
-    icon: Sparkle,
-    iconColor: 'text-media-100',
-    iconBg: 'bg-media-200',
-    title: 'Build gadgets or just chat',
-    description:
-      'Create full web apps, or keep it simple with agent-only conversations. Your call.',
-  },
-  {
-    icon: UsersThree,
-    iconColor: 'text-compute-100',
-    iconBg: 'bg-compute-200',
-    title: 'Collaborate in real time',
-    description:
-      'Share a workspace with teammates and work on it together, live.',
-  },
-  {
-    icon: Key,
-    iconColor: 'text-kumo-warning',
-    iconBg: 'bg-kumo-warning-tint',
-    title: 'Bring your own models',
-    description:
-      'Plug in personal API tokens from any provider to use the models you love.',
-  },
-  {
-    icon: Plugs,
-    iconColor: 'text-storage-100',
-    iconBg: 'bg-storage-200',
-    title: 'AI meets your tools',
-    description:
-      'Have AI review a Google Doc, summarize Slack threads, triage Jira tickets, and more.',
-  },
-]
-
-function ShowcaseStep({ active, siteName }: { active: boolean; siteName: string }) {
-  // Mount-trigger for staggered fade-in when the step becomes visible
-  const [revealed, setRevealed] = useState(false)
-
-  useEffect(() => {
-    if (active) {
-      // Small delay so the slide transition starts before the stagger
-      const t = setTimeout(() => setRevealed(true), 150)
-      return () => clearTimeout(t)
-    }
-  }, [active])
-
-  return (
-    <div>
-      <div className="text-center mb-6">
-        <h2 className="text-lg font-medium text-kumo-default mb-1">
-          You&apos;re all set
-        </h2>
-        <p className="text-sm text-kumo-subtle">
-          Here&apos;s a taste of what you can do with {siteName}
-        </p>
-      </div>
-
-      <div className="space-y-2.5">
-        {SHOWCASE_FEATURES.map((feature, i) => {
-          const Icon = feature.icon
-          return (
-            <div
-              key={feature.title}
-              className={`
-                flex items-start gap-3 p-3.5 rounded-xl border border-kumo-line bg-kumo-base
-                transition-all ease-out
-                ${revealed
-                  ? 'opacity-100 translate-x-0'
-                  : 'opacity-0 -translate-x-3'
-                }
-              `}
-              style={{
-                transitionDuration: '500ms',
-                transitionDelay: revealed ? `${i * 90}ms` : '0ms',
-              }}
-            >
-              <div
-                className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${feature.iconBg}`}
-              >
-                <Icon size={18} className={feature.iconColor} weight="fill" />
-              </div>
-              <div className="flex-1 min-w-0 pt-0.5">
-                <p className="text-sm font-medium text-kumo-default">
-                  {feature.title}
-                </p>
-                <p className="text-xs text-kumo-subtle mt-0.5 leading-relaxed">
-                  {feature.description}
-                </p>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
   )
 }

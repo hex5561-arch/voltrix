@@ -28,7 +28,7 @@ export const PDF_MIME_TYPE = "application/pdf";
 /** Whether PDF attachments can reach this pi API (natively or via bridgePdfAttachments()). */
 export function modelApiSupportsPdfAttachments(api: Api): boolean {
   return api === "anthropic-messages" || api === "openai-responses" ||
-      api === "google-generative-ai";
+      api === "google-generative-ai" || api === "openai-completions";
 }
 
 /**
@@ -42,6 +42,29 @@ export function bridgePdfAttachments(api: Api, payload: unknown): unknown | unde
     case "openai-responses": return bridgeOpenAiResponses(payload);
     default: return undefined;
   }
+}
+
+/**
+ * Rewrite media (video/audio)-carrying image blocks of a provider request payload into the provider's
+ * native media part (e.g. video_url for OpenAI completions endpoints such as TheHive).
+ */
+export function bridgeMediaAttachments(api: Api, payload: unknown): unknown | undefined {
+  if (!isRecord(payload)) return undefined;
+  if (api === "openai-completions") {
+    const messages = rewriteUserContent(payload.messages, (part) => {
+      if (isRecord(part) && part.type === "image_url" && isRecord(part.image_url) &&
+          typeof part.image_url.url === "string" &&
+          (part.image_url.url.startsWith("data:video/") || part.image_url.url.startsWith("data:audio/"))) {
+        return {
+          type: "video_url",
+          video_url: { url: part.image_url.url },
+        };
+      }
+      return undefined;
+    });
+    return messages && { ...payload, messages };
+  }
+  return undefined;
 }
 
 type UnknownRecord = Record<string, unknown>;
