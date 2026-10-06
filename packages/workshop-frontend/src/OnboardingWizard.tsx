@@ -16,6 +16,7 @@ import {
   Sparkle,
   Camera,
   Lightning,
+  X,
 } from '@phosphor-icons/react'
 import AddModelModal from './AddModelModal'
 import { persistSelectedModel } from './modelSelection'
@@ -78,7 +79,8 @@ export default function OnboardingWizard({
 
   // ── Step 1: Campus & Degree Standing ──────────────────────────────────────
   const [universitySearch, setUniversitySearch] = useState('')
-  const [universityRegionFilter, setUniversityRegionFilter] = useState('All')
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const [selectedUniversity, setSelectedUniversity] = useState<string>(
     existing?.university || 'University of Nairobi'
   )
@@ -177,21 +179,103 @@ export default function OnboardingWizard({
     )
   }
 
-  // Filtered universities
+  // Close university dropdown on click outside or Escape
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  // Filtered universities matching character search across full registry
   const filteredUniversities = useMemo(() => {
     const q = universitySearch.toLowerCase().trim()
+    if (!q) return []
+
+    const cleanQ = q.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    const tokens = cleanQ.split(/\s+/).filter(Boolean)
+    const compactQ = q.replace(/[^a-z0-9]/g, '')
+
     return UNIVERSITIES.filter((u) => {
-      const matchesRegion =
-        universityRegionFilter === 'All' || u.region === universityRegionFilter
-      const matchesQuery =
-        !q ||
-        u.name.toLowerCase().includes(q) ||
-        u.country.toLowerCase().includes(q) ||
-        u.code.toLowerCase().includes(q) ||
-        (u.acronyms && u.acronyms.some((a) => a.toLowerCase().includes(q)))
-      return matchesRegion && matchesQuery
+      const nameLower = u.name.toLowerCase()
+      const codeLower = u.code.toLowerCase()
+      const countryLower = u.country.toLowerCase()
+      const cityLower = (u.city || '').toLowerCase()
+      const acronymsLower = (u.acronyms || []).map((a) => a.toLowerCase())
+      const domainsLower = (u.domains || []).map((d) => d.toLowerCase())
+
+      // 1. Exact or compact acronym/code match (e.g. "uon", "dekut", "tuk", "ku", "mku")
+      if (compactQ) {
+        if (acronymsLower.some((a) => a.replace(/[^a-z0-9]/g, '').includes(compactQ))) return true
+        if (codeLower.replace(/[^a-z0-9]/g, '').includes(compactQ)) return true
+      }
+
+      // 2. Full query substring match across name, code, city, country, acronyms, or domains
+      if (
+        nameLower.includes(q) ||
+        codeLower.includes(q) ||
+        countryLower.includes(q) ||
+        cityLower.includes(q) ||
+        acronymsLower.some((a) => a.includes(q) || q.includes(a)) ||
+        domainsLower.some((d) => d.includes(q))
+      ) {
+        return true
+      }
+
+      // 3. Multi-token match (all words appear somewhere in institution metadata)
+      if (tokens.length > 1) {
+        return tokens.every(
+          (token) =>
+            nameLower.includes(token) ||
+            codeLower.includes(token) ||
+            countryLower.includes(token) ||
+            cityLower.includes(token) ||
+            acronymsLower.some((a) => a.includes(token)) ||
+            domainsLower.some((d) => d.includes(token))
+        )
+      }
+
+      return false
+    }).sort((a, b) => {
+      // Relevance sorting: exact acronym or code match ranked first
+      const aAcrMatch =
+        (a.acronyms || []).some(
+          (acr) => acr.toLowerCase() === q || (compactQ && acr.toLowerCase().replace(/[^a-z0-9]/g, '') === compactQ)
+        ) ||
+        a.code.toLowerCase() === q ||
+        (compactQ && a.code.toLowerCase().replace(/[^a-z0-9]/g, '') === compactQ)
+
+      const bAcrMatch =
+        (b.acronyms || []).some(
+          (acr) => acr.toLowerCase() === q || (compactQ && acr.toLowerCase().replace(/[^a-z0-9]/g, '') === compactQ)
+        ) ||
+        b.code.toLowerCase() === q ||
+        (compactQ && b.code.toLowerCase().replace(/[^a-z0-9]/g, '') === compactQ)
+
+      if (aAcrMatch && !bAcrMatch) return -1
+      if (!aAcrMatch && bAcrMatch) return 1
+
+      // Prefix name match ranked next
+      const aStarts = a.name.toLowerCase().startsWith(q)
+      const bStarts = b.name.toLowerCase().startsWith(q)
+      if (aStarts && !bStarts) return -1
+      if (!aStarts && bStarts) return 1
+
+      return 0
     })
-  }, [universitySearch, universityRegionFilter])
+  }, [universitySearch])
 
   // Current academic level years list
   const activeLevelYears = useMemo(() => {
@@ -535,82 +619,137 @@ export default function OnboardingWizard({
                         className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
                       />
                     ) : (
-                      <>
-                        {/* Search + Region Pills */}
+                      <div className="relative" ref={dropdownRef}>
+                        {/* Search Bar */}
                         <div className="relative">
                           <MagnifyingGlass
                             size={14}
-                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-kumo-inactive"
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-kumo-inactive pointer-events-none"
                           />
                           <input
                             type="text"
                             value={universitySearch}
-                            onChange={(e) => setUniversitySearch(e.target.value)}
-                            placeholder="Search by university name, country, or code (e.g. Nairobi, JKUAT, MIT, Makerere)..."
-                            className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setUniversitySearch(val)
+                              setIsDropdownOpen(val.trim().length > 0)
+                            }}
+                            onFocus={() => {
+                              if (universitySearch.trim().length > 0) {
+                                setIsDropdownOpen(true)
+                              }
+                            }}
+                            placeholder="Type to search university (e.g. UoN, JKUAT, DeKUT, Harvard, Oxford)..."
+                            className="w-full pl-9 pr-8 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500 transition-colors shadow-sm"
                           />
-                        </div>
-
-                        {/* Region Filters */}
-                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                          {['All', 'East Africa', 'Global', 'West Africa', 'Southern Africa'].map(
-                            (region) => (
-                              <button
-                                key={region}
-                                type="button"
-                                onClick={() => setUniversityRegionFilter(region)}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium whitespace-nowrap transition-colors ${
-                                  universityRegionFilter === region
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-kumo-tint text-kumo-subtle hover:text-kumo-default'
-                                }`}
-                              >
-                                {region}
-                              </button>
-                            )
+                          {universitySearch && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUniversitySearch('')
+                                setIsDropdownOpen(false)
+                              }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded text-kumo-inactive hover:text-kumo-default text-xs transition-colors"
+                              aria-label="Clear search"
+                            >
+                              <X size={12} weight="bold" />
+                            </button>
                           )}
                         </div>
 
-                        {/* Universities List */}
-                        <div className="max-h-40 overflow-y-auto space-y-1.5 border border-kumo-line rounded-xl p-2 bg-kumo-base">
-                          {filteredUniversities.slice(0, 40).map((u) => {
-                            const isChosen = selectedUniversity === u.name
-                            return (
-                              <div
-                                key={u.id}
-                                onClick={() => {
-                                  setSelectedUniversity(u.name)
-                                  setSelectedUniversityDetails(u)
-                                }}
-                                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
-                                  isChosen
-                                    ? 'bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30'
-                                    : 'hover:bg-kumo-tint text-kumo-default'
-                                }`}
-                              >
-                                <div className="min-w-0 pr-2">
-                                  <p className="truncate">{u.name}</p>
-                                  <p className="text-[10px] text-kumo-subtle">
-                                    {u.city}, {u.country} · {u.code}
+                        {/* Current Selected Campus Badge (visible when closed) */}
+                        {selectedUniversity && !isDropdownOpen && (
+                          <div className="mt-2 flex items-center justify-between p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-xs">
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                <GraduationCap size={16} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-kumo-default truncate">{selectedUniversity}</p>
+                                {selectedUniversityDetails && (
+                                  <p className="text-[10px] text-kumo-subtle truncate">
+                                    {selectedUniversityDetails.city}, {selectedUniversityDetails.country} · {selectedUniversityDetails.code}
                                   </p>
-                                </div>
-                                {isChosen && (
-                                  <CheckCircle
-                                    size={14}
-                                    weight="fill"
-                                    className="text-indigo-400 shrink-0"
-                                  />
                                 )}
                               </div>
-                            )
-                          })}
-                          {filteredUniversities.length === 0 && (
-                            <p className="text-center py-4 text-xs text-kumo-subtle">
-                              No universities matching &ldquo;{universitySearch}&rdquo;
-                            </p>
-                          )}
-                        </div>
-                      </>
+                            </div>
+                            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-medium px-2 py-0.5 rounded-full shrink-0">
+                              Selected
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Dropdown Menu - only opens once user starts typing */}
+                        {isDropdownOpen && universitySearch.trim().length > 0 && (
+                          <div className="mt-1.5 border border-kumo-line rounded-xl bg-kumo-base shadow-xl overflow-hidden z-20">
+                            <div className="px-3 py-1.5 bg-kumo-tint/50 border-b border-kumo-line flex items-center justify-between text-[11px] text-kumo-subtle">
+                              <span>
+                                Matching universities ({filteredUniversities.length})
+                              </span>
+                              <span className="text-[10px]">Select your campus</span>
+                            </div>
+
+                            <div className="max-h-52 overflow-y-auto p-1.5 space-y-1">
+                              {filteredUniversities.slice(0, 50).map((u) => {
+                                const isChosen = selectedUniversity === u.name
+                                return (
+                                  <div
+                                    key={u.id}
+                                    onClick={() => {
+                                      setSelectedUniversity(u.name)
+                                      setSelectedUniversityDetails(u)
+                                      setIsDropdownOpen(false)
+                                      setUniversitySearch('')
+                                    }}
+                                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
+                                      isChosen
+                                        ? 'bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30'
+                                        : 'hover:bg-kumo-tint text-kumo-default'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 pr-2">
+                                      <p className="truncate font-medium">{u.name}</p>
+                                      <p className="text-[10px] text-kumo-subtle">
+                                        {u.city}, {u.country} · {u.code}
+                                        {u.acronyms && u.acronyms.length > 0 && (
+                                          <span className="ml-1 text-indigo-400/80">({u.acronyms.join(', ')})</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                    {isChosen && (
+                                      <CheckCircle
+                                        size={14}
+                                        weight="fill"
+                                        className="text-indigo-400 shrink-0"
+                                      />
+                                    )}
+                                  </div>
+                                )
+                              })}
+
+                              {filteredUniversities.length === 0 && (
+                                <div className="py-4 px-3 text-center">
+                                  <p className="text-xs text-kumo-subtle">
+                                    No universities matching &ldquo;{universitySearch}&rdquo;
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsCustomUniversity(true)
+                                      setCustomUniversityName(universitySearch)
+                                      setIsDropdownOpen(false)
+                                      setUniversitySearch('')
+                                    }}
+                                    className="mt-2 inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium"
+                                  >
+                                    <Plus size={12} /> Use &ldquo;{universitySearch}&rdquo; as custom campus
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 

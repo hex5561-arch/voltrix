@@ -489,18 +489,8 @@ export const UNIVERSITIES: University[] = [
     acronyms: ['EPFL']
   },
 
-  // ── East & Central Africa ──
-  {
-    id: 'makerere',
-    name: 'Makerere University',
-    country: 'Uganda',
-    countryCode: 'UG',
-    code: 'MAK',
-    region: 'East Africa',
-    domains: ['mak.ac.ug'],
-    city: 'Kampala',
-    acronyms: ['MAK']
-  },
+  // ── East & Central Africa (Kenya, Uganda, Tanzania, Rwanda, Ethiopia) ──
+  // Kenya - Public & Technical Universities
   {
     id: 'uon',
     name: 'University of Nairobi',
@@ -511,39 +501,6 @@ export const UNIVERSITIES: University[] = [
     domains: ['uonbi.ac.ke'],
     city: 'Nairobi',
     acronyms: ['UoN', 'UON']
-  },
-  {
-    id: 'mubs',
-    name: 'Makerere University Business School (MUBS)',
-    country: 'Uganda',
-    countryCode: 'UG',
-    code: 'MUBS',
-    region: 'East Africa',
-    domains: ['mubs.ac.ug'],
-    city: 'Kampala',
-    acronyms: ['MUBS']
-  },
-  {
-    id: 'strathmore',
-    name: 'Strathmore University',
-    country: 'Kenya',
-    countryCode: 'KE',
-    code: 'Strathmore',
-    region: 'East Africa',
-    domains: ['strathmore.edu'],
-    city: 'Nairobi',
-    acronyms: ['SU', 'Strathmore']
-  },
-  {
-    id: 'jkuat',
-    name: 'Jomo Kenyatta University of Agriculture & Technology (JKUAT)',
-    country: 'Kenya',
-    countryCode: 'KE',
-    code: 'JKUAT',
-    region: 'East Africa',
-    domains: ['jkuat.ac.ke'],
-    city: 'Juja, Nairobi',
-    acronyms: ['JKUAT']
   },
   {
     id: 'kenyatta',
@@ -557,59 +514,347 @@ export const UNIVERSITIES: University[] = [
     acronyms: ['KU']
   },
   {
-    id: 'ucu',
-    name: 'Uganda Christian University (UCU)',
-    country: 'Uganda',
-    countryCode: 'UG',
-    code: 'UCU',
+    id: 'jkuat',
+    name: 'Jomo Kenyatta University of Agriculture & Technology (JKUAT)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'JKUAT',
     region: 'East Africa',
-    domains: ['ucu.ac.ug'],
-    city: 'Mukono',
-    acronyms: ['UCU']
+    domains: ['jkuat.ac.ke'],
+    city: 'Juja, Nairobi',
+    acronyms: ['JKUAT']
   },
   {
-    id: 'kyambogo',
-    name: 'Kyambogo University',
-    country: 'Uganda',
-    countryCode: 'UG',
-    code: 'KYU',
+    id: 'tuk',
+    name: 'Technical University of Kenya (TUK)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TUK',
     region: 'East Africa',
-    domains: ['kyu.ac.ug'],
-    city: 'Kampala',
-    acronyms: ['KYU']
+    domains: ['tukenya.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['TUK', 'Kenya Poly', 'TUK Kenya']
   },
   {
-    id: 'udsm',
-    name: 'University of Dar es Salaam',
-    country: 'Tanzania',
-    countryCode: 'TZ',
-    code: 'UDSM',
+    id: 'tum_ke',
+    name: 'Technical University of Mombasa (TUM)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TUM',
     region: 'East Africa',
-    domains: ['udsm.ac.tz'],
-    city: 'Dar es Salaam',
-    acronyms: ['UDSM']
+    domains: ['tum.ac.ke'],
+    city: 'Mombasa',
+    acronyms: ['TUM', 'Mombasa Poly', 'TUM Kenya']
   },
   {
-    id: 'ur',
-    name: 'University of Rwanda',
-    country: 'Rwanda',
-    countryCode: 'RW',
-    code: 'UR',
+    id: 'dekut',
+    name: 'Dedan Kimathi University of Technology (DeKUT)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'DeKUT',
     region: 'East Africa',
-    domains: ['ur.ac.rw'],
-    city: 'Kigali',
-    acronyms: ['UR']
+    domains: ['dkut.ac.ke'],
+    city: 'Nyeri',
+    acronyms: ['DeKUT', 'DKUT', 'Kimathi']
   },
   {
-    id: 'must_ug',
-    name: 'Mbarara University of Science & Technology (MUST)',
-    country: 'Uganda',
-    countryCode: 'UG',
+    id: 'maseno',
+    name: 'Maseno University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Maseno',
+    region: 'East Africa',
+    domains: ['maseno.ac.ke'],
+    city: 'Maseno, Kisumu',
+    acronyms: ['Maseno', 'MSU']
+  },
+  {
+    id: 'mmust',
+    name: 'Masinde Muliro University of Science and Technology (MMUST)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'MMUST',
+    region: 'East Africa',
+    domains: ['mmust.ac.ke'],
+    city: 'Kakamega',
+    acronyms: ['MMUST']
+  },
+  {
+    id: 'mmu',
+    name: 'Multimedia University of Kenya (MMU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'MMU',
+    region: 'East Africa',
+    domains: ['mmu.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['MMU']
+  },
+  {
+    id: 'must_ke',
+    name: 'Meru University of Science & Technology (MUST)',
+    country: 'Kenya',
+    countryCode: 'KE',
     code: 'MUST',
     region: 'East Africa',
-    domains: ['must.ac.ug'],
-    city: 'Mbarara',
-    acronyms: ['MUST']
+    domains: ['must.ac.ke'],
+    city: 'Meru',
+    acronyms: ['MUST', 'MUST Kenya']
+  },
+  {
+    id: 'uoeld',
+    name: 'University of Eldoret (UoE)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'UoE',
+    region: 'East Africa',
+    domains: ['uoeld.ac.ke'],
+    city: 'Eldoret',
+    acronyms: ['UoE', 'Chepkoilel']
+  },
+  {
+    id: 'moi',
+    name: 'Moi University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Moi',
+    region: 'East Africa',
+    domains: ['mu.ac.ke'],
+    city: 'Eldoret',
+    acronyms: ['MU', 'Moi']
+  },
+  {
+    id: 'egerton',
+    name: 'Egerton University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Egerton',
+    region: 'East Africa',
+    domains: ['egerton.ac.ke'],
+    city: 'Njoro, Nakuru',
+    acronyms: ['Egerton', 'EU']
+  },
+  {
+    id: 'kisii',
+    name: 'Kisii University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Kisii',
+    region: 'East Africa',
+    domains: ['kisiiuniversity.ac.ke'],
+    city: 'Kisii',
+    acronyms: ['Kisii', 'KSU']
+  },
+  {
+    id: 'chuka',
+    name: 'Chuka University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Chuka',
+    region: 'East Africa',
+    domains: ['chuka.ac.ke'],
+    city: 'Chuka',
+    acronyms: ['Chuka', 'CU']
+  },
+  {
+    id: 'pwani',
+    name: 'Pwani University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'PU',
+    region: 'East Africa',
+    domains: ['pu.ac.ke'],
+    city: 'Kilifi',
+    acronyms: ['PU', 'Pwani']
+  },
+  {
+    id: 'machakos',
+    name: 'Machakos University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'MksU',
+    region: 'East Africa',
+    domains: ['mksu.ac.ke'],
+    city: 'Machakos',
+    acronyms: ['MksU', 'Machakos']
+  },
+  {
+    id: 'seku',
+    name: 'South Eastern Kenya University (SEKU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'SEKU',
+    region: 'East Africa',
+    domains: ['seku.ac.ke'],
+    city: 'Kitui',
+    acronyms: ['SEKU']
+  },
+  {
+    id: 'karatina',
+    name: 'Karatina University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KarU',
+    region: 'East Africa',
+    domains: ['karu.ac.ke'],
+    city: 'Karatina, Nyeri',
+    acronyms: ['KarU', 'Karatina']
+  },
+  {
+    id: 'cuk',
+    name: 'The Co-operative University of Kenya (CUK)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'CUK',
+    region: 'East Africa',
+    domains: ['cuk.ac.ke'],
+    city: 'Nairobi, Karen',
+    acronyms: ['CUK']
+  },
+  {
+    id: 'kirinyaga',
+    name: 'Kirinyaga University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KyU',
+    region: 'East Africa',
+    domains: ['kyu.ac.ke'],
+    city: 'Kerugoya',
+    acronyms: ['KyU', 'Kirinyaga']
+  },
+  {
+    id: 'kibabii',
+    name: 'Kibabii University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KIBU',
+    region: 'East Africa',
+    domains: ['kibu.ac.ke'],
+    city: 'Bungoma',
+    acronyms: ['KIBU', 'Kibabii']
+  },
+  {
+    id: 'embu',
+    name: 'University of Embu',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'UoEm',
+    region: 'East Africa',
+    domains: ['embuni.ac.ke'],
+    city: 'Embu',
+    acronyms: ['UoEm', 'Embu']
+  },
+  {
+    id: 'rongo',
+    name: 'Rongo University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'RU',
+    region: 'East Africa',
+    domains: ['rongovarsity.ac.ke'],
+    city: 'Rongo, Migori',
+    acronyms: ['RU', 'Rongo']
+  },
+  {
+    id: 'laikipia',
+    name: 'Laikipia University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'LU',
+    region: 'East Africa',
+    domains: ['laikipia.ac.ke'],
+    city: 'Nyahururu',
+    acronyms: ['LU', 'Laikipia']
+  },
+  {
+    id: 'mmarau',
+    name: 'Maasai Mara University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'MMARAU',
+    region: 'East Africa',
+    domains: ['mmarau.ac.ke'],
+    city: 'Narok',
+    acronyms: ['MMARAU', 'Maasai Mara']
+  },
+  {
+    id: 'ttu',
+    name: 'Taita Taveta University (TTU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TTU',
+    region: 'East Africa',
+    domains: ['ttu.ac.ke'],
+    city: 'Voi',
+    acronyms: ['TTU']
+  },
+  {
+    id: 'tmu',
+    name: 'Tom Mboya University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TMU',
+    region: 'East Africa',
+    domains: ['tmu.ac.ke'],
+    city: 'Homa Bay',
+    acronyms: ['TMU', 'Tom Mboya']
+  },
+  {
+    id: 'alupe',
+    name: 'Alupe University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'AU',
+    region: 'East Africa',
+    domains: ['au.ac.ke'],
+    city: 'Busia',
+    acronyms: ['AU', 'Alupe']
+  },
+  {
+    id: 'kafu',
+    name: 'Kaimosi Friends University (KAFU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KAFU',
+    region: 'East Africa',
+    domains: ['kafu.ac.ke'],
+    city: 'Kaimosi, Vihiga',
+    acronyms: ['KAFU']
+  },
+  {
+    id: 'tharaka',
+    name: 'Tharaka University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TU',
+    region: 'East Africa',
+    domains: ['tharaka.ac.ke'],
+    city: 'Tharaka Nithi',
+    acronyms: ['TU', 'Tharaka']
+  },
+  {
+    id: 'garissa',
+    name: 'Garissa University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'GaU',
+    region: 'East Africa',
+    domains: ['gau.ac.ke'],
+    city: 'Garissa',
+    acronyms: ['GaU', 'Garissa']
+  },
+
+  // Kenya - Chartered Private Universities & TVET Institutions
+  {
+    id: 'strathmore',
+    name: 'Strathmore University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Strathmore',
+    region: 'East Africa',
+    domains: ['strathmore.edu'],
+    city: 'Nairobi',
+    acronyms: ['SU', 'Strathmore']
   },
   {
     id: 'usiu',
@@ -620,30 +865,18 @@ export const UNIVERSITIES: University[] = [
     region: 'East Africa',
     domains: ['usiu.ac.ke'],
     city: 'Nairobi',
-    acronyms: ['USIU']
+    acronyms: ['USIU', 'USIU-Africa']
   },
   {
-    id: 'kiu',
-    name: 'Kampala International University (KIU)',
-    country: 'Uganda',
-    countryCode: 'UG',
-    code: 'KIU',
+    id: 'mku',
+    name: 'Mount Kenya University (MKU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'MKU',
     region: 'East Africa',
-    domains: ['kiu.ac.ug'],
-    city: 'Kampala',
-    acronyms: ['KIU']
-  },
-  {
-    id: 'kyotoiu',
-    name: 'Kyoto International University',
-    country: 'Japan',
-    countryCode: 'JP',
-    code: 'KIU',
-    region: 'Asia',
-    domains: ['kyotoiu.ac.jp'],
-    website: 'http://www.kyotoiu.ac.jp/',
-    city: 'Kyoto',
-    acronyms: ['KIU']
+    domains: ['mku.ac.ke'],
+    city: 'Thika',
+    acronyms: ['MKU']
   },
   {
     id: 'daystar',
@@ -668,37 +901,237 @@ export const UNIVERSITIES: University[] = [
     acronyms: ['CUEA']
   },
   {
-    id: 'egerton',
-    name: 'Egerton University',
+    id: 'kca',
+    name: 'KCA University',
     country: 'Kenya',
     countryCode: 'KE',
-    code: 'Egerton',
+    code: 'KCA',
     region: 'East Africa',
-    domains: ['egerton.ac.ke'],
-    city: 'Njoro',
-    acronyms: ['Egerton']
+    domains: ['kca.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['KCA', 'KCAU']
   },
   {
-    id: 'moi',
-    name: 'Moi University',
+    id: 'kabarak',
+    name: 'Kabarak University',
     country: 'Kenya',
     countryCode: 'KE',
-    code: 'Moi',
+    code: 'Kabarak',
     region: 'East Africa',
-    domains: ['mu.ac.ke'],
+    domains: ['kabarak.ac.ke'],
+    city: 'Nakuru',
+    acronyms: ['Kabarak', 'KABU']
+  },
+  {
+    id: 'anu_ke',
+    name: 'Africa Nazarene University (ANU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'ANU',
+    region: 'East Africa',
+    domains: ['anu.ac.ke'],
+    city: 'Nairobi, Ongata Rongai',
+    acronyms: ['ANU', 'Nazarene']
+  },
+  {
+    id: 'zetech',
+    name: 'Zetech University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Zetech',
+    region: 'East Africa',
+    domains: ['zetech.ac.ke'],
+    city: 'Ruiru, Nairobi',
+    acronyms: ['ZU', 'Zetech']
+  },
+  {
+    id: 'riara',
+    name: 'Riara University',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'Riara',
+    region: 'East Africa',
+    domains: ['riarauniversity.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['RU', 'Riara']
+  },
+  {
+    id: 'kemu',
+    name: 'Kenya Methodist University (KeMU)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KeMU',
+    region: 'East Africa',
+    domains: ['kemu.ac.ke'],
+    city: 'Meru / Nairobi',
+    acronyms: ['KeMU']
+  },
+  {
+    id: 'pac',
+    name: 'Pan Africa Christian University (PAC)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'PAC',
+    region: 'East Africa',
+    domains: ['pacuniversity.ac.ke'],
+    city: 'Nairobi, Roysambu',
+    acronyms: ['PAC', 'PACU']
+  },
+  {
+    id: 'spu',
+    name: "St. Paul's University (SPU)",
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'SPU',
+    region: 'East Africa',
+    domains: ['spu.ac.ke'],
+    city: 'Limuru / Nairobi',
+    acronyms: ['SPU', "St Paul's"]
+  },
+  {
+    id: 'gluk',
+    name: 'Great Lakes University of Kisumu (GLUK)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'GLUK',
+    region: 'East Africa',
+    domains: ['gluk.ac.ke'],
+    city: 'Kisumu',
+    acronyms: ['GLUK']
+  },
+  {
+    id: 'kmtc',
+    name: 'Kenya Medical Training College (KMTC)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KMTC',
+    region: 'East Africa',
+    domains: ['kmtc.ac.ke'],
+    city: 'Nairobi & Nationwide',
+    acronyms: ['KMTC']
+  },
+  {
+    id: 'ntti',
+    name: 'Nairobi Technical Training Institute (NTTI)',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'NTTI',
+    region: 'East Africa',
+    domains: ['nairobitti.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['NTTI']
+  },
+  {
+    id: 'kabete_poly',
+    name: 'The Kabete National Polytechnic',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TKNP',
+    region: 'East Africa',
+    domains: ['kabetepoly.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['Kabete Poly', 'TKNP']
+  },
+  {
+    id: 'kcnp',
+    name: 'Kenya Coast National Polytechnic',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'KCNP',
+    region: 'East Africa',
+    domains: ['kenyacoastpoly.ac.ke'],
+    city: 'Mombasa',
+    acronyms: ['KCNP']
+  },
+  {
+    id: 'eldoret_poly',
+    name: 'The Eldoret National Polytechnic',
+    country: 'Kenya',
+    countryCode: 'KE',
+    code: 'TENP',
+    region: 'East Africa',
+    domains: ['eldoretpoly.ac.ke'],
     city: 'Eldoret',
-    acronyms: ['MU', 'Moi']
+    acronyms: ['TENP', 'Eldoret Poly']
   },
   {
-    id: 'mku',
-    name: 'Mount Kenya University (MKU)',
+    id: 'kimc',
+    name: 'Kenya Institute of Mass Communication (KIMC)',
     country: 'Kenya',
     countryCode: 'KE',
-    code: 'MKU',
+    code: 'KIMC',
     region: 'East Africa',
-    domains: ['mku.ac.ke'],
-    city: 'Thika',
-    acronyms: ['MKU']
+    domains: ['kimc.ac.ke'],
+    city: 'Nairobi',
+    acronyms: ['KIMC']
+  },
+
+  // Uganda
+  {
+    id: 'makerere',
+    name: 'Makerere University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'MAK',
+    region: 'East Africa',
+    domains: ['mak.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['MAK']
+  },
+  {
+    id: 'mubs',
+    name: 'Makerere University Business School (MUBS)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'MUBS',
+    region: 'East Africa',
+    domains: ['mubs.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['MUBS']
+  },
+  {
+    id: 'kyambogo',
+    name: 'Kyambogo University',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'KYU',
+    region: 'East Africa',
+    domains: ['kyu.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['KYU']
+  },
+  {
+    id: 'ucu',
+    name: 'Uganda Christian University (UCU)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'UCU',
+    region: 'East Africa',
+    domains: ['ucu.ac.ug'],
+    city: 'Mukono',
+    acronyms: ['UCU']
+  },
+  {
+    id: 'must_ug',
+    name: 'Mbarara University of Science & Technology (MUST)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'MUST',
+    region: 'East Africa',
+    domains: ['must.ac.ug'],
+    city: 'Mbarara',
+    acronyms: ['MUST']
+  },
+  {
+    id: 'kiu',
+    name: 'Kampala International University (KIU)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'KIU',
+    region: 'East Africa',
+    domains: ['kiu.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['KIU']
   },
   {
     id: 'umu',
@@ -777,6 +1210,19 @@ export const UNIVERSITIES: University[] = [
     city: 'Kabale',
     acronyms: ['KAB']
   },
+
+  // Tanzania
+  {
+    id: 'udsm',
+    name: 'University of Dar es Salaam',
+    country: 'Tanzania',
+    countryCode: 'TZ',
+    code: 'UDSM',
+    region: 'East Africa',
+    domains: ['udsm.ac.tz'],
+    city: 'Dar es Salaam',
+    acronyms: ['UDSM']
+  },
   {
     id: 'sua',
     name: 'Sokoine University of Agriculture',
@@ -789,6 +1235,74 @@ export const UNIVERSITIES: University[] = [
     acronyms: ['SUA']
   },
   {
+    id: 'udom',
+    name: 'University of Dodoma (UDOM)',
+    country: 'Tanzania',
+    countryCode: 'TZ',
+    code: 'UDOM',
+    region: 'East Africa',
+    domains: ['udom.ac.tz'],
+    city: 'Dodoma',
+    acronyms: ['UDOM']
+  },
+  {
+    id: 'muhas',
+    name: 'Muhimbili University of Health and Allied Sciences (MUHAS)',
+    country: 'Tanzania',
+    countryCode: 'TZ',
+    code: 'MUHAS',
+    region: 'East Africa',
+    domains: ['muhas.ac.tz'],
+    city: 'Dar es Salaam',
+    acronyms: ['MUHAS']
+  },
+  {
+    id: 'ardhi',
+    name: 'Ardhi University',
+    country: 'Tanzania',
+    countryCode: 'TZ',
+    code: 'ARU',
+    region: 'East Africa',
+    domains: ['aru.ac.tz'],
+    city: 'Dar es Salaam',
+    acronyms: ['ARU', 'Ardhi']
+  },
+
+  // Rwanda & Ethiopia
+  {
+    id: 'ur',
+    name: 'University of Rwanda',
+    country: 'Rwanda',
+    countryCode: 'RW',
+    code: 'UR',
+    region: 'East Africa',
+    domains: ['ur.ac.rw'],
+    city: 'Kigali',
+    acronyms: ['UR']
+  },
+  {
+    id: 'cmu_africa',
+    name: 'Carnegie Mellon University Africa',
+    country: 'Rwanda',
+    countryCode: 'RW',
+    code: 'CMU Africa',
+    region: 'East Africa',
+    domains: ['africa.engineering.cmu.edu'],
+    city: 'Kigali',
+    acronyms: ['CMU Africa', 'CMU-A']
+  },
+  {
+    id: 'alu_rw',
+    name: 'African Leadership University (ALU)',
+    country: 'Rwanda',
+    countryCode: 'RW',
+    code: 'ALU',
+    region: 'East Africa',
+    domains: ['alueducation.com'],
+    city: 'Kigali',
+    acronyms: ['ALU']
+  },
+  {
     id: 'aau_et',
     name: 'Addis Ababa University',
     country: 'Ethiopia',
@@ -798,6 +1312,18 @@ export const UNIVERSITIES: University[] = [
     domains: ['aau.edu.et'],
     city: 'Addis Ababa',
     acronyms: ['AAU']
+  },
+  {
+    id: 'kyotoiu',
+    name: 'Kyoto International University',
+    country: 'Japan',
+    countryCode: 'JP',
+    code: 'KIU',
+    region: 'Global',
+    domains: ['kyotoiu.ac.jp'],
+    website: 'http://www.kyotoiu.ac.jp/',
+    city: 'Kyoto',
+    acronyms: ['KIU']
   },
 
   // ── West & Southern & North Africa ──

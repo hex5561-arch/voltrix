@@ -16,6 +16,8 @@ export interface Env {
   WORKSHOP_BACKEND: Fetcher;
   /** Present in production (wrangler.jsonc assets stanza); absent in dev. */
   ASSETS?: Fetcher;
+  /** WhatsApp worker — handles /api/whatsapp/* */
+  WHATSAPP?: Fetcher;
   /** Dormant until custom domains + Email Routing exist; the handler ships anyway. */
   GATEKEEPER_EMAIL?: Service<EmailEntrypoint>;
   [key: string]: unknown;
@@ -65,6 +67,10 @@ export default {
     if (url.pathname === "/api" || url.pathname.startsWith("/api/") ||
         url.pathname === "/blueprint-screenshot" ||
         url.pathname.startsWith("/blueprint-screenshot/")) {
+      // WhatsApp webhook is handled by the dedicated worker, not the backend.
+      if (env.WHATSAPP && url.pathname.startsWith("/api/whatsapp/")) {
+        return env.WHATSAPP.fetch(req);
+      }
       return env.WORKSHOP_BACKEND.fetch(req);
     }
 

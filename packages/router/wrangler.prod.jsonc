@@ -10,6 +10,10 @@
       "service": "voltrix-workshop"
     },
     {
+      "binding": "WHATSAPP",
+      "service": "voltrix-whatsapp"
+    },
+    {
       "binding": "GATEKEEPER_WEBHOOK",
       "service": "voltrix-webhook"
     },
