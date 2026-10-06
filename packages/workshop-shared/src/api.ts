@@ -352,6 +352,20 @@ export const createAuthError = authErrors.create;
 /** Reads the machine-readable code from an authentication failure. */
 export const getAuthErrorCode = authErrors.getCode;
 
+/** Academic profile set during onboarding, persisted in the user's Durable Object. */
+export interface StudentProfile {
+  discipline: string;
+  disciplineTitle: string;
+  university: string;
+  degreeProgram: string;
+  academicLevel: string;
+  academicYear: string;
+  semester: string;
+  citationStyle: string;
+  courses: Array<{ code: string; name: string }>;
+  updatedAt: number;
+}
+
 /** Top-level API exposed to the user after they have authenticated. */
 export interface AuthenticatedApi extends RpcTarget {
   /** Get profile info for the user who is logged in. */
@@ -422,6 +436,15 @@ export interface AuthenticatedApi extends RpcTarget {
 
   /** Mark the onboarding wizard as completed. */
   completeOnboarding(): Promise<void>;
+
+  /**
+   * Persist the student's academic profile server-side in their DO so Volt receives it on every
+   * agent turn automatically. Fields mirror the client-side StudentProfile shape.
+   */
+  setStudentProfile(profile: StudentProfile): Promise<void>;
+
+  /** Retrieve the stored student profile, or null if not yet set. */
+  getStudentProfile(): Promise<StudentProfile | null>;
 
   // --- Optional Cloudflare limits / top-up flow (only meaningful when enabled server-side) ---
 

@@ -5728,7 +5728,33 @@ class OverseerImpl implements AgentHooks {
   async getInstanceInstructions(): Promise<string> {
     try {
       // Cheap single KV get from the mirror AdminSettings maintains; avoids the singleton DO.
-      return (await readAdminConfig(this.env)).instanceInstructions;
+      const base = (await readAdminConfig(this.env)).instanceInstructions;
+
+      // Append the student's academic profile if they've completed onboarding.
+      // One extra DO call per agent turn — cheap, always fresh.
+      let profileSection = "";
+      if (this.ownerId) {
+        try {
+          const userStub = this.users.get(this.users.idFromString(this.ownerId));
+          const profile = await userStub.getStudentProfile();
+          if (profile) {
+            const courseList = profile.courses.map(c => c.code).join(", ");
+            profileSection =
+              `\n\n# Student Academic Profile\n` +
+              `University: ${profile.university}\n` +
+              `Degree: ${profile.degreeProgram} (${profile.academicYear})\n` +
+              `Discipline: ${profile.disciplineTitle}\n` +
+              `Citation Style: ${profile.citationStyle}\n` +
+              (courseList ? `Enrolled Courses: ${courseList}\n` : "") +
+              `\nAddress this student by their display name. Tailor all academic help to their ` +
+              `university, courses, and citation style. Reference course codes when relevant.`;
+          }
+        } catch {
+          // Profile fetch failure is non-fatal — agent still runs without it.
+        }
+      }
+
+      return base + profileSection;
     } catch (err) {
       this.logger.warn("failed to read instance instructions", {
         event: "instance.instructions.read.failed", error: err,

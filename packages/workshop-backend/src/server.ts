@@ -157,6 +157,14 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
     return this.#user.completeOnboarding();
   }
 
+  setStudentProfile(profile: import("@gadgets/workshop-shared/api").StudentProfile): Promise<void> {
+    return this.#user.setStudentProfile(profile);
+  }
+
+  getStudentProfile(): Promise<import("@gadgets/workshop-shared/api").StudentProfile | null> {
+    return this.#user.getStudentProfile();
+  }
+
   getCloudflareUsage(): Promise<CloudflareUsageInfo> {
     return getUsageInfo(this.env, this.#user);
   }

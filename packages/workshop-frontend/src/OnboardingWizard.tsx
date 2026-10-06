@@ -287,7 +287,7 @@ export default function OnboardingWizard({
   const handleFinish = async () => {
     setFinishing(true)
     try {
-      // 1. Save student profile
+      // 1. Save student profile — localStorage for instant client reads, DO for agent injection
       saveStudentProfile({
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
@@ -299,6 +299,19 @@ export default function OnboardingWizard({
         semester,
         citationStyle,
         courses: activeEnrolledCourses,
+        updatedAt: Date.now(),
+      })
+      // Persist to the user's Durable Object so the agent gets it on every turn automatically.
+      await authenticatedApi.setStudentProfile({
+        discipline: selectedDiscipline,
+        disciplineTitle: activePersona.title,
+        university: finalUniversity,
+        degreeProgram,
+        academicLevel,
+        academicYear,
+        semester,
+        citationStyle,
+        courses: activeEnrolledCourses.map(c => ({ code: c.code, name: c.name })),
         updatedAt: Date.now(),
       })
 

@@ -200,6 +200,7 @@ function makeUserStorage(storage: DurableObjectStorage) {
       quickModel: <string | null>null,
       preferredModel: <string | null>null,
       onboardingCompleted: false,
+      studentProfile: <import("@gadgets/workshop-shared/api").StudentProfile | null>null,
 
       // Set once the user's pre-existing workspaces have been asked to populate the outputs index
       // (see #backfillOutputs()). Workspaces created since push on their own.
@@ -606,6 +607,14 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
 
   async completeOnboarding(): Promise<void> {
     this.storage.onboardingCompleted.put(true);
+  }
+
+  async setStudentProfile(profile: import("@gadgets/workshop-shared/api").StudentProfile): Promise<void> {
+    this.storage.studentProfile.put(profile);
+  }
+
+  async getStudentProfile(): Promise<import("@gadgets/workshop-shared/api").StudentProfile | null> {
+    return this.storage.studentProfile.get();
   }
 
   // ---------------------------------------------------------------------------------------------

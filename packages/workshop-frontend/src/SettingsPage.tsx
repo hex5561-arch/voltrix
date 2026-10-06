@@ -158,17 +158,33 @@ export default function SettingsPage() {
     })
   }, [])
 
-  const handleSaveAcademic = () => {
-    const updated = saveStudentProfile({
+  const handleSaveAcademic = async () => {
+    const patch = {
       university: academicUni.trim() || 'My University',
       degreeProgram: academicDegree.trim() || 'Degree Program',
       academicYear,
       semester: academicSemester,
       citationStyle: academicCitation,
       courses: academicCourses,
-    })
+    }
+    const updated = saveStudentProfile(patch)
     setStudentProfile(updated)
     setIsEditingAcademic(false)
+    // Also persist to the DO so the agent picks up changes immediately.
+    try {
+      await authenticatedApi.setStudentProfile({
+        discipline: updated.discipline ?? '',
+        disciplineTitle: updated.disciplineTitle ?? '',
+        university: updated.university,
+        degreeProgram: updated.degreeProgram,
+        academicLevel: updated.academicLevel ?? '',
+        academicYear: updated.academicYear,
+        semester: updated.semester,
+        citationStyle: updated.citationStyle,
+        courses: updated.courses.map(c => ({ code: c.code, name: c.name })),
+        updatedAt: updated.updatedAt,
+      })
+    } catch { /* non-fatal — localStorage copy is still saved */ }
     toasts.add({ title: 'Academic profile updated', variant: 'success' })
   }
 
