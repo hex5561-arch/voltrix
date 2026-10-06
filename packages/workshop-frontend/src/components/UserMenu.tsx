@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { DropdownMenu } from '@cloudflare/kumo'
+import { ArrowSquareOut, Lightning } from '@phosphor-icons/react'
 import { useAuthenticatedApi } from '../AuthContext'
 import { useAvatar } from '../useAvatar'
 import { MENU_CONTENT, MENU_ITEM, MENU_ITEM_DANGER, MENU_POSITIONER_STYLE } from './menuStyles'
@@ -52,6 +53,16 @@ export default function UserMenu() {
             Admin
           </DropdownMenu.Item>
         )}
+        <DropdownMenu.Separator />
+        {/* Upgrade CTA — opens coursehero pricing in a new tab */}
+        <DropdownMenu.Item
+          onClick={() => window.open('https://voltrix.stream/pricing', '_blank', 'noopener')}
+          className="flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-md cursor-pointer text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 transition-colors w-full"
+        >
+          <Lightning weight="fill" size={13} />
+          Upgrade to Scholar Pro
+          <ArrowSquareOut size={11} className="ml-auto opacity-60" />
+        </DropdownMenu.Item>
         <DropdownMenu.Separator />
         <DropdownMenu.Item
           variant="danger"
