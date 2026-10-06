@@ -3,36 +3,31 @@
   "name": "voltrix-router",
   "main": "src/index.ts",
   "compatibility_date": "2026-02-02",
-  "account_id": "84f114e1b747a07d247ceb17b0c1dc14",
-  "workers_dev": false,
-  "preview_urls": false,
-  "routes": [
+
+  "services": [
     {
-      "pattern": "os.voltrix.stream",
-      "custom_domain": true
+      "binding": "WORKSHOP_BACKEND",
+      "service": "voltrix-workshop"
     }
   ],
-  "services": [
-    { "binding": "WORKSHOP_BACKEND", "service": "voltrix-workshop" },
-    { "binding": "GATEKEEPER_CONTEXT",   "service": "voltrix-context" },
-    { "binding": "GATEKEEPER_SCHEDULER", "service": "voltrix-scheduler" },
-    { "binding": "GATEKEEPER_CUSTOM",    "service": "voltrix-academic" }
-  ],
+
   "assets": {
-    "directory": "../workshop-frontend/dist",
+    "directory": "/home/voltrix/voltrix-os/cloudflare-os/packages/workshop-frontend/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": true
   },
+
+  "routes": [
+    {
+      "pattern": "os.voltrix.stream/*",
+      "zone_id": "fe7a85ed87c3eb7ef5b03aaa769b7a8a"
+    }
+  ],
+
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
-    "logs": {
-      "invocation_logs": false
-    },
-    "traces": {
-      "enabled": false,
-      "head_sampling_rate": 0.1
-    }
+    "logs": { "invocation_logs": false }
   }
 }
