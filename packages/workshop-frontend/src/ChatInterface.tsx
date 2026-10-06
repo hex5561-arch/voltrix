@@ -131,6 +131,7 @@ import {
   writeComposerDraft,
   type StoredComposerDraft,
 } from "./composerDraft";
+import { formatStudentContextPrompt } from "./services/studentProfile";
 
 export interface StreamingProposedChanges {
   updates: Uint8Array[];
@@ -5584,9 +5585,11 @@ function ChatInterface({
 
     try {
       if (selectedChatId === null) {
-        // Create a new chat (with optional capsules).
+        // Create a new chat — prepend student profile context so Volt knows who it's helping.
+        const profileCtx = formatStudentContextPrompt();
+        const messageWithCtx = profileCtx ? `${profileCtx}\n\n${message}` : message;
         const newChatId = await overseer.newChat(
-            message, model, capsules, attachments, formats);
+            messageWithCtx, model, capsules, attachments, formats);
         onNavigateToChatRef.current(newChatId);
       } else {
         // Send message to existing chat.
