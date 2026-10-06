@@ -387,11 +387,11 @@ type PendingAttachment = {
   error?: string;
 };
 
-const MAX_PENDING_ATTACHMENTS = 5;
-const MAX_CHAT_ATTACHMENT_BYTES = 1024 * 1024;
-const MAX_CHAT_ATTACHMENT_TOTAL_BYTES = 5 * 1024 * 1024;
-const MAX_CHAT_ATTACHMENT_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
-const CHAT_ATTACHMENT_IMAGE_MAX_EDGE = 1568;
+const MAX_PENDING_ATTACHMENTS = 10;
+const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_CHAT_ATTACHMENT_TOTAL_BYTES = 50 * 1024 * 1024;
+const MAX_CHAT_ATTACHMENT_SOURCE_IMAGE_BYTES = 50 * 1024 * 1024;
+const CHAT_ATTACHMENT_IMAGE_MAX_EDGE = 2048;
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -2279,7 +2279,7 @@ export const ChatInput = ({
         continue;
       }
       const id = crypto.randomUUID();
-      const previewUrl = mimeType.startsWith("image/") ? URL.createObjectURL(blob) : undefined;
+      const previewUrl = (mimeType.startsWith("image/") || mimeType.startsWith("video/")) ? URL.createObjectURL(blob) : undefined;
       const pending: PendingAttachment = {
         id,
         blob,
@@ -3455,9 +3455,13 @@ export const ChatInput = ({
         {pendingAttachments.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 px-3 pb-2 pt-1">
             {pendingAttachments.map((attachment) => (
-              <div key={attachment.id} className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border border-kumo-line/70 bg-kumo-elevated">
+              <div key={attachment.id} className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border border-kumo-line/70 bg-kumo-elevated" title={attachment.name}>
                 {attachment.previewUrl ? (
-                  <img src={attachment.previewUrl} alt={attachment.name ?? "Attached file"} className="h-full w-full object-cover" />
+                  attachment.mimeType.startsWith("video/") ? (
+                    <video src={attachment.previewUrl} className="h-full w-full object-cover" muted />
+                  ) : (
+                    <img src={attachment.previewUrl} alt={attachment.name ?? "Attached file"} className="h-full w-full object-cover" />
+                  )
                 ) : (
                   <FileIcon size={22} className="text-kumo-inactive" />
                 )}
@@ -3465,7 +3469,12 @@ export const ChatInput = ({
                   <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/35 text-[10px] text-white">Uploading</div>
                 )}
                 {attachment.uploadState === "error" && (
-                  <div className="absolute inset-0 grid place-items-center rounded-lg bg-kumo-danger/80 px-1 text-center text-[9px] leading-3 text-white">Failed</div>
+                  <div
+                    title={attachment.error || "Upload failed"}
+                    className="absolute inset-0 grid place-items-center rounded-lg bg-kumo-danger/80 px-1 text-center text-[9px] leading-3 text-white cursor-help"
+                  >
+                    Failed
+                  </div>
                 )}
                 <button
                   type="button"
