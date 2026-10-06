@@ -7,7 +7,7 @@
   "workers": {
     "router": {
       "name": "voltrix-router",
-      "route": { "customDomain": "voltrix.stream" }
+      "route": { "customDomain": "os.voltrix.stream" }
     },
     "workshop":        { "name": "voltrix-workshop" },
     "context":         { "name": "voltrix-context" },
