@@ -8,6 +8,9 @@
 
 import { DurableObject } from "cloudflare:workers";
 
+// Minimal env shape — session DO uses no bindings
+type SessionEnv = Record<string, never>;
+
 export interface HistoryEntry {
   role: "user" | "assistant";
   content: string;
@@ -37,10 +40,10 @@ export interface SessionData {
 const MAX_HISTORY = 14;         // keep last 14 turns (7 exchanges)
 const MAX_PROCESSED_IDS = 200;  // dedup window
 
-export class WhatsAppSession extends DurableObject {
+export class WhatsAppSession extends DurableObject<SessionEnv> {
   #data: SessionData;
 
-  constructor(ctx: DurableObjectState, env: unknown) {
+  constructor(ctx: DurableObjectState, env: SessionEnv) {
     super(ctx, env);
     // Restore from SQLite storage synchronously via blockConcurrencyWhile
     this.#data = {
