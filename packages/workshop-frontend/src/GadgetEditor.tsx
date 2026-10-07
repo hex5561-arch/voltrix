@@ -539,6 +539,8 @@ export default function GadgetEditor() {
           title: custom.detail.title,
         })
         setActiveTab('app')
+        // Narrow the chat panel so the video gadget gets maximum width
+        setChatWidth(MIN_CHAT_WIDTH)
       }
     }
     window.addEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)

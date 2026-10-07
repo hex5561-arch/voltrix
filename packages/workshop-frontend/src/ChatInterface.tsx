@@ -132,7 +132,7 @@ import {
   type StoredComposerDraft,
 } from "./composerDraft";
 import { formatStudentContextPrompt } from "./services/studentProfile";
-import { YouTubePlayerCard } from "./components/video/YouTubePlayerCard";
+import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
 
 export interface StreamingProposedChanges {
   updates: Uint8Array[];
@@ -1185,21 +1185,21 @@ function getMarkdownComponents(
           if (raw.startsWith("{")) {
             const parsed = JSON.parse(raw);
             return (
-              <div className="my-3 not-prose font-sans">
-                <YouTubePlayerCard {...parsed} />
+              <div className="my-2 not-prose font-sans">
+                <YouTubeChatCard data={parsed} />
               </div>
             );
           } else {
             return (
-              <div className="my-3 not-prose font-sans">
-                <YouTubePlayerCard videoUrl={raw} />
+              <div className="my-2 not-prose font-sans">
+                <YouTubeChatCard rawUrl={raw} />
               </div>
             );
           }
         } catch {
           return (
-            <div className="my-3 not-prose font-sans">
-              <YouTubePlayerCard videoUrl={String(children).trim()} />
+            <div className="my-2 not-prose font-sans">
+              <YouTubeChatCard rawUrl={String(children).trim()} />
             </div>
           );
         }
@@ -1232,8 +1232,8 @@ function getMarkdownComponents(
           ? children.replace(/^[▶🎬\s]+|[↗\s]+$/g, "").trim()
           : null;
         return (
-          <span className="block my-3 not-prose font-sans">
-            <YouTubePlayerCard videoUrl={safeHref} title={cleanTitle} />
+          <span className="block my-2 not-prose font-sans">
+            <YouTubeChatCard rawUrl={safeHref ?? undefined} data={cleanTitle ? { title: cleanTitle, url: safeHref } : undefined} />
           </span>
         );
       }
