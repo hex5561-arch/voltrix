@@ -863,7 +863,8 @@ export default {
     // Usage: POST /api/admin/set-student-profile
     //   Authorization: Bearer <admin-username>
     //   Body: { "username": "...", "profile": { ...StudentProfile } }
-    if (req.method === "POST" && url.pathname === "/api/admin/set-student-profile") {
+    // GET: { "username": "..." } as query param → returns current profile
+    if ((req.method === "POST" || req.method === "GET") && url.pathname === "/api/admin/set-student-profile") {
       const admins: string[] = typeof env.ADMINS === "string"
           ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
       const auth = req.headers.get("Authorization") ?? "";
@@ -872,6 +873,13 @@ export default {
         return Response.json({ success: false, error: "forbidden" }, { status: 403 });
       }
       try {
+        if (req.method === "GET") {
+          const username = url.searchParams.get("username");
+          if (!username) return Response.json({ success: false, error: "missing username" }, { status: 400 });
+          const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+          const profile = await ctx.exports.UserDurableObject.get(userId).getStudentProfile();
+          return Response.json({ success: true, profile });
+        }
         const { username, profile } = await req.json() as {
           username: string;
           profile: import("@gadgets/workshop-shared/api").StudentProfile;
