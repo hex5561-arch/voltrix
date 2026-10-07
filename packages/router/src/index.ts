@@ -67,8 +67,12 @@ export default {
     if (url.pathname === "/api" || url.pathname.startsWith("/api/") ||
         url.pathname === "/blueprint-screenshot" ||
         url.pathname.startsWith("/blueprint-screenshot/")) {
-      // WhatsApp webhook is handled by the dedicated worker, not the backend.
-      if (env.WHATSAPP && url.pathname.startsWith("/api/whatsapp/")) {
+      // WhatsApp webhook is handled by the dedicated worker; all other /api/whatsapp/* go to backend.
+      if (env.WHATSAPP && (
+        url.pathname === "/api/whatsapp/webhook" ||
+        url.pathname === "/api/whatsapp/status" ||
+        url.pathname === "/api/whatsapp/test"
+      )) {
         return env.WHATSAPP.fetch(req);
       }
       return env.WORKSHOP_BACKEND.fetch(req);
