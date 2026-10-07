@@ -38,6 +38,7 @@ import { SharingManager, SharingCaller, CollaboratorRecord, ShareKeyRecord } fro
 import { AutoApprovalDrainer } from "./auto-approval";
 import { collectSlashCommands, invokeSlashCommand } from "./slash-commands";
 import { createWorkshopLogger, obsContext, traced } from "./observability";
+import { searchYouTubeLectures } from "./youtube-engine";
 import { wrapDoStubForTelemetry } from "./do-telemetry";
 import type { ChatGatewayRpcTarget, SubmitExternalMessageResult } from "@gadgets/workshop-shared/external-message-gateway";
 import type { GadgetExportFormat } from "@gadgets/workshop-shared/api";
@@ -3512,8 +3513,10 @@ class OverseerImpl implements AgentHooks {
         }
         if (message.id.commandId === "youtube") {
           let query = message.argument?.trim() || "";
-          let prompt = query
-            ? `Search and recommend the best academic video lecture for: "${query}". Mount it in the Gadget UI with client.js so it is playable with a clean native YouTube player (leaving it like YouTube without added control bloat).`
+          let results = searchYouTubeLectures(query);
+          let topMatch = results[0];
+          let prompt = topMatch
+            ? `Search and recommend the best academic video lecture for: "${query || topMatch.title}".\n\nVerified Lecture Found:\n[🎬 ${topMatch.title}](https://www.youtube.com/watch?v=${topMatch.videoId})\n\`\`\`youtube\nhttps://www.youtube.com/watch?v=${topMatch.videoId}\n\`\`\`\nMount this in the Gadget UI so it plays directly as a clean native YouTube player.`
             : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari) and mount it in the Gadget UI with client.js so it is playable with a clean native YouTube player.`;
           return {
             slashCommand: message,

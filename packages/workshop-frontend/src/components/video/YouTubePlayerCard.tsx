@@ -449,6 +449,16 @@ export function YouTubePlayerCard({
   const currentTitle =
     initialTitle || catalogEntry?.title || `YouTube Video (${activeVideoId})`;
 
+  useEffect(() => {
+    if (activeVideoId && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("voltrix-play-gadget-video", {
+          detail: { videoId: activeVideoId, title: currentTitle },
+        }),
+      );
+    }
+  }, [activeVideoId, currentTitle]);
+
   const origin =
     typeof window !== "undefined" && window.location?.origin
       ? window.location.origin
@@ -562,9 +572,18 @@ export function YouTubeChatCard({
       {/* Action Button */}
       <button
         type="button"
-        onClick={() => onPlay?.(videoId)}
+        onClick={() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("voltrix-play-gadget-video", {
+                detail: { videoId, title },
+              }),
+            );
+          }
+          onPlay?.(videoId);
+        }}
         className="px-3 py-1.5 rounded-lg bg-kumo-brand hover:opacity-90 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer flex-shrink-0"
-        title="Play this lecture"
+        title="Play this lecture in Gadget UI"
       >
         <Play weight="fill" className="w-3 h-3" />
         <span>Watch</span>

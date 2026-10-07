@@ -524,6 +524,27 @@ export default function GadgetEditor() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
+  // Video playback directly in the Gadget UI (App tab)
+  const [activeGadgetVideo, setActiveGadgetVideo] = useState<{
+    videoId: string
+    title?: string
+  } | null>(null)
+
+  useEffect(() => {
+    const handlePlayGadgetVideo = (e: Event) => {
+      const custom = e as CustomEvent<{ videoId: string; title?: string }>
+      if (custom.detail?.videoId) {
+        setActiveGadgetVideo({
+          videoId: custom.detail.videoId,
+          title: custom.detail.title,
+        })
+        setActiveTab('app')
+      }
+    }
+    window.addEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
+    return () => window.removeEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
+  }, [])
+
   // Brief hint banner shown when entering fullscreen, instructing the user how to exit.
   // We don't use the global Kumo toast manager here because the fullscreen overlay sits above
   // it in stacking order (and toasts render bottom-right, not top-center).
@@ -1598,7 +1619,7 @@ export default function GadgetEditor() {
                     <PaneTab
                       key={tab.value}
                       active={activeTab === tab.value}
-                      label={tab.label}
+                      label={tab.value === 'app' && activeGadgetVideo ? 'Video' : tab.label}
                       onClick={() => handleTabSelect(tab.value)}
                     />
                   ))}
@@ -1628,7 +1649,13 @@ export default function GadgetEditor() {
               <WorkshopIconButton
                 aria-label={paneShowsActivity ? 'Close activity' : 'Close gadget pane'}
                 title="Close"
-                onClick={closeWorkspacePane}
+                onClick={() => {
+                  if (activeGadgetVideo) {
+                    setActiveGadgetVideo(null)
+                  } else {
+                    closeWorkspacePane()
+                  }
+                }}
               >
                 <X size={16} />
               </WorkshopIconButton>
@@ -1660,7 +1687,23 @@ export default function GadgetEditor() {
                     : 'h-full'
               }
             >
-              {selectedGadgetStub && !previewMode ? (
+              {activeGadgetVideo ? (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
+                  <div className="w-full h-full flex items-center justify-center p-2 sm:p-4">
+                    <div className="w-full max-w-5xl aspect-video relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-neutral-800">
+                      <iframe
+                        key={activeGadgetVideo.videoId}
+                        src={`https://www.youtube-nocookie.com/embed/${activeGadgetVideo.videoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1`}
+                        title={activeGadgetVideo.title || "YouTube Video"}
+                        className="absolute inset-0 w-full h-full border-0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                        allowFullScreen
+                        referrerPolicy="strict-origin-when-cross-origin"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : selectedGadgetStub && !previewMode ? (
                 <GadgetUI
                   key={selectedGadgetId}
                   gadget={selectedGadgetStub}
