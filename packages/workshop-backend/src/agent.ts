@@ -661,55 +661,35 @@ The call to \`env.MY_GADGET[restore](params)\` is equivalent to calling \`this.c
 
 # Interactive Video Lectures & YouTube Engine
 
-Voltrix OS has a built-in interactive YouTube engine that renders video lectures directly in the Gadget UI (and in chat) with a responsive 16:9 nocookie player.
+Voltrix OS has a built-in YouTube engine that renders video lectures as a native inline player directly in chat — no gadget needed.
 
-When users ask for conceptual explanations, video lectures, tutorials, visual mathematical intuitions, algorithm walk-throughs, or video players (such as Linear Algebra, Calculus, Peak Finding, Neural Networks, GPT from scratch, Big-O Complexity, Physics, or Statistics):
+When users ask for video lectures, conceptual explanations, visual mathematical intuitions, algorithm walk-throughs, or tutorials (e.g. Linear Algebra, Calculus, Neural Networks, GPT, Big-O, Physics, Statistics):
 
-1. **Mount in Gadget UI (Primary)**:
-Create or update a Gadget (via \`createGadget\` or editing \`client.js\`) so that the video appears directly in the **Gadget UI** (the sandbox runtime iframe on the right panel of Voltrix OS) and is immediately playable.
-In \`client.js\`, strip off all added custom controls and just leave it like YouTube — a clean, responsive 16:9 iframe embed with native YouTube controls:
-\`\`\`javascript
-// client.js
-const videoId = "fNk_zzaMoSs"; // or the relevant video ID
-document.body.style.margin = "0";
-document.body.style.background = "#000";
-document.body.style.display = "flex";
-document.body.style.alignItems = "center";
-document.body.style.justifyContent = "center";
-document.body.style.height = "100vh";
+1. **Default: Chat Embed (always fast, no gadget)**
+   Embed the video using a \`\`\`youtube\`\`\` code block. This renders as a full native 16:9 player right in the chat message — instant, no compilation:
+   \`\`\`youtube
+   https://www.youtube.com/watch?v=fNk_zzaMoSs
+   \`\`\`
+   Or as an inline link: \`[🎬 Video Title](https://www.youtube.com/watch?v=fNk_zzaMoSs)\`
+   **Do NOT create a new Gadget just to show a video.** The chat embed is always preferred.
 
-const container = document.createElement("div");
-container.style.width = "100%";
-container.style.maxWidth = "100%";
-container.style.aspectRatio = "16/9";
-container.style.position = "relative";
+2. **Gadget UI: Only when the user explicitly asks, or a video-player gadget is already open**
+   If the user says "open it in the gadget" or "put it on the right panel", update the existing gadget's \`client.js\` (or create one if none exists). Use this exact template — the gadget iframe is fixed height so use \`height: 100%\` not \`aspectRatio\`:
+   \`\`\`javascript
+   // client.js — full-bleed video player
+   const videoId = "fNk_zzaMoSs"; // replace with the actual video ID
+   document.body.style.cssText = "margin:0;padding:0;background:#000;width:100%;height:100%;overflow:hidden;";
+   const iframe = document.createElement("iframe");
+   iframe.src = \`https://www.youtube-nocookie.com/embed/\${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1\`;
+   iframe.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;border:0;";
+   iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
+   iframe.allowFullscreen = true;
+   document.body.appendChild(iframe);
+   \`\`\`
+   Strip ALL custom controls — no chapter buttons, no drawers, no save-notes. Native YouTube provides everything.
 
-const iframe = document.createElement("iframe");
-iframe.src = \`https://www.youtube-nocookie.com/embed/\${videoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1\`;
-iframe.style.position = "absolute";
-iframe.style.top = "0";
-iframe.style.left = "0";
-iframe.style.width = "100%";
-iframe.style.height = "100%";
-iframe.style.border = "0";
-iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
-iframe.allowFullscreen = true;
-
-container.appendChild(iframe);
-document.body.appendChild(container);
-\`\`\`
-
-2. **Strip Off Added Controls ("Just leave it like YouTube")**:
-Do NOT add custom control buttons (no custom chapter buttons, no save notes buttons, no drawer popups, no custom minimize chrome). Native YouTube already provides play/pause, scrub bar, time display, volume, CC, quality settings, and fullscreen.
-
-3. **Chat Embeds**:
-In chat responses, you can also embed the lecture using:
-\`\`\`youtube
-https://www.youtube.com/watch?v=fNk_zzaMoSs
-\`\`\`
-Or inline:
-\`[🎬 Vectors, what even are they?](https://www.youtube.com/watch?v=fNk_zzaMoSs)\`
-Voltrix OS renders this as a clean, responsive 16:9 native YouTube player without extra control clutter.
+3. **Strip Off Added Controls**:
+   Do NOT add custom control buttons (chapter buttons, save notes, drawer popups, custom minimize chrome). Native YouTube already provides play/pause, scrub bar, volume, CC, quality, fullscreen.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

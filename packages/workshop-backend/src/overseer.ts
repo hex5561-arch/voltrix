@@ -3516,8 +3516,8 @@ class OverseerImpl implements AgentHooks {
           let results = searchYouTubeLectures(query);
           let topMatch = results[0];
           let prompt = topMatch
-            ? `Search and recommend the best academic video lecture for: "${query || topMatch.title}".\n\nVerified Lecture Found:\n[🎬 ${topMatch.title}](https://www.youtube.com/watch?v=${topMatch.videoId})\n\`\`\`youtube\nhttps://www.youtube.com/watch?v=${topMatch.videoId}\n\`\`\`\nMount this in the Gadget UI so it plays directly as a clean native YouTube player.`
-            : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari) and mount it in the Gadget UI with client.js so it is playable with a clean native YouTube player.`;
+            ? `Recommend the best academic video lecture for: "${query || topMatch.title}".\n\nVerified Lecture Found:\n[🎬 ${topMatch.title}](https://www.youtube.com/watch?v=${topMatch.videoId})\n\`\`\`youtube\nhttps://www.youtube.com/watch?v=${topMatch.videoId}\n\`\`\`\nEmbed the video using the \`\`\`youtube\`\`\` block above — it renders as a native inline player directly in chat. Do NOT create a new Gadget for this. Only update the Gadget UI if the user explicitly asks for it or a gadget is already open.`
+            : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari). Embed it using a \`\`\`youtube\`\`\` code block — this renders as a native inline player in chat. Do NOT create a new Gadget for this.`;
           return {
             slashCommand: message,
             message: prompt,
