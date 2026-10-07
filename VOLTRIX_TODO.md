@@ -57,6 +57,11 @@ R2 or S3 binding so images stop living as base64 data URLs inside documents.
 Fixes media-heavy document inflation.
 _(Audit: D — "Media rides as data")_
 
+### 7. Admin Dashboard: User Intelligence & Management Panel (Build Last)
+Add a dedicated user intelligence & telemetry view to `AdminPage.tsx` as the final admin dashboard module.
+Exposes user identities, academic profiles, gadget usage, cost tracking, sessions, Cloudflare edge geography, and real-time product analytics.
+_(Spec: VOLTRIX_MASTER_CONTEXT.md → App Users & User Data Inventory)_
+
 ---
 
 ## 🟢 Model / AI
@@ -127,3 +132,5 @@ require changes to the Cloudflare OS platform itself, not just Voltrix config.
 - [x] Page title "Cloudflare OS" → "Voltrix"
 - [x] TheHive model context windows confirmed at 1M tokens in SUGGESTED_MODELS
 - [x] GLM video MIME types permitted in chat-attachment-validation.ts
+- [x] Student academic profile personalization — name bound across profile, User DO backfill, and agent prompt context (`[Academic Context: Student: <name> | ...]`)
+- [x] Admin inspection & management endpoints (`/api/admin/debug-profile`, `/api/admin/set-profile-by-id`)
