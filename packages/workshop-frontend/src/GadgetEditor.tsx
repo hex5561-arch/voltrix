@@ -327,7 +327,8 @@ const WORKSPACE_VIEW_STORAGE_KEY_PREFIX = 'gadgets:workshop:workspaceVisibility:
 const APP_RAIL_EXPANDED_STORAGE_KEY = 'gadgets:workshop:appRailExpanded'
 const MIN_CHAT_WIDTH = 280
 const MIN_WORKSPACE_WIDTH = 400
-const DEFAULT_CHAT_WIDTH = 420
+const DEFAULT_CHAT_WIDTH = 600
+const VIDEO_CHAT_WIDTH = 600  // chat panel width when a video is playing
 const WORKSPACE_TRANSITION_MS = 200
 
 const isBrowser = typeof window !== 'undefined'
@@ -340,7 +341,7 @@ function clampChatWidth(width: number) {
 
 function getInitialChatWidth() {
   if (!isBrowser) return DEFAULT_CHAT_WIDTH
-  const fallback = Math.min(DEFAULT_CHAT_WIDTH, Math.floor(window.innerWidth * 0.38))
+  const fallback = Math.min(DEFAULT_CHAT_WIDTH, Math.floor(window.innerWidth * 0.42))
   let parsed = NaN
   try {
     const stored = window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY)
@@ -539,8 +540,8 @@ export default function GadgetEditor() {
           title: custom.detail.title,
         })
         setActiveTab('app')
-        // Narrow the chat panel so the video gadget gets maximum width
-        setChatWidth(MIN_CHAT_WIDTH)
+        // Set chat panel to VIDEO_CHAT_WIDTH so the gadget panel gets maximum video real estate
+        setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
     }
     window.addEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
