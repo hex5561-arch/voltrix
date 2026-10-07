@@ -533,6 +533,13 @@ function getModelViaGateway(
   });
 }
 
+// GLM 5.3 Flash: $0.15/M input, $0.50/M output, $0.03/M cached input (Z.ai list price Oct 2026)
+// DeepSeek V4.1 Flash: $0.15/M input, $0.60/M output, $0.003/M cached input (off-peak, Sep 2026 GA)
+const THEHIVE_MODEL_COSTS: Record<string, ModelCost> = {
+  "zai-org/glm-5.3-flash":           { input: 0.15e-6,  output: 0.50e-6, cacheRead: 0.03e-6,  cacheWrite: 0 },
+  "deepseek-ai/deepseek-v4.1-flash": { input: 0.15e-6,  output: 0.60e-6, cacheRead: 0.003e-6, cacheWrite: 0 },
+};
+
 // Direct TheHive access — bypasses the AI Gateway entirely.
 // CF's Gateway custom-provider response validator rejects TheHive's non-standard fields
 // (reasoning_content, reasoning, content:null, extra usage keys), so we call the provider
@@ -569,7 +576,7 @@ function getModelViaThehiveDirect(
       baseUrl: "https://api-cdn.thehive.ai/api/v3",
       reasoning: false,
       input: ["text", "image"],
-      cost: ZERO_COST,
+      cost: THEHIVE_MODEL_COSTS[config.model] ?? ZERO_COST,
       ...window,
       compat: {
         supportsStore: false,
