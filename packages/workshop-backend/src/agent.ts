@@ -661,28 +661,55 @@ The call to \`env.MY_GADGET[restore](params)\` is equivalent to calling \`this.c
 
 # Interactive Video Lectures & YouTube Engine
 
-Voltrix OS has a built-in interactive YouTube engine that renders video lectures directly in the chat with a responsive 16:9 nocookie player, timestamped chapter navigation, and takeaways.
+Voltrix OS has a built-in interactive YouTube engine that renders video lectures directly in the Gadget UI (and in chat) with a responsive 16:9 nocookie player.
 
-When users ask for conceptual explanations, video lectures, tutorials, visual mathematical intuitions, or algorithm walk-throughs (such as Linear Algebra, Calculus, Peak Finding, Neural Networks, GPT from scratch, Big-O Complexity, Physics, or Statistics), you can recommend and embed relevant YouTube videos:
+When users ask for conceptual explanations, video lectures, tutorials, visual mathematical intuitions, algorithm walk-throughs, or video players (such as Linear Algebra, Calculus, Peak Finding, Neural Networks, GPT from scratch, Big-O Complexity, Physics, or Statistics):
 
-1. **Structured Code Block Format (Recommended for interactive players with chapters)**:
-\`\`\`youtube
-{
-  "videoId": "kCc8FmEb1nY",
-  "title": "Let's build GPT: from scratch, in code, spelled out",
-  "author": "Andrej Karpathy"
-}
+1. **Mount in Gadget UI (Primary)**:
+Create or update a Gadget (via \`createGadget\` or editing \`client.js\`) so that the video appears directly in the **Gadget UI** (the sandbox runtime iframe on the right panel of Voltrix OS) and is immediately playable.
+In \`client.js\`, strip off all added custom controls and just leave it like YouTube — a clean, responsive 16:9 iframe embed with native YouTube controls:
+\`\`\`javascript
+// client.js
+const videoId = "fNk_zzaMoSs"; // or the relevant video ID
+document.body.style.margin = "0";
+document.body.style.background = "#000";
+document.body.style.display = "flex";
+document.body.style.alignItems = "center";
+document.body.style.justifyContent = "center";
+document.body.style.height = "100vh";
+
+const container = document.createElement("div");
+container.style.width = "100%";
+container.style.maxWidth = "100%";
+container.style.aspectRatio = "16/9";
+container.style.position = "relative";
+
+const iframe = document.createElement("iframe");
+iframe.src = \`https://www.youtube-nocookie.com/embed/\${videoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1\`;
+iframe.style.position = "absolute";
+iframe.style.top = "0";
+iframe.style.left = "0";
+iframe.style.width = "100%";
+iframe.style.height = "100%";
+iframe.style.border = "0";
+iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
+iframe.allowFullscreen = true;
+
+container.appendChild(iframe);
+document.body.appendChild(container);
 \`\`\`
-Or simply:
+
+2. **Strip Off Added Controls ("Just leave it like YouTube")**:
+Do NOT add custom control buttons (no custom chapter buttons, no save notes buttons, no drawer popups, no custom minimize chrome). Native YouTube already provides play/pause, scrub bar, time display, volume, CC, quality settings, and fullscreen.
+
+3. **Chat Embeds**:
+In chat responses, you can also embed the lecture using:
 \`\`\`youtube
 https://www.youtube.com/watch?v=fNk_zzaMoSs
 \`\`\`
-
-2. **Inline Link Format**:
-Use standard YouTube markdown links or prefix with 🎬:
+Or inline:
 \`[🎬 Vectors, what even are they?](https://www.youtube.com/watch?v=fNk_zzaMoSs)\`
-
-Voltrix OS will automatically mount the interactive player with seeking controls, collapsible timestamped chapters, and formulas.
+Voltrix OS renders this as a clean, responsive 16:9 native YouTube player without extra control clutter.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

@@ -348,29 +348,24 @@ When responding to Kenyan students, align answers with their specific university
     description: "Search, recommend, and embed verified academic video lectures with interactive chapters.",
     body: `---
 name: youtube-lectures
-description: Search, recommend, and embed verified academic video lectures (3Blue1Brown, MIT OCW, Karpathy, Abdul Bari, Walter Lewin) with interactive chapters and formula takeaways.
+description: Search, recommend, and embed verified academic video lectures (3Blue1Brown, MIT OCW, Karpathy, Abdul Bari, Walter Lewin) for playable Gadget UI rendering.
 ---
 
 # Academic YouTube Video Engine & Lecture Guide
 
 Use this skill when students or developers need visual, intuitive, or deep-dive academic lectures and tutorials on Mathematics, Algorithms, Machine Learning, Computer Science, and Physics.
 
-## Recommending Lectures
-When recommending a video lecture, output either:
-1. A structured code block (which Voltrix OS renders as an interactive 16:9 player with chapters):
-\`\`\`youtube
-{
-  "videoId": "fNk_zzaMoSs",
-  "title": "Vectors, what even are they? | Essence of linear algebra, chapter 1",
-  "author": "3Blue1Brown"
-}
-\`\`\`
-Or a direct video URL:
-\`\`\`youtube
-https://www.youtube.com/watch?v=kCc8FmEb1nY
-\`\`\`
+## Playing in Gadget UI
+When the user asks for a video or lecture:
+1. Mount it in the **Gadget UI** via `client.js` with a responsive 16:9 iframe embed (`https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1`).
+2. Keep it clean like YouTube — strip off added custom controls (buttons, drawers, extra chrome), letting native YouTube controls provide play, seek, volume, and fullscreen.
 
-2. An inline link with lecture title:
+## Recommending Lectures in Chat
+You can also share direct embeds or inline links:
+```youtube
+https://www.youtube.com/watch?v=kCc8FmEb1nY
+```
+Or:
 [🎬 Let's build GPT: from scratch, in code, spelled out](https://www.youtube.com/watch?v=kCc8FmEb1nY)
 
 ## Curated Verified Lectures:

@@ -3513,8 +3513,8 @@ class OverseerImpl implements AgentHooks {
         if (message.id.commandId === "youtube") {
           let query = message.argument?.trim() || "";
           let prompt = query
-            ? `Search and recommend the best academic video lecture for: "${query}". Embed it with \`\`\`youtube so the interactive player card loads.`
-            : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari) and embed it with \`\`\`youtube.`;
+            ? `Search and recommend the best academic video lecture for: "${query}". Mount it in the Gadget UI with client.js so it is playable with a clean native YouTube player (leaving it like YouTube without added control bloat).`
+            : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari) and mount it in the Gadget UI with client.js so it is playable with a clean native YouTube player.`;
           return {
             slashCommand: message,
             message: prompt,

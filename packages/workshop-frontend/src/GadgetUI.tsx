@@ -106,7 +106,7 @@ const createSandboxedHtml = (jsCode: string): string => {
   return `<!DOCTYPE html>
 <html>
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data:; media-src data:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://*.youtube.com; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data: https://img.youtube.com https://i.ytimg.com https://*.ytimg.com https://*.youtube.com; media-src data: https://*.googlevideo.com https://*.youtube.com; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none';">
 </head>
 <body>
     <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(jsCode)}"></script>
@@ -499,7 +499,9 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
           height: '100%',
           border: 'none'
         }}
-        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+        allowFullScreen
         title="Gadget UI"
       />
     </div>

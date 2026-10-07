@@ -73,25 +73,24 @@ describe("YouTube Engine and YouTubePlayerCard", () => {
       expect(iframe?.getAttribute("src")).toContain(
         "https://www.youtube-nocookie.com/embed/fNk_zzaMoSs",
       );
-      expect(container.textContent).toContain("Vectors, what even are they?");
-      expect(container.textContent).toContain("3Blue1Brown");
+      expect(iframe?.getAttribute("title")).toBe("Vectors, what even are they?");
+      expect(iframe?.getAttribute("allow")).toContain("accelerometer");
     });
 
-    it("renders chapter navigation timestamps from catalog", async () => {
+    it("strips off added controls leaving only the clean native YouTube player", async () => {
       await render(
         createElement(YouTubePlayerCard, {
           videoId: "fNk_zzaMoSs",
         }),
       );
 
-      const chapterBtn = container.querySelector(
-        'button[title="Toggle lecture chapters and takeaways"]',
-      );
-      expect(chapterBtn).not.toBeNull();
+      // Stripped of all added custom buttons (chapters, save notes, copy link, close)
+      const buttons = container.querySelectorAll("button");
+      expect(buttons.length).toBe(0);
 
-      // Timestamps exist in catalog
-      expect(container.textContent).toContain("00:00");
-      expect(container.textContent).toContain("01:25");
+      const iframe = container.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe?.getAttribute("allowfullscreen")).not.toBeNull();
     });
   });
 
@@ -135,7 +134,7 @@ describe("YouTube Engine and YouTubePlayerCard", () => {
       expect(iframe?.getAttribute("src")).toContain(
         "https://www.youtube-nocookie.com/embed/k7RM-ot2NWY",
       );
-      expect(container.textContent).toContain("Linear Combinations");
+      expect(iframe?.getAttribute("title")).toContain("Linear Combinations");
     });
   });
 });
