@@ -859,6 +859,35 @@ export default {
       return handleYouTubeIngestRequest(req);
     }
 
+    // Admin-only: set student profile for any user by username. Protected by ADMINS env var.
+    // Usage: POST /api/admin/set-student-profile
+    //   Authorization: Bearer <admin-username>
+    //   Body: { "username": "...", "profile": { ...StudentProfile } }
+    if (req.method === "POST" && url.pathname === "/api/admin/set-student-profile") {
+      const admins: string[] = typeof env.ADMINS === "string"
+          ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
+      const auth = req.headers.get("Authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (!admins.includes(token)) {
+        return Response.json({ success: false, error: "forbidden" }, { status: 403 });
+      }
+      try {
+        const { username, profile } = await req.json() as {
+          username: string;
+          profile: import("@gadgets/workshop-shared/api").StudentProfile;
+        };
+        if (!username || !profile) {
+          return Response.json({ success: false, error: "missing username or profile" }, { status: 400 });
+        }
+        const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+        await ctx.exports.UserDurableObject.get(userId).setStudentProfile(profile);
+        return Response.json({ success: true });
+      } catch (err) {
+        logger.warn("admin set-student-profile error", { event: "admin.set-student-profile.failed", error: err });
+        return Response.json({ success: false, error: "server_error" }, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api") {
       // Make sure the bundled format blueprints are installed. The AdminSettings DO doesn't wake
       // merely because someone deployed, so the install needs a trigger; hanging it off API
