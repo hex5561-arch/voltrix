@@ -354,6 +354,7 @@ export const getAuthErrorCode = authErrors.getCode;
 
 /** Academic profile set during onboarding, persisted in the user's Durable Object. */
 export interface StudentProfile {
+  name?: string;
   discipline: string;
   disciplineTitle: string;
   university: string;
@@ -2774,7 +2775,7 @@ export type SlashCommandId = {
   builtin?: never;
 } | {
   builtin: true;
-  commandId: "compact";
+  commandId: "compact" | "youtube";
 };
 
 /** A slash command invocation parsed by the client. */

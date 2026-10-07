@@ -929,6 +929,9 @@ export default {
           return Response.json({ success: false, error: "missing username or profile" }, { status: 400 });
         }
         const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+        if (!profile.name) {
+          profile.name = username;
+        }
         await ctx.exports.UserDurableObject.get(userId).setStudentProfile(profile);
         return Response.json({ success: true });
       } catch (err) {

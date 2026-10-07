@@ -372,7 +372,11 @@ export default function OnboardingWizard({
     setFinishing(true)
     try {
       // 1. Save student profile — localStorage for instant client reads, DO for agent injection
+      const trimmedName = displayName.trim()
+      const studentName = trimmedName || currentUser?.name || ''
+
       saveStudentProfile({
+        name: studentName,
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
         university: finalUniversity,
@@ -387,6 +391,7 @@ export default function OnboardingWizard({
       })
       // Persist to the user's Durable Object so the agent gets it on every turn automatically.
       await authenticatedApi.setStudentProfile({
+        name: studentName,
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
         university: finalUniversity,
@@ -400,7 +405,6 @@ export default function OnboardingWizard({
       })
 
       // 2. Save user display name if changed
-      const trimmedName = displayName.trim()
       if (trimmedName && trimmedName !== originalDisplayName) {
         await authenticatedApi.setOwnDisplayName(trimmedName)
       }

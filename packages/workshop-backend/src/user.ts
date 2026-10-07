@@ -610,11 +610,25 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   }
 
   async setStudentProfile(profile: import("@gadgets/workshop-shared/api").StudentProfile): Promise<void> {
+    if (!profile.name) {
+      const userProfile = this.storage.profile.get();
+      if (userProfile?.name) {
+        profile = { ...profile, name: userProfile.name };
+      }
+    }
     this.storage.studentProfile.put(profile);
   }
 
   async getStudentProfile(): Promise<import("@gadgets/workshop-shared/api").StudentProfile | null> {
-    return this.storage.studentProfile.get();
+    const profile = this.storage.studentProfile.get();
+    if (!profile) return null;
+    if (!profile.name) {
+      const userProfile = this.storage.profile.get();
+      if (userProfile?.name) {
+        return { ...profile, name: userProfile.name };
+      }
+    }
+    return profile;
   }
 
   async generateWhatsAppLinkCode(): Promise<string> {

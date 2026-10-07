@@ -163,7 +163,9 @@ export default function SettingsPage() {
   }, [])
 
   const handleSaveAcademic = async () => {
+    const studentName = userInfo?.name || studentProfile.name || ''
     const patch = {
+      name: studentName,
       university: academicUni.trim() || 'My University',
       degreeProgram: academicDegree.trim() || 'Degree Program',
       academicYear,
@@ -177,6 +179,7 @@ export default function SettingsPage() {
     // Also persist to the DO so the agent picks up changes immediately.
     try {
       await authenticatedApi.setStudentProfile({
+        name: studentName,
         discipline: updated.discipline ?? '',
         disciplineTitle: updated.disciplineTitle ?? '',
         university: updated.university,

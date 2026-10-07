@@ -18,6 +18,7 @@ export interface EnrolledCourse {
 }
 
 export interface StudentProfile {
+  name?: string
   discipline: string
   disciplineTitle: string
   university: string
@@ -110,6 +111,7 @@ export function subscribeStudentProfile(
 export function formatStudentContextPrompt(profile?: StudentProfile | null): string {
   const p = profile ?? getStudentProfile()
   if (!p) return ''
+  const namePart = p.name ? `Student: ${p.name} | ` : ''
   const courseList = p.courses.map(c => c.code).join(', ')
-  return `[Academic Context: ${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''}]`
+  return `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''}]`
 }

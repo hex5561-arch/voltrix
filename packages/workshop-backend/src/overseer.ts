@@ -3512,7 +3512,7 @@ class OverseerImpl implements AgentHooks {
           throw new Error("Unknown built-in slash command.");
         }
         if (message.id.commandId === "youtube") {
-          let query = message.argument?.trim() || "";
+          let query = ((message as any).argument || message.args || "").trim();
           let results = searchYouTubeLectures(query);
           let topMatch = results[0];
           let prompt = topMatch
@@ -5757,11 +5757,16 @@ class OverseerImpl implements AgentHooks {
       if (this.ownerId) {
         try {
           const userStub = this.users.get(this.users.idFromString(this.ownerId));
-          const profile = await userStub.getStudentProfile();
+          const [profile, authorInfo] = await Promise.all([
+            userStub.getStudentProfile(),
+            userStub.whoami().catch(() => null),
+          ]);
           if (profile) {
+            const studentName = profile.name || authorInfo?.name || "";
+            const namePart = studentName ? `Student: ${studentName} | ` : "";
             const courseList = profile.courses.map(c => c.code).join(", ");
             profileSection =
-              `\n\n[Academic Context: ${profile.university} | ` +
+              `\n\n[Academic Context: ${namePart}${profile.university} | ` +
               `${profile.degreeProgram} (${profile.academicYear}) | ` +
               `Discipline: ${profile.disciplineTitle} | ` +
               `Citation Style: ${profile.citationStyle}` +
@@ -5769,17 +5774,17 @@ class OverseerImpl implements AgentHooks {
               `]`;
           } else {
             this.logger.info("student profile not set for user", {
-              event: "profile.missing", ownerId: this.ownerId,
+              event: "profile.missing",
             });
           }
         } catch (err) {
           this.logger.warn("failed to fetch student profile", {
-            event: "profile.fetch.failed", ownerId: this.ownerId, error: err,
+            event: "profile.fetch.failed", error: err,
           });
         }
       } else {
         this.logger.info("getInstanceInstructions: no ownerId on this overseer", {
-          event: "profile.no.owner", overseerDoId: this.ctx.id.toString(),
+          event: "profile.no.owner",
         });
       }
 
