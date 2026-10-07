@@ -1,17 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  Play,
-  Clock,
-  Sparkle,
-  ArrowSquareOut,
-  Copy,
-  Check,
-  BookmarkSimple,
-  CaretDown,
-  CaretUp,
-  X,
-  ListDashes,
-} from "@phosphor-icons/react";
+import { useState, useEffect, useRef } from "react";
+import { Play } from "@phosphor-icons/react";
 
 export interface VideoChapter {
   title: string;
@@ -424,19 +412,19 @@ export interface YouTubePlayerCardProps {
 }
 
 /**
- * Streamlined YouTube Academic Lecture Player for Voltrix OS
- * Embedded nocookie 16:9 canvas with timestamped chapter seeking and takeaway drawer.
+ * Clean Native YouTube Player for Voltrix OS
+ * Responsive 16:9 nocookie player with native YouTube controls — clean, playable, and clutter-free.
  */
 export function YouTubePlayerCard({
   videoId: initialVideoId = null,
   videoUrl = null,
   title: initialTitle = null,
-  author: initialAuthor = null,
-  chapters: initialChapters = null,
-  takeaways: initialTakeaways = null,
-  onSaveToNotes = null,
-  onClose = null,
-  compact = false,
+  author: _author = null,
+  chapters: _chapters = null,
+  takeaways: _takeaways = null,
+  onSaveToNotes: _onSaveToNotes = null,
+  onClose: _onClose = null,
+  compact: _compact = false,
 }: YouTubePlayerCardProps) {
   const [activeVideoId, setActiveVideoId] = useState<string>(() => {
     return (
@@ -444,58 +432,8 @@ export function YouTubePlayerCard({
       "fNk_zzaMoSs"
     );
   });
-  const [isClosed, setIsClosed] = useState(false);
-  const [isRemoved, setIsRemoved] = useState(false);
-  const [showDetails, setShowDetails] = useState(!compact);
-  const [activeDetailTab, setActiveDetailTab] = useState<"chapters" | "takeaways">(
-    "chapters",
-  );
-  const [isCopied, setIsCopied] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const playerIdRef = useRef<string>(
-    "yt-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now(),
-  );
-
-  const postIframeCommand = useCallback((command: string, args: unknown[] = []) => {
-    try {
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        const payload = {
-          event: "command",
-          func: command,
-          args: Array.isArray(args) ? args : [args],
-        };
-        iframeRef.current.contentWindow.postMessage(
-          JSON.stringify(payload),
-          "*",
-        );
-      }
-    } catch {}
-  }, []);
-
-  const notifyVideoPlaying = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent("voltrix-active-video", {
-        detail: { playerId: playerIdRef.current },
-      }),
-    );
-  }, []);
-
-  useEffect(() => {
-    const handleActiveVideo = (e: Event) => {
-      const custom = e as CustomEvent<{ playerId: string }>;
-      if (
-        custom.detail?.playerId &&
-        custom.detail.playerId !== playerIdRef.current
-      ) {
-        postIframeCommand("pauseVideo", []);
-      }
-    };
-    window.addEventListener("voltrix-active-video", handleActiveVideo);
-    return () =>
-      window.removeEventListener("voltrix-active-video", handleActiveVideo);
-  }, [postIframeCommand]);
 
   useEffect(() => {
     const extracted = extractYouTubeId(
@@ -503,123 +441,13 @@ export function YouTubePlayerCard({
     );
     if (extracted && extracted !== activeVideoId) {
       setActiveVideoId(extracted);
-      setIsClosed(false);
-      setIsRemoved(false);
     }
   }, [initialVideoId, videoUrl, initialTitle, activeVideoId]);
 
   const catalogEntry =
     ACADEMIC_DISCOVERY_CATALOG.find((c) => c.videoId === activeVideoId) || null;
   const currentTitle =
-    initialTitle || catalogEntry?.title || `Academic Lecture (${activeVideoId})`;
-  const currentAuthor =
-    initialAuthor || catalogEntry?.author || "Academic Educator";
-  const currentChapters =
-    initialChapters && initialChapters.length > 0
-      ? initialChapters
-      : catalogEntry?.chapters || [
-          {
-            title: "Overview & Problem Statement",
-            timestamp: "00:00",
-            seconds: 0,
-          },
-          {
-            title: "Core Derivation & Principles",
-            timestamp: "05:00",
-            seconds: 300,
-          },
-          {
-            title: "Worked Proof & Summary",
-            timestamp: "12:00",
-            seconds: 720,
-          },
-        ];
-  const currentTakeaways =
-    initialTakeaways && initialTakeaways.length > 0
-      ? initialTakeaways
-      : catalogEntry?.takeaways || [
-          "Core conceptual principles structured with mathematical derivation.",
-          "High-yield takeaways and invariant properties highlighted.",
-        ];
-
-  const handleSeek = (seconds: number) => {
-    notifyVideoPlaying();
-    postIframeCommand("seekTo", [seconds, true]);
-    postIframeCommand("playVideo", []);
-  };
-
-  const handleSaveNotes = () => {
-    const formattedNotes = `### 🎬 Academic Lecture: ${currentTitle}
-**Instructor / Channel**: ${currentAuthor}
-**Video URL**: https://www.youtube.com/watch?v=${activeVideoId}
-
-#### 📑 Key Takeaways & Formulae:
-${currentTakeaways.map((t) => `- ${t}`).join("\n")}
-
-#### ⏱️ Timestamped Chapters:
-${currentChapters
-  .map(
-    (c) =>
-      `- **${c.timestamp}** — [${c.title}](https://www.youtube.com/watch?v=${activeVideoId}&t=${c.seconds}s)`,
-  )
-  .join("\n")}
-`;
-
-    if (onSaveToNotes) {
-      onSaveToNotes(formattedNotes, currentTitle);
-    } else {
-      navigator.clipboard?.writeText(formattedNotes);
-    }
-
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2500);
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard?.writeText(
-      `https://www.youtube.com/watch?v=${activeVideoId}`,
-    );
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
-  if (isRemoved) return null;
-
-  // Minimized state
-  if (isClosed) {
-    return (
-      <span className="flex my-2.5 p-2.5 rounded-xl bg-kumo-base dark:bg-[#121316] border border-kumo-line dark:border-neutral-800 items-center justify-between gap-3 text-xs shadow-sm">
-        <span className="flex items-center gap-2 text-kumo-default dark:text-neutral-200 min-w-0">
-          <Play weight="fill" className="w-3.5 h-3.5 text-kumo-brand flex-shrink-0" />
-          <span className="truncate font-medium">{currentTitle}</span>
-        </span>
-        <span className="flex items-center gap-1.5 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setIsClosed(false);
-              notifyVideoPlaying();
-              postIframeCommand("playVideo", []);
-            }}
-            className="px-2.5 py-1 rounded-lg bg-kumo-brand hover:opacity-90 text-white font-semibold text-[11px] transition cursor-pointer"
-          >
-            Reopen
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setIsRemoved(true);
-              if (onClose) onClose();
-            }}
-            className="p-1 rounded-lg hover:bg-red-500/10 text-kumo-subtle hover:text-red-500 transition cursor-pointer"
-            title="Remove from chat"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </span>
-      </span>
-    );
-  }
+    initialTitle || catalogEntry?.title || `YouTube Video (${activeVideoId})`;
 
   const origin =
     typeof window !== "undefined" && window.location?.origin
@@ -632,8 +460,7 @@ ${currentChapters
   )}&rel=0&modestbranding=1&playsinline=1`;
 
   return (
-    <span className="block w-full my-3 rounded-2xl bg-kumo-base dark:bg-[#0e0f12] border border-kumo-line dark:border-neutral-800 shadow-md overflow-hidden transition-all duration-200">
-      {/* ── 1. Hero 16:9 Video Canvas ── */}
+    <span className="block w-full my-3 rounded-2xl bg-black border border-kumo-line dark:border-neutral-800 shadow-md overflow-hidden">
       <span className="block relative w-full aspect-video bg-black">
         <iframe
           ref={iframeRef}
@@ -647,174 +474,6 @@ ${currentChapters
           loading="lazy"
         />
       </span>
-
-      {/* ── 2. Sleek Bottom Action & Info Strip ── */}
-      <span className="flex p-3 bg-kumo-elevated dark:bg-[#14151a] border-t border-kumo-line dark:border-neutral-800/80 flex-wrap items-center justify-between gap-2.5">
-        {/* Title & Author */}
-        <span className="block min-w-0 flex-1 space-y-0.5">
-          <span
-            className="block text-xs sm:text-sm font-semibold text-kumo-default dark:text-neutral-100 truncate"
-            title={currentTitle}
-          >
-            {currentTitle}
-          </span>
-          <span className="flex items-center gap-2 text-[11px] text-kumo-subtle dark:text-neutral-400 truncate">
-            <span className="text-kumo-brand font-medium">{currentAuthor}</span>
-            <span>·</span>
-            <a
-              href={`https://www.youtube.com/watch?v=${activeVideoId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-kumo-brand flex items-center gap-1 transition text-[11px]"
-            >
-              <span>Watch on YouTube</span>
-              <ArrowSquareOut className="w-3 h-3" />
-            </a>
-          </span>
-        </span>
-
-        {/* Action Controls */}
-        <span className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Toggle Chapters & Notes */}
-          <button
-            type="button"
-            onClick={() => setShowDetails((prev) => !prev)}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
-              showDetails
-                ? "bg-kumo-brand/10 text-kumo-brand border-kumo-brand/30 dark:bg-kumo-brand/20"
-                : "bg-kumo-base hover:bg-kumo-tint text-kumo-default border-kumo-line dark:bg-neutral-800/70 dark:text-neutral-300 dark:border-neutral-700"
-            }`}
-            title="Toggle lecture chapters and takeaways"
-          >
-            <ListDashes className="w-3.5 h-3.5 text-kumo-brand" />
-            <span>Chapters</span>
-            {showDetails ? (
-              <CaretUp className="w-3 h-3 ml-0.5" />
-            ) : (
-              <CaretDown className="w-3 h-3 ml-0.5" />
-            )}
-          </button>
-
-          {/* Save / Copy Notes */}
-          <button
-            type="button"
-            onClick={handleSaveNotes}
-            className="px-2.5 py-1.5 rounded-lg bg-kumo-base hover:bg-kumo-tint dark:bg-neutral-800/70 dark:hover:bg-neutral-700 text-kumo-default dark:text-neutral-300 border border-kumo-line dark:border-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-            title="Copy structured lecture notes and timestamps"
-          >
-            {isSaved ? (
-              <Check className="w-3.5 h-3.5 text-emerald-500" />
-            ) : (
-              <BookmarkSimple className="w-3.5 h-3.5 text-amber-500" />
-            )}
-            <span className="hidden sm:inline">
-              {isSaved ? "Saved" : "Save Notes"}
-            </span>
-          </button>
-
-          {/* Copy Link */}
-          <button
-            type="button"
-            onClick={handleCopyLink}
-            className="p-1.5 rounded-lg bg-kumo-base hover:bg-kumo-tint dark:bg-neutral-800/70 dark:hover:bg-neutral-700 text-kumo-subtle hover:text-kumo-default dark:text-neutral-400 dark:hover:text-neutral-200 border border-kumo-line dark:border-neutral-700 transition cursor-pointer"
-            title="Copy video link"
-          >
-            {isCopied ? (
-              <Check className="w-3.5 h-3.5 text-emerald-500" />
-            ) : (
-              <Copy className="w-3.5 h-3.5" />
-            )}
-          </button>
-
-          {/* Minimize */}
-          <button
-            type="button"
-            onClick={() => {
-              postIframeCommand("pauseVideo", []);
-              setIsClosed(true);
-              if (onClose) onClose();
-            }}
-            className="p-1.5 rounded-lg bg-kumo-base hover:bg-red-500/10 text-kumo-subtle hover:text-red-500 border border-kumo-line dark:bg-neutral-800/70 dark:border-neutral-700 transition cursor-pointer"
-            title="Minimize video player"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </span>
-      </span>
-
-      {/* ── 3. Collapsible Chapters & Formula Drawer ── */}
-      {showDetails && (
-        <span className="block p-3 bg-kumo-base dark:bg-[#111216] border-t border-kumo-line dark:border-neutral-800/80 space-y-3 transition-all">
-          {/* Subtabs */}
-          <span className="flex items-center gap-2 border-b border-kumo-line dark:border-neutral-800 pb-2">
-            <button
-              type="button"
-              onClick={() => setActiveDetailTab("chapters")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                activeDetailTab === "chapters"
-                  ? "bg-kumo-brand text-white shadow-xs"
-                  : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-800"
-              }`}
-            >
-              <Clock className="w-3 h-3" />
-              <span>Timestamps ({currentChapters.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveDetailTab("takeaways")}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                activeDetailTab === "takeaways"
-                  ? "bg-kumo-brand text-white shadow-xs"
-                  : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-800"
-              }`}
-            >
-              <Sparkle className="w-3 h-3" />
-              <span>Key Takeaways &amp; Formulations</span>
-            </button>
-          </span>
-
-          {/* Chapters List */}
-          {activeDetailTab === "chapters" && (
-            <span className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-              {currentChapters.map((chapter, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSeek(chapter.seconds)}
-                  className="w-full text-left p-2 rounded-lg bg-kumo-elevated hover:bg-kumo-tint dark:bg-neutral-800/40 dark:hover:bg-neutral-800/80 border border-kumo-line dark:border-neutral-800 text-xs flex items-center justify-between gap-2 transition cursor-pointer group"
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Play
-                      weight="fill"
-                      className="w-3 h-3 text-kumo-brand opacity-60 group-hover:opacity-100 flex-shrink-0"
-                    />
-                    <span className="truncate text-kumo-default dark:text-neutral-200 text-[11px] font-medium">
-                      {chapter.title}
-                    </span>
-                  </span>
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-kumo-base dark:bg-neutral-900 text-kumo-brand border border-kumo-brand/20 flex-shrink-0">
-                    {chapter.timestamp}
-                  </span>
-                </button>
-              ))}
-            </span>
-          )}
-
-          {/* Takeaways & Formulations */}
-          {activeDetailTab === "takeaways" && (
-            <span className="block space-y-2 max-h-48 overflow-y-auto pr-1">
-              {currentTakeaways.map((takeaway, idx) => (
-                <span
-                  key={idx}
-                  className="block p-2.5 rounded-lg bg-kumo-elevated dark:bg-neutral-800/40 border border-kumo-line dark:border-neutral-800 text-xs text-kumo-default dark:text-neutral-300 leading-relaxed"
-                >
-                  {takeaway}
-                </span>
-              ))}
-            </span>
-          )}
-        </span>
-      )}
     </span>
   );
 }
