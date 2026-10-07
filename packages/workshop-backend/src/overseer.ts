@@ -5767,10 +5767,20 @@ class OverseerImpl implements AgentHooks {
               `Citation Style: ${profile.citationStyle}` +
               (courseList ? ` | Enrolled: ${courseList}` : "") +
               `]`;
+          } else {
+            this.logger.info("student profile not set for user", {
+              event: "profile.missing", ownerId: this.ownerId,
+            });
           }
-        } catch {
-          // Profile fetch failure is non-fatal — agent still runs without it.
+        } catch (err) {
+          this.logger.warn("failed to fetch student profile", {
+            event: "profile.fetch.failed", ownerId: this.ownerId, error: err,
+          });
         }
+      } else {
+        this.logger.info("getInstanceInstructions: no ownerId on this overseer", {
+          event: "profile.no.owner", overseerDoId: this.ctx.id.toString(),
+        });
       }
 
       return base + profileSection;

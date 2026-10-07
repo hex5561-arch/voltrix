@@ -859,6 +859,47 @@ export default {
       return handleYouTubeIngestRequest(req);
     }
 
+    // Admin debug: show the DO ID for a username and what getInstanceInstructions returns
+    if (req.method === "GET" && url.pathname === "/api/admin/debug-profile") {
+      const admins: string[] = typeof env.ADMINS === "string"
+          ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
+      const auth = req.headers.get("Authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (!admins.includes(token)) {
+        return Response.json({ error: "forbidden" }, { status: 403 });
+      }
+      const username = url.searchParams.get("username") ?? "";
+      const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+      const userIdStr = userId.toString();
+      const profile = await ctx.exports.UserDurableObject.get(userId).getStudentProfile();
+      // Also get one of the user's overseer DO IDs by listing gadgets
+      const gadgets = await ctx.exports.UserDurableObject.get(userId).listGadgets();
+      const firstGadgetId = gadgets[0]?.id ?? null;
+      return Response.json({ userDoId: userIdStr, profile: profile ?? null, firstGadgetId });
+    }
+
+    // Admin: set student profile by raw DO ID string (for accounts created via OAuth)
+    if (req.method === "POST" && url.pathname === "/api/admin/set-profile-by-id") {
+      const admins: string[] = typeof env.ADMINS === "string"
+          ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
+      const auth = req.headers.get("Authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (!admins.includes(token)) {
+        return Response.json({ error: "forbidden" }, { status: 403 });
+      }
+      try {
+        const { doId, profile } = await req.json() as {
+          doId: string;
+          profile: import("@gadgets/workshop-shared/api").StudentProfile;
+        };
+        const userId = ctx.exports.UserDurableObject.idFromString(doId);
+        await ctx.exports.UserDurableObject.get(userId).setStudentProfile(profile);
+        return Response.json({ success: true });
+      } catch (err) {
+        return Response.json({ success: false, error: String(err) }, { status: 500 });
+      }
+    }
+
     // Admin-only: set student profile for any user by username. Protected by ADMINS env var.
     // Usage: POST /api/admin/set-student-profile
     //   Authorization: Bearer <admin-username>
