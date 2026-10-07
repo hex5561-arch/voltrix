@@ -144,6 +144,10 @@ export default function SettingsPage() {
   const [newCourseColor, setNewCourseColor] = useState(COURSE_COLORS[0])
   const [showAddCourse, setShowAddCourse] = useState(false)
 
+  // WhatsApp linking state
+  const [waLinkCode, setWaLinkCode] = useState<string | null>(null)
+  const [waLinkLoading, setWaLinkLoading] = useState(false)
+
   useEffect(() => {
     return subscribeStudentProfile((p) => {
       if (p) {
@@ -716,6 +720,56 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+        {/* WhatsApp — link Voltrix account to WhatsApp */}
+        <section className="flex flex-col gap-3">
+          <SectionLabel>WhatsApp</SectionLabel>
+          <div className="rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div className="flex flex-col gap-4 max-w-sm">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium text-kumo-strong">Link your WhatsApp</p>
+                <p className="text-xs text-kumo-subtle">
+                  Generate a 6-digit code and send <code className="font-mono bg-kumo-tint px-1 rounded">!link {'<'}code{'>'}</code> to{' '}
+                  <strong>+256 752 706 401</strong> on WhatsApp to connect Volt to your phone.
+                </p>
+              </div>
+              {waLinkCode ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-center rounded-xl border-2 border-indigo-500/40 bg-indigo-500/5 py-4">
+                    <span className="font-mono text-3xl font-bold tracking-[0.3em] text-indigo-400">{waLinkCode}</span>
+                  </div>
+                  <p className="text-center text-xs text-kumo-subtle">
+                    Send <code className="font-mono bg-kumo-tint px-1 rounded">!link {waLinkCode}</code> on WhatsApp. Code expires in 10 minutes.
+                  </p>
+                  <button
+                    onClick={() => setWaLinkCode(null)}
+                    className="text-xs text-kumo-subtle hover:text-kumo-default underline text-center"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : (
+                <button
+                  disabled={waLinkLoading}
+                  onClick={async () => {
+                    setWaLinkLoading(true)
+                    try {
+                      const code = await authenticatedApi.generateWhatsAppLinkCode()
+                      setWaLinkCode(code)
+                    } catch {
+                      toasts.add({ title: 'Failed to generate code. Please try again.', variant: 'error' })
+                    } finally {
+                      setWaLinkLoading(false)
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-kumo-tint hover:bg-kumo-fill border border-kumo-line px-4 py-2.5 text-sm font-semibold text-kumo-strong transition-colors disabled:opacity-50"
+                >
+                  {waLinkLoading ? 'Generating…' : '📱 Generate WhatsApp Link Code'}
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   )

@@ -132,6 +132,7 @@ import {
   type StoredComposerDraft,
 } from "./composerDraft";
 import { formatStudentContextPrompt } from "./services/studentProfile";
+import { YouTubePlayerCard } from "./components/video/YouTubePlayerCard";
 
 export interface StreamingProposedChanges {
   updates: Uint8Array[];
@@ -1176,6 +1177,39 @@ function getMarkdownComponents(
         <table {...props}>{children}</table>
       </div>
     ),
+    code: ({ node: _node, className, children, ...props }) => {
+      const lang = (className || "").replace("language-", "").trim().toLowerCase();
+      if (lang === "youtube" || lang === "video") {
+        try {
+          const raw = String(children).trim();
+          if (raw.startsWith("{")) {
+            const parsed = JSON.parse(raw);
+            return (
+              <div className="my-3 not-prose font-sans">
+                <YouTubePlayerCard {...parsed} />
+              </div>
+            );
+          } else {
+            return (
+              <div className="my-3 not-prose font-sans">
+                <YouTubePlayerCard videoUrl={raw} />
+              </div>
+            );
+          }
+        } catch {
+          return (
+            <div className="my-3 not-prose font-sans">
+              <YouTubePlayerCard videoUrl={String(children).trim()} />
+            </div>
+          );
+        }
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
     a: ({ node: _node, href, children, ...props }) => {
       if (href?.startsWith(CAPSULE_LINK_PREFIX) && mentionsByToken) {
         const token = decodeURIComponent(href.slice(CAPSULE_LINK_PREFIX.length));
@@ -1190,6 +1224,18 @@ function getMarkdownComponents(
       const safeHref = safeExternalUrl(href);
       if (!safeHref) {
         return <>{children}</>;
+      }
+
+      const isYouTube = /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|(?:embed|v|shorts)\/))([a-zA-Z0-9_-]{11})/i.test(safeHref || "");
+      if (isYouTube) {
+        const cleanTitle = typeof children === "string" && !children.startsWith("http")
+          ? children.replace(/^[▶🎬\s]+|[↗\s]+$/g, "").trim()
+          : null;
+        return (
+          <span className="block my-3 not-prose font-sans">
+            <YouTubePlayerCard videoUrl={safeHref} title={cleanTitle} />
+          </span>
+        );
       }
 
       return (

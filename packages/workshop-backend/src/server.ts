@@ -30,6 +30,8 @@ import { serveSiteLogo, SITE_LOGO_PATH } from "./site-logo.js";
 import { createWorkshopLogger } from "./observability";
 import { wrapDoStubForTelemetry } from "./do-telemetry";
 
+import { handleYouTubeSearchRequest, handleYouTubeIngestRequest } from "./youtube-engine.js";
+
 const logger = createWorkshopLogger("workshop.server");
 
 // Set once we've asked the AdminSettings DO to install the bundled format blueprints (see the
@@ -163,6 +165,10 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
 
   getStudentProfile(): Promise<import("@gadgets/workshop-shared/api").StudentProfile | null> {
     return this.#user.getStudentProfile();
+  }
+
+  generateWhatsAppLinkCode(): Promise<string> {
+    return this.#user.generateWhatsAppLinkCode();
   }
 
   getCloudflareUsage(): Promise<CloudflareUsageInfo> {
@@ -816,6 +822,41 @@ export default {
 
     if (url.pathname === "/api/client-errors") {
       return handleClientErrorRequest(req, env, ctx);
+    }
+
+    // WhatsApp account linking — called by the voltrix-whatsapp worker when a user sends !link <code>
+    if (req.method === "POST" && url.pathname === "/api/whatsapp/validate-link") {
+      try {
+        const { code, phone } = await req.json() as { code?: string; phone?: string };
+        if (!code || !/^\d{6}$/.test(code) || !phone) {
+          return Response.json({ success: false, error: "invalid_params" }, { status: 400 });
+        }
+        const raw = await env.BLUEPRINTS.get(`wl:${code}`);
+        if (!raw) {
+          return Response.json({ success: false, error: "invalid_or_expired" });
+        }
+        const { userId, name, profile } = JSON.parse(raw) as {
+          userId: string;
+          name: string;
+          profile: import("@gadgets/workshop-shared/api").StudentProfile | null;
+        };
+        // Delete the code so it can't be reused
+        await env.BLUEPRINTS.delete(`wl:${code}`);
+        // Optionally store the phone → userId mapping in KV for future lookups
+        await env.BLUEPRINTS.put(`wp:${phone}`, userId, { expirationTtl: 60 * 60 * 24 * 365 });
+        return Response.json({ success: true, userId, name, profile });
+      } catch (err) {
+        logger.warn("whatsapp validate-link error", { event: "whatsapp.link.validate.failed", error: err });
+        return Response.json({ success: false, error: "server_error" }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/api/youtube/search" || url.pathname === "/api/youtube-search") {
+      return handleYouTubeSearchRequest(req);
+    }
+
+    if (url.pathname === "/api/rag/ingest-youtube" || url.pathname === "/api/youtube/ingest") {
+      return handleYouTubeIngestRequest(req);
     }
 
     if (url.pathname === "/api") {

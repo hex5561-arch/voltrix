@@ -658,6 +658,31 @@ export default async function(self, env, ctx) {
 \`\`\`
 
 The call to \`env.MY_GADGET[restore](params)\` is equivalent to calling \`this.ctx.restore(params)\` from within the Gadget itself. This returns a persistent stub which you can then use as a hook callback.
+
+# Interactive Video Lectures & YouTube Engine
+
+Voltrix OS has a built-in interactive YouTube engine that renders video lectures directly in the chat with a responsive 16:9 nocookie player, timestamped chapter navigation, and takeaways.
+
+When users ask for conceptual explanations, video lectures, tutorials, visual mathematical intuitions, or algorithm walk-throughs (such as Linear Algebra, Calculus, Peak Finding, Neural Networks, GPT from scratch, Big-O Complexity, Physics, or Statistics), you can recommend and embed relevant YouTube videos:
+
+1. **Structured Code Block Format (Recommended for interactive players with chapters)**:
+\`\`\`youtube
+{
+  "videoId": "kCc8FmEb1nY",
+  "title": "Let's build GPT: from scratch, in code, spelled out",
+  "author": "Andrej Karpathy"
+}
+\`\`\`
+Or simply:
+\`\`\`youtube
+https://www.youtube.com/watch?v=fNk_zzaMoSs
+\`\`\`
+
+2. **Inline Link Format**:
+Use standard YouTube markdown links or prefix with 🎬:
+\`[🎬 Vectors, what even are they?](https://www.youtube.com/watch?v=fNk_zzaMoSs)\`
+
+Voltrix OS will automatically mount the interactive player with seeking controls, collapsible timestamped chapters, and formulas.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

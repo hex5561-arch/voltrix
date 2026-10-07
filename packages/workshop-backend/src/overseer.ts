@@ -3507,7 +3507,20 @@ class OverseerImpl implements AgentHooks {
       // The name is typed but arrives over RPC, and one we don't implement would commit an event and
       // then start a turn with no prompt for the model to answer, so reject it here.
       if (message.id.builtin === true) {
-        if (message.id.commandId !== "compact") throw new Error("Unknown built-in slash command.");
+        if (message.id.commandId !== "compact" && message.id.commandId !== "youtube") {
+          throw new Error("Unknown built-in slash command.");
+        }
+        if (message.id.commandId === "youtube") {
+          let query = message.argument?.trim() || "";
+          let prompt = query
+            ? `Search and recommend the best academic video lecture for: "${query}". Embed it with \`\`\`youtube so the interactive player card loads.`
+            : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari) and embed it with \`\`\`youtube.`;
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "youtube",
+          };
+        }
         return {slashCommand: message};
       }
       // Held separately because reassigning `message` below widens `id` back to the union.
@@ -5020,6 +5033,11 @@ class OverseerImpl implements AgentHooks {
       selection: {builtin: true, commandId: "compact"},
       name: "compact",
       description: "Summarize older context while preserving recent messages.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "youtube"},
+      name: "youtube",
+      description: "Search and embed verified academic video lectures with interactive chapters.",
       providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
     }, ...await collectSlashCommands(sources)];
   }

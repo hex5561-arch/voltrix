@@ -1,0 +1,917 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Play,
+  Clock,
+  Sparkle,
+  ArrowSquareOut,
+  Copy,
+  Check,
+  BookmarkSimple,
+  CaretDown,
+  CaretUp,
+  X,
+  ListDashes,
+} from "@phosphor-icons/react";
+
+export interface VideoChapter {
+  title: string;
+  timestamp: string;
+  seconds: number;
+}
+
+export interface AcademicLecture {
+  videoId: string;
+  title: string;
+  author: string;
+  duration: string;
+  channelAvatar?: string;
+  discipline: string;
+  summary: string;
+  chapters: VideoChapter[];
+  takeaways: string[];
+}
+
+/**
+ * 100% Verified Academic Video Catalog for instant high-yield playback & fallback chapters
+ */
+export const ACADEMIC_DISCOVERY_CATALOG: AcademicLecture[] = [
+  {
+    videoId: "fNk_zzaMoSs",
+    title: "Vectors, what even are they? | Essence of linear algebra, chapter 1",
+    author: "3Blue1Brown",
+    duration: "9:52",
+    channelAvatar: "📐",
+    discipline: "Mathematics & Linear Algebra",
+    summary: "Geometric foundation of vectors, coordinate systems, and vector addition in Euclidean space.",
+    chapters: [
+      { title: "Introduction & Physics perspective", timestamp: "00:00", seconds: 0 },
+      { title: "Computer science perspective (Lists of numbers)", timestamp: "01:25", seconds: 85 },
+      { title: "Mathematician perspective (Vector axioms)", timestamp: "03:10", seconds: 190 },
+      { title: "Vector addition & Scaling vectors", timestamp: "05:32", seconds: 332 },
+      { title: "Fundamental geometric coordinate insight", timestamp: "08:15", seconds: 495 },
+    ],
+    takeaways: [
+      "Vectors can be understood through 3 lenses: Physics (arrows), CS (ordered lists), and Math (generalized objects satisfying axioms).",
+      "Vector addition: u + v = [u1 + v1, u2 + v2] represents chaining geometric displacements.",
+      "Scalar multiplication scales the length of a vector by factor c: c*v = [c*v1, c*v2].",
+    ],
+  },
+  {
+    videoId: "k7RM-ot2NWY",
+    title: "Linear Combinations, Span, and Basis Vectors | Essence of linear algebra, chapter 2",
+    author: "3Blue1Brown",
+    duration: "9:59",
+    channelAvatar: "📐",
+    discipline: "Mathematics & Linear Algebra",
+    summary: "Visualizing span, linear independence, and basis coordinate systems (i-hat, j-hat).",
+    chapters: [
+      { title: "Basis vectors i-hat and j-hat", timestamp: "00:00", seconds: 0 },
+      { title: "Linear combinations: a*v + b*w", timestamp: "02:40", seconds: 160 },
+      { title: "The span of two vectors in 2D and 3D", timestamp: "05:10", seconds: 310 },
+      { title: "Linear dependence and independence", timestamp: "07:30", seconds: 450 },
+    ],
+    takeaways: [
+      "The span of vectors v1, ..., vk is the set of all linear combinations c1*v1 + ... + ck*vk.",
+      "Linearly dependent vectors are redundant: one vector can be expressed as a linear combination of others.",
+    ],
+  },
+  {
+    videoId: "kYB8IZa5AuE",
+    title: "Linear Transformations and Matrices | Essence of linear algebra, chapter 3",
+    author: "3Blue1Brown",
+    duration: "10:59",
+    channelAvatar: "📐",
+    discipline: "Mathematics & Linear Algebra",
+    summary: "Visualizing matrix multiplication as linear space transformations preserving the origin and grid lines.",
+    chapters: [
+      { title: "What is a linear transformation?", timestamp: "00:00", seconds: 0 },
+      { title: "Tracking basis vectors i-hat and j-hat", timestamp: "03:15", seconds: 195 },
+      { title: "Matrix-vector multiplication as linear combination", timestamp: "06:40", seconds: 400 },
+      { title: "Rotation and shear transformations", timestamp: "09:10", seconds: 550 },
+    ],
+    takeaways: [
+      "A transformation is linear if T(c*u + d*v) = c*T(u) + d*T(v) and T(0) = 0.",
+      "A matrix completely encapsulates where basis vectors land.",
+    ],
+  },
+  {
+    videoId: "PFDu9oVAE-g",
+    title: "Eigenvectors and Eigenvalues | Essence of linear algebra, chapter 14",
+    author: "3Blue1Brown",
+    duration: "17:16",
+    channelAvatar: "🔍",
+    discipline: "Mathematics & Linear Algebra",
+    summary: "Geometric intuition behind eigenvectors (A*v = lambda*v) and characteristic polynomials.",
+    chapters: [
+      { title: "Geometric visual intuition of eigen-axes", timestamp: "00:00", seconds: 0 },
+      { title: "Eigenvector equation: A v = lambda v", timestamp: "04:15", seconds: 255 },
+      { title: "Characteristic polynomial det(A - lambda*I) = 0", timestamp: "08:40", seconds: 520 },
+      { title: "Diagonal matrices & Eigendecomposition", timestamp: "13:10", seconds: 790 },
+    ],
+    takeaways: [
+      "An eigenvector v of matrix A remains on its original span under transformation A, scaled by eigenvalue lambda: A*v = lambda*v.",
+      "Eigenvalues satisfy the characteristic equation det(A - lambda*I) = 0.",
+    ],
+  },
+  {
+    videoId: "ZK3O402wf1c",
+    title: "MIT 18.06: Linear Algebra — Lecture 1: The Geometry of Linear Equations",
+    author: "MIT OpenCourseWare (Prof. Gilbert Strang)",
+    duration: "39:49",
+    channelAvatar: "🏛️",
+    discipline: "Mathematics & Linear Algebra",
+    summary: "Row picture vs column picture of linear systems Ax = b, matrix elimination, and vector spaces.",
+    chapters: [
+      { title: "Course introduction & 2x2 linear systems", timestamp: "00:00", seconds: 0 },
+      { title: "Row Picture vs Column Picture", timestamp: "06:30", seconds: 390 },
+      { title: "Matrix multiplication: Ax as combination of columns", timestamp: "18:45", seconds: 1125 },
+      { title: "3x3 systems and geometry of planes", timestamp: "28:10", seconds: 1690 },
+    ],
+    takeaways: [
+      "The column picture expresses Ax = b as a linear combination of matrix columns.",
+      "A system has a unique solution if and only if coefficient matrix columns are linearly independent.",
+    ],
+  },
+  {
+    videoId: "WUvTyaaNkzM",
+    title: "The Essence of Calculus, Chapter 1: The derivative",
+    author: "3Blue1Brown",
+    duration: "17:05",
+    channelAvatar: "📐",
+    discipline: "Mathematics & Calculus",
+    summary: "Geometric intuition behind derivatives, instantaneous rate of change, and the paradox of zero division.",
+    chapters: [
+      { title: "Geometric area intuition", timestamp: "00:00", seconds: 0 },
+      { title: "Distance, Velocity, and Time", timestamp: "04:15", seconds: 255 },
+      { title: "The paradox of 0/0 and limits", timestamp: "08:50", seconds: 530 },
+      { title: "Formalizing df/dt", timestamp: "12:30", seconds: 750 },
+    ],
+    takeaways: [
+      "The derivative measures instantaneous rate of change as delta t -> 0.",
+      "Graphically, the derivative is the exact slope of the tangent line at any given point.",
+    ],
+  },
+  {
+    videoId: "HtSuA80QTyo",
+    title: "MIT 6.006: Introduction to Algorithms — Lecture 1: Algorithmic Thinking, Peak Finding",
+    author: "MIT OpenCourseWare (Prof. Erik Demaine)",
+    duration: "52:10",
+    channelAvatar: "🏛️",
+    discipline: "Computer Science & Algorithms",
+    summary: "Divide and conquer algorithmic paradigm, 1D and 2D peak finding problem.",
+    chapters: [
+      { title: "Course Overview & Syllabus", timestamp: "00:00", seconds: 0 },
+      { title: "1D Peak Finding: Straightforward O(n) Search", timestamp: "08:30", seconds: 510 },
+      { title: "1D Peak Finding: Divide & Conquer O(log n)", timestamp: "17:45", seconds: 1065 },
+      { title: "2D Peak Finding Algorithm", timestamp: "34:20", seconds: 2060 },
+    ],
+    takeaways: [
+      "Divide and conquer reduces search space exponentially from n to n/2 per step.",
+      "Recurrence relation for 1D binary peak finding: T(n) = T(n/2) + O(1) implies T(n) = O(log n).",
+    ],
+  },
+  {
+    videoId: "aircAruvnKk",
+    title: "Neural Networks: But what is a neural network? | Deep learning, chapter 1",
+    author: "3Blue1Brown",
+    duration: "19:13",
+    channelAvatar: "🧠",
+    discipline: "Computer Science & AI",
+    summary: "Visual introduction to multilayer perceptrons, activations, weights, and biases.",
+    chapters: [
+      { title: "Structure of a Neuron", timestamp: "00:00", seconds: 0 },
+      { title: "Hidden Layers & Feature Representation", timestamp: "04:12", seconds: 252 },
+      { title: "Matrix Notation & Activations", timestamp: "09:45", seconds: 585 },
+      { title: "Sigmoid and modern activation functions", timestamp: "14:20", seconds: 860 },
+    ],
+    takeaways: [
+      "A neuron holds a number between 0 and 1 representing an activation level.",
+      "Feedforward formula: a^(1) = sigma(W * a^(0) + b).",
+    ],
+  },
+  {
+    videoId: "VMj-3S1tku0",
+    title: "Deep Learning: Gradient descent, how neural networks learn | Chapter 2",
+    author: "3Blue1Brown",
+    duration: "21:01",
+    channelAvatar: "🧠",
+    discipline: "Computer Science & AI",
+    summary: "Visualizing high-dimensional cost surfaces and following the negative gradient vector.",
+    chapters: [
+      { title: "Cost Function Definition", timestamp: "00:00", seconds: 0 },
+      { title: "Gradient Vector Direction", timestamp: "05:15", seconds: 315 },
+      { title: "Stochastic Gradient Descent (SGD)", timestamp: "11:30", seconds: 690 },
+      { title: "Backpropagation Intuition", timestamp: "16:45", seconds: 1005 },
+    ],
+    takeaways: [
+      "The gradient vector nabla C points in the direction of steepest ascent on the cost manifold.",
+      "Weight updates follow the negative gradient: W <- W - eta * nabla C.",
+    ],
+  },
+  {
+    videoId: "kCc8FmEb1nY",
+    title: "Let's build GPT: from scratch, in code, spelled out",
+    author: "Andrej Karpathy",
+    duration: "1:56:22",
+    channelAvatar: "⚡",
+    discipline: "Computer Science & AI",
+    summary: "Complete step-by-step implementation of the nanoGPT transformer architecture in PyTorch.",
+    chapters: [
+      { title: "Bigram character-level model", timestamp: "00:00", seconds: 0 },
+      { title: "Mathematical trick of self-attention", timestamp: "25:10", seconds: 1510 },
+      { title: "Multi-head attention & Residual connections", timestamp: "55:30", seconds: 3330 },
+      { title: "Feedforward network & LayerNorm", timestamp: "1:15:00", seconds: 4500 },
+      { title: "Training the transformer", timestamp: "1:35:00", seconds: 5700 },
+    ],
+    takeaways: [
+      "Self-attention formula: Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V.",
+      "Causal masking prevents tokens from attending to subsequent tokens in autoregressive generation.",
+    ],
+  },
+  {
+    videoId: "0IAPZzGSbME",
+    title: "Abdul Bari: 1.1 Introduction to Algorithms and Complexity Analysis",
+    author: "Abdul Bari",
+    duration: "18:03",
+    channelAvatar: "📘",
+    discipline: "Computer Science & Algorithms",
+    summary: "Asymptotic notation, Big-O, Omega, and Theta complexity analysis principles.",
+    chapters: [
+      { title: "What is an Algorithm?", timestamp: "00:00", seconds: 0 },
+      { title: "Time and Space Complexity", timestamp: "04:20", seconds: 260 },
+      { title: "Asymptotic Notations (Big-O, Omega, Theta)", timestamp: "09:15", seconds: 555 },
+      { title: "Comparing Growth Rates", timestamp: "14:10", seconds: 850 },
+    ],
+    takeaways: [
+      "Big-O represents an asymptotic upper bound: f(n) <= c * g(n) for n >= n0.",
+      "Complexity hierarchy: O(1) < O(log n) < O(n) < O(n log n) < O(n^2) < O(2^n).",
+    ],
+  },
+  {
+    videoId: "w-HYZv6HzAs",
+    title: "Walter Lewin: For the Love of Physics — Classical Mechanics Lecture 1",
+    author: "Prof. Walter Lewin (MIT)",
+    duration: "50:06",
+    channelAvatar: "⚛️",
+    discipline: "Physics & Engineering",
+    summary: "Powers of ten, units, dimensional analysis, and experimental uncertainties.",
+    chapters: [
+      { title: "Introduction & Standard Units", timestamp: "00:00", seconds: 0 },
+      { title: "Dimensional Analysis Technique", timestamp: "12:15", seconds: 735 },
+      { title: "Measuring Periods of Pendulums", timestamp: "28:40", seconds: 1720 },
+      { title: "Experimental Uncertainties & Significant Figures", timestamp: "40:10", seconds: 2410 },
+    ],
+    takeaways: [
+      "Dimensional analysis determines physical proportionality without solving differential equations.",
+      "Simple pendulum period: T = 2*pi * sqrt(L / g), completely independent of mass.",
+    ],
+  },
+  {
+    videoId: "qBigTkBLU6g",
+    title: "StatQuest: Principal Component Analysis (PCA) Step-by-Step",
+    author: "StatQuest with Josh Starmer",
+    duration: "21:57",
+    channelAvatar: "📊",
+    discipline: "Data Science & Statistics",
+    summary: "Dimensionality reduction, projection, variance maximization, and scree plots.",
+    chapters: [
+      { title: "Why PCA? Intuition & 2D Projection", timestamp: "00:00", seconds: 0 },
+      { title: "Finding the First Principal Component (PC1)", timestamp: "04:30", seconds: 270 },
+      { title: "Calculating PC2 & Orthogonality", timestamp: "10:15", seconds: 615 },
+      { title: "Eigenvalues, Eigenvectors & Scree Plots", timestamp: "15:45", seconds: 945 },
+    ],
+    takeaways: [
+      "PCA rotates coordinate axes to align with orthogonal directions of maximum variance.",
+      "Eigenvectors of the covariance matrix form the principal axes; eigenvalues quantify variance explained.",
+    ],
+  },
+];
+
+const KNOWN_CHANNELS = [
+  "3blue1brown",
+  "mitopencourseware",
+  "stanford",
+  "harvard",
+  "khanacademy",
+  "crashcourse",
+  "statquest",
+  "andrejkarpathy",
+  "abdulbari",
+];
+
+/**
+ * Universal YouTube ID Extractor
+ */
+export function extractYouTubeId(urlOrId?: unknown): string {
+  if (!urlOrId) return "fNk_zzaMoSs";
+
+  if (typeof urlOrId === "object" && urlOrId !== null) {
+    const obj = urlOrId as Record<string, unknown>;
+    return (
+      (obj.videoId as string) ||
+      (obj.id as string) ||
+      extractYouTubeId(obj.url || obj.videoUrl || obj.title)
+    );
+  }
+
+  const str = String(urlOrId).trim();
+
+  // 1. JSON encoded string
+  if (str.startsWith("{") && str.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(str);
+      const res = extractYouTubeId(parsed);
+      if (res) return res;
+    } catch {}
+  }
+
+  // 2. Standard YouTube URL match
+  const urlMatch = str.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|(?:embed|v|shorts)\/))([a-zA-Z0-9_-]{11})/i,
+  );
+  if (urlMatch) return urlMatch[1];
+
+  // 3. Explicit ID pattern
+  const explicitIdMatch = str.match(
+    /(?:video_?id|id|v)\s*[:=]\s*["'`]?([a-zA-Z0-9_-]{11})["'`]?/i,
+  );
+  if (
+    explicitIdMatch &&
+    !KNOWN_CHANNELS.includes(explicitIdMatch[1].toLowerCase())
+  ) {
+    return explicitIdMatch[1];
+  }
+
+  // 4. Exact 11-char ID
+  if (
+    /^[a-zA-Z0-9_-]{11}$/.test(str) &&
+    !KNOWN_CHANNELS.includes(str.toLowerCase()) &&
+    ![
+      "mathematics",
+      "concurrency",
+      "engineering",
+      "programming",
+      "introductio",
+    ].includes(str.toLowerCase())
+  ) {
+    return str;
+  }
+
+  // 5. Query / Search match against Catalog
+  const searchMatch = str.match(/[?&](?:search_query|q)=([^&]+)/i);
+  const queryText = searchMatch
+    ? decodeURIComponent(searchMatch[1].replace(/\+/g, " "))
+    : str;
+  const qLow = queryText.toLowerCase();
+
+  const tokens = qLow
+    .split(/[^a-z0-9_]+/)
+    .filter(
+      (t) =>
+        t.length > 2 &&
+        ![
+          "watch",
+          "youtube",
+          "video",
+          "lecture",
+          "the",
+          "and",
+          "for",
+          "with",
+          "from",
+          "tutorial",
+          "course",
+        ].includes(t),
+    );
+
+  let bestMatch: AcademicLecture | null = null;
+  let highestScore = 0;
+
+  for (const item of ACADEMIC_DISCOVERY_CATALOG) {
+    const titleLow = item.title.toLowerCase();
+    const itemText =
+      `${item.title} ${item.author} ${item.discipline} ${item.summary}`.toLowerCase();
+    let score = 0;
+
+    if (titleLow.includes(qLow) || qLow.includes(titleLow)) score += 50;
+
+    for (const tok of tokens) {
+      if (titleLow.includes(tok)) score += 15;
+      else if (itemText.includes(tok)) score += 4;
+    }
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestMatch = item;
+    }
+  }
+
+  if (bestMatch && highestScore > 0) return bestMatch.videoId;
+
+  return "fNk_zzaMoSs";
+}
+
+export interface YouTubePlayerCardProps {
+  videoId?: string | null;
+  videoUrl?: string | null;
+  title?: string | null;
+  author?: string | null;
+  chapters?: VideoChapter[] | null;
+  takeaways?: string[] | null;
+  onSaveToNotes?: ((notes: string, title: string) => void) | null;
+  onClose?: (() => void) | null;
+  compact?: boolean;
+}
+
+/**
+ * Streamlined YouTube Academic Lecture Player for Voltrix OS
+ * Embedded nocookie 16:9 canvas with timestamped chapter seeking and takeaway drawer.
+ */
+export function YouTubePlayerCard({
+  videoId: initialVideoId = null,
+  videoUrl = null,
+  title: initialTitle = null,
+  author: initialAuthor = null,
+  chapters: initialChapters = null,
+  takeaways: initialTakeaways = null,
+  onSaveToNotes = null,
+  onClose = null,
+  compact = false,
+}: YouTubePlayerCardProps) {
+  const [activeVideoId, setActiveVideoId] = useState<string>(() => {
+    return (
+      extractYouTubeId(initialVideoId || videoUrl || initialTitle) ||
+      "fNk_zzaMoSs"
+    );
+  });
+  const [isClosed, setIsClosed] = useState(false);
+  const [isRemoved, setIsRemoved] = useState(false);
+  const [showDetails, setShowDetails] = useState(!compact);
+  const [activeDetailTab, setActiveDetailTab] = useState<"chapters" | "takeaways">(
+    "chapters",
+  );
+  const [isCopied, setIsCopied] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerIdRef = useRef<string>(
+    "yt-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now(),
+  );
+
+  const postIframeCommand = useCallback((command: string, args: unknown[] = []) => {
+    try {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        const payload = {
+          event: "command",
+          func: command,
+          args: Array.isArray(args) ? args : [args],
+        };
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify(payload),
+          "*",
+        );
+      }
+    } catch {}
+  }, []);
+
+  const notifyVideoPlaying = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent("voltrix-active-video", {
+        detail: { playerId: playerIdRef.current },
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    const handleActiveVideo = (e: Event) => {
+      const custom = e as CustomEvent<{ playerId: string }>;
+      if (
+        custom.detail?.playerId &&
+        custom.detail.playerId !== playerIdRef.current
+      ) {
+        postIframeCommand("pauseVideo", []);
+      }
+    };
+    window.addEventListener("voltrix-active-video", handleActiveVideo);
+    return () =>
+      window.removeEventListener("voltrix-active-video", handleActiveVideo);
+  }, [postIframeCommand]);
+
+  useEffect(() => {
+    const extracted = extractYouTubeId(
+      initialVideoId || videoUrl || initialTitle,
+    );
+    if (extracted && extracted !== activeVideoId) {
+      setActiveVideoId(extracted);
+      setIsClosed(false);
+      setIsRemoved(false);
+    }
+  }, [initialVideoId, videoUrl, initialTitle, activeVideoId]);
+
+  const catalogEntry =
+    ACADEMIC_DISCOVERY_CATALOG.find((c) => c.videoId === activeVideoId) || null;
+  const currentTitle =
+    initialTitle || catalogEntry?.title || `Academic Lecture (${activeVideoId})`;
+  const currentAuthor =
+    initialAuthor || catalogEntry?.author || "Academic Educator";
+  const currentChapters =
+    initialChapters && initialChapters.length > 0
+      ? initialChapters
+      : catalogEntry?.chapters || [
+          {
+            title: "Overview & Problem Statement",
+            timestamp: "00:00",
+            seconds: 0,
+          },
+          {
+            title: "Core Derivation & Principles",
+            timestamp: "05:00",
+            seconds: 300,
+          },
+          {
+            title: "Worked Proof & Summary",
+            timestamp: "12:00",
+            seconds: 720,
+          },
+        ];
+  const currentTakeaways =
+    initialTakeaways && initialTakeaways.length > 0
+      ? initialTakeaways
+      : catalogEntry?.takeaways || [
+          "Core conceptual principles structured with mathematical derivation.",
+          "High-yield takeaways and invariant properties highlighted.",
+        ];
+
+  const handleSeek = (seconds: number) => {
+    notifyVideoPlaying();
+    postIframeCommand("seekTo", [seconds, true]);
+    postIframeCommand("playVideo", []);
+  };
+
+  const handleSaveNotes = () => {
+    const formattedNotes = `### 🎬 Academic Lecture: ${currentTitle}
+**Instructor / Channel**: ${currentAuthor}
+**Video URL**: https://www.youtube.com/watch?v=${activeVideoId}
+
+#### 📑 Key Takeaways & Formulae:
+${currentTakeaways.map((t) => `- ${t}`).join("\n")}
+
+#### ⏱️ Timestamped Chapters:
+${currentChapters
+  .map(
+    (c) =>
+      `- **${c.timestamp}** — [${c.title}](https://www.youtube.com/watch?v=${activeVideoId}&t=${c.seconds}s)`,
+  )
+  .join("\n")}
+`;
+
+    if (onSaveToNotes) {
+      onSaveToNotes(formattedNotes, currentTitle);
+    } else {
+      navigator.clipboard?.writeText(formattedNotes);
+    }
+
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2500);
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard?.writeText(
+      `https://www.youtube.com/watch?v=${activeVideoId}`,
+    );
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  if (isRemoved) return null;
+
+  // Minimized state
+  if (isClosed) {
+    return (
+      <span className="flex my-2.5 p-2.5 rounded-xl bg-kumo-base dark:bg-[#121316] border border-kumo-line dark:border-neutral-800 items-center justify-between gap-3 text-xs shadow-sm">
+        <span className="flex items-center gap-2 text-kumo-default dark:text-neutral-200 min-w-0">
+          <Play weight="fill" className="w-3.5 h-3.5 text-kumo-brand flex-shrink-0" />
+          <span className="truncate font-medium">{currentTitle}</span>
+        </span>
+        <span className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setIsClosed(false);
+              notifyVideoPlaying();
+              postIframeCommand("playVideo", []);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-kumo-brand hover:opacity-90 text-white font-semibold text-[11px] transition cursor-pointer"
+          >
+            Reopen
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsRemoved(true);
+              if (onClose) onClose();
+            }}
+            className="p-1 rounded-lg hover:bg-red-500/10 text-kumo-subtle hover:text-red-500 transition cursor-pointer"
+            title="Remove from chat"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </span>
+      </span>
+    );
+  }
+
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
+  const embedSrc = `https://www.youtube-nocookie.com/embed/${activeVideoId}?enablejsapi=1&origin=${encodeURIComponent(
+    origin,
+  )}&widget_referrer=${encodeURIComponent(
+    origin,
+  )}&rel=0&modestbranding=1&playsinline=1`;
+
+  return (
+    <span className="block w-full my-3 rounded-2xl bg-kumo-base dark:bg-[#0e0f12] border border-kumo-line dark:border-neutral-800 shadow-md overflow-hidden transition-all duration-200">
+      {/* ── 1. Hero 16:9 Video Canvas ── */}
+      <span className="block relative w-full aspect-video bg-black">
+        <iframe
+          ref={iframeRef}
+          key={activeVideoId}
+          src={embedSrc}
+          title={currentTitle}
+          className="w-full h-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          loading="lazy"
+        />
+      </span>
+
+      {/* ── 2. Sleek Bottom Action & Info Strip ── */}
+      <span className="flex p-3 bg-kumo-elevated dark:bg-[#14151a] border-t border-kumo-line dark:border-neutral-800/80 flex-wrap items-center justify-between gap-2.5">
+        {/* Title & Author */}
+        <span className="block min-w-0 flex-1 space-y-0.5">
+          <span
+            className="block text-xs sm:text-sm font-semibold text-kumo-default dark:text-neutral-100 truncate"
+            title={currentTitle}
+          >
+            {currentTitle}
+          </span>
+          <span className="flex items-center gap-2 text-[11px] text-kumo-subtle dark:text-neutral-400 truncate">
+            <span className="text-kumo-brand font-medium">{currentAuthor}</span>
+            <span>·</span>
+            <a
+              href={`https://www.youtube.com/watch?v=${activeVideoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-kumo-brand flex items-center gap-1 transition text-[11px]"
+            >
+              <span>Watch on YouTube</span>
+              <ArrowSquareOut className="w-3 h-3" />
+            </a>
+          </span>
+        </span>
+
+        {/* Action Controls */}
+        <span className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Toggle Chapters & Notes */}
+          <button
+            type="button"
+            onClick={() => setShowDetails((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
+              showDetails
+                ? "bg-kumo-brand/10 text-kumo-brand border-kumo-brand/30 dark:bg-kumo-brand/20"
+                : "bg-kumo-base hover:bg-kumo-tint text-kumo-default border-kumo-line dark:bg-neutral-800/70 dark:text-neutral-300 dark:border-neutral-700"
+            }`}
+            title="Toggle lecture chapters and takeaways"
+          >
+            <ListDashes className="w-3.5 h-3.5 text-kumo-brand" />
+            <span>Chapters</span>
+            {showDetails ? (
+              <CaretUp className="w-3 h-3 ml-0.5" />
+            ) : (
+              <CaretDown className="w-3 h-3 ml-0.5" />
+            )}
+          </button>
+
+          {/* Save / Copy Notes */}
+          <button
+            type="button"
+            onClick={handleSaveNotes}
+            className="px-2.5 py-1.5 rounded-lg bg-kumo-base hover:bg-kumo-tint dark:bg-neutral-800/70 dark:hover:bg-neutral-700 text-kumo-default dark:text-neutral-300 border border-kumo-line dark:border-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+            title="Copy structured lecture notes and timestamps"
+          >
+            {isSaved ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <BookmarkSimple className="w-3.5 h-3.5 text-amber-500" />
+            )}
+            <span className="hidden sm:inline">
+              {isSaved ? "Saved" : "Save Notes"}
+            </span>
+          </button>
+
+          {/* Copy Link */}
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            className="p-1.5 rounded-lg bg-kumo-base hover:bg-kumo-tint dark:bg-neutral-800/70 dark:hover:bg-neutral-700 text-kumo-subtle hover:text-kumo-default dark:text-neutral-400 dark:hover:text-neutral-200 border border-kumo-line dark:border-neutral-700 transition cursor-pointer"
+            title="Copy video link"
+          >
+            {isCopied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {/* Minimize */}
+          <button
+            type="button"
+            onClick={() => {
+              postIframeCommand("pauseVideo", []);
+              setIsClosed(true);
+              if (onClose) onClose();
+            }}
+            className="p-1.5 rounded-lg bg-kumo-base hover:bg-red-500/10 text-kumo-subtle hover:text-red-500 border border-kumo-line dark:bg-neutral-800/70 dark:border-neutral-700 transition cursor-pointer"
+            title="Minimize video player"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </span>
+      </span>
+
+      {/* ── 3. Collapsible Chapters & Formula Drawer ── */}
+      {showDetails && (
+        <span className="block p-3 bg-kumo-base dark:bg-[#111216] border-t border-kumo-line dark:border-neutral-800/80 space-y-3 transition-all">
+          {/* Subtabs */}
+          <span className="flex items-center gap-2 border-b border-kumo-line dark:border-neutral-800 pb-2">
+            <button
+              type="button"
+              onClick={() => setActiveDetailTab("chapters")}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                activeDetailTab === "chapters"
+                  ? "bg-kumo-brand text-white shadow-xs"
+                  : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-800"
+              }`}
+            >
+              <Clock className="w-3 h-3" />
+              <span>Timestamps ({currentChapters.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveDetailTab("takeaways")}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                activeDetailTab === "takeaways"
+                  ? "bg-kumo-brand text-white shadow-xs"
+                  : "text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-800"
+              }`}
+            >
+              <Sparkle className="w-3 h-3" />
+              <span>Key Takeaways &amp; Formulations</span>
+            </button>
+          </span>
+
+          {/* Chapters List */}
+          {activeDetailTab === "chapters" && (
+            <span className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {currentChapters.map((chapter, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSeek(chapter.seconds)}
+                  className="w-full text-left p-2 rounded-lg bg-kumo-elevated hover:bg-kumo-tint dark:bg-neutral-800/40 dark:hover:bg-neutral-800/80 border border-kumo-line dark:border-neutral-800 text-xs flex items-center justify-between gap-2 transition cursor-pointer group"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <Play
+                      weight="fill"
+                      className="w-3 h-3 text-kumo-brand opacity-60 group-hover:opacity-100 flex-shrink-0"
+                    />
+                    <span className="truncate text-kumo-default dark:text-neutral-200 text-[11px] font-medium">
+                      {chapter.title}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-kumo-base dark:bg-neutral-900 text-kumo-brand border border-kumo-brand/20 flex-shrink-0">
+                    {chapter.timestamp}
+                  </span>
+                </button>
+              ))}
+            </span>
+          )}
+
+          {/* Takeaways & Formulations */}
+          {activeDetailTab === "takeaways" && (
+            <span className="block space-y-2 max-h-48 overflow-y-auto pr-1">
+              {currentTakeaways.map((takeaway, idx) => (
+                <span
+                  key={idx}
+                  className="block p-2.5 rounded-lg bg-kumo-elevated dark:bg-neutral-800/40 border border-kumo-line dark:border-neutral-800 text-xs text-kumo-default dark:text-neutral-300 leading-relaxed"
+                >
+                  {takeaway}
+                </span>
+              ))}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Compact YouTube Chat Card for previewing video results before full playback
+ */
+export function YouTubeChatCard({
+  data,
+  rawUrl,
+  onPlay,
+}: {
+  data?: unknown;
+  rawUrl?: string;
+  onPlay?: (videoId: string) => void;
+}) {
+  let title = "Academic Lecture";
+  let author = "Academic Educator";
+  let url = rawUrl || "https://www.youtube.com";
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as Record<string, unknown>;
+    title = (obj.title as string) || title;
+    author = (obj.author as string) || author;
+    if (obj.videoId) url = `https://www.youtube.com/watch?v=${obj.videoId}`;
+    else if (obj.url || obj.videoUrl)
+      url = (obj.url || obj.videoUrl) as string;
+    else if (obj.query)
+      url = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+        String(obj.query),
+      )}`;
+  } else if (typeof data === "string") {
+    const trimmed = data.trim();
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      url = trimmed;
+    } else {
+      url = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+        trimmed,
+      )}`;
+      title = trimmed;
+    }
+  }
+
+  const videoId = extractYouTubeId(url || title);
+  const catalogEntry = ACADEMIC_DISCOVERY_CATALOG.find(
+    (c) => c.videoId === videoId,
+  );
+  if (catalogEntry) {
+    title = catalogEntry.title;
+    author = catalogEntry.author;
+  }
+
+  const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+
+  return (
+    <span className="flex my-2 p-2.5 rounded-xl bg-kumo-base dark:bg-[#121316] border border-kumo-line dark:border-neutral-800 hover:border-kumo-brand/40 shadow-xs items-center justify-between gap-3 transition-all group">
+      {/* Thumbnail + Video Info */}
+      <span className="flex items-center gap-3 min-w-0 flex-1">
+        <span className="block relative w-20 h-12 rounded-lg overflow-hidden bg-black/80 border border-kumo-line dark:border-neutral-800 flex-shrink-0 shadow-xs">
+          <img
+            src={thumbnailUrl}
+            alt={title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+          <span className="flex absolute inset-0 bg-black/25 items-center justify-center">
+            <span className="flex w-5 h-5 rounded-full bg-red-600 text-white items-center justify-center shadow-xs">
+              <Play weight="fill" className="w-2.5 h-2.5 ml-0.5" />
+            </span>
+          </span>
+        </span>
+
+        <span className="block min-w-0 space-y-0.5">
+          <span className="block text-xs font-semibold text-kumo-default dark:text-neutral-100 truncate group-hover:text-kumo-brand transition-colors">
+            {title}
+          </span>
+          <span className="flex text-[11px] text-kumo-subtle dark:text-neutral-400 truncate items-center gap-1.5">
+            <span className="text-kumo-brand font-medium">{author}</span>
+            {catalogEntry?.duration && <span>· {catalogEntry.duration}</span>}
+          </span>
+        </span>
+      </span>
+
+      {/* Action Button */}
+      <button
+        type="button"
+        onClick={() => onPlay?.(videoId)}
+        className="px-3 py-1.5 rounded-lg bg-kumo-brand hover:opacity-90 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer flex-shrink-0"
+        title="Play this lecture"
+      >
+        <Play weight="fill" className="w-3 h-3" />
+        <span>Watch</span>
+      </button>
+    </span>
+  );
+}
+
+export default YouTubePlayerCard;

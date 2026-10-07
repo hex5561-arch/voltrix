@@ -617,6 +617,17 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     return this.storage.studentProfile.get();
   }
 
+  async generateWhatsAppLinkCode(): Promise<string> {
+    // 6-digit numeric code, stored in KV with 10-minute TTL
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const userId = this.storage.profile.get().id;
+    const profile = this.storage.studentProfile.get();
+    const name = this.storage.profile.get().name;
+    const payload = JSON.stringify({ userId, name, profile, createdAt: Date.now() });
+    await this.env.BLUEPRINTS.put(`wl:${code}`, payload, { expirationTtl: 600 });
+    return code;
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Cloudflare account connection (optional top-up flow).
   // ---------------------------------------------------------------------------------------------

@@ -446,6 +446,13 @@ export interface AuthenticatedApi extends RpcTarget {
   /** Retrieve the stored student profile, or null if not yet set. */
   getStudentProfile(): Promise<StudentProfile | null>;
 
+  /**
+   * Generate a 6-digit WhatsApp linking code valid for 10 minutes.
+   * The code links this Voltrix account to a WhatsApp phone number when
+   * the user sends !link <code> from WhatsApp.
+   */
+  generateWhatsAppLinkCode(): Promise<string>;
+
   // --- Optional Cloudflare limits / top-up flow (only meaningful when enabled server-side) ---
 
   /** Get the user's current free-tier usage and connected-account balance. */

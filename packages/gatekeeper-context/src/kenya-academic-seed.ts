@@ -15,7 +15,7 @@ export const KENYA_ACADEMIC_METADATA: ContextCollectionMetadata = {
   visibility: "public",
   created: new Date("2026-01-01T00:00:00.000Z"),
   lastUpdated: new Date(),
-  documentCount: 7,
+  documentCount: 8,
   content: { source: "web" },
 };
 
@@ -341,6 +341,45 @@ You are an expert academic advisor specialized in the Kenyan education ecosystem
    - NACOSTI ethical clearance and anti-plagiarism compliance rules.
 
 When responding to Kenyan students, align answers with their specific university (UoN, JKUAT, Strathmore, KU, Moi) and academic year requirements.
+`,
+  },
+  {
+    path: "skills/youtube-lectures/SKILL.md",
+    description: "Search, recommend, and embed verified academic video lectures with interactive chapters.",
+    body: `---
+name: youtube-lectures
+description: Search, recommend, and embed verified academic video lectures (3Blue1Brown, MIT OCW, Karpathy, Abdul Bari, Walter Lewin) with interactive chapters and formula takeaways.
+---
+
+# Academic YouTube Video Engine & Lecture Guide
+
+Use this skill when students or developers need visual, intuitive, or deep-dive academic lectures and tutorials on Mathematics, Algorithms, Machine Learning, Computer Science, and Physics.
+
+## Recommending Lectures
+When recommending a video lecture, output either:
+1. A structured code block (which Voltrix OS renders as an interactive 16:9 player with chapters):
+\`\`\`youtube
+{
+  "videoId": "fNk_zzaMoSs",
+  "title": "Vectors, what even are they? | Essence of linear algebra, chapter 1",
+  "author": "3Blue1Brown"
+}
+\`\`\`
+Or a direct video URL:
+\`\`\`youtube
+https://www.youtube.com/watch?v=kCc8FmEb1nY
+\`\`\`
+
+2. An inline link with lecture title:
+[🎬 Let's build GPT: from scratch, in code, spelled out](https://www.youtube.com/watch?v=kCc8FmEb1nY)
+
+## Curated Verified Lectures:
+- **Linear Algebra**: 3Blue1Brown Essence of Linear Algebra (\`fNk_zzaMoSs\`, \`k7RM-ot2NWY\`, \`kYB8IZa5AuE\`, \`PFDu9oVAE-g\`) and MIT 18.06 Gilbert Strang (\`ZK3O402wf1c\`).
+- **Calculus**: 3Blue1Brown Essence of Calculus (\`WUvTyaaNkzM\`).
+- **Algorithms & Complexity**: MIT 6.006 Peak Finding (\`HtSuA80QTyo\`) and Abdul Bari Algorithm Complexity (\`0IAPZzGSbME\`).
+- **Deep Learning & Transformers**: Andrej Karpathy nanoGPT (\`kCc8FmEb1nY\`), 3Blue1Brown Neural Networks (\`aircAruvnKk\`, \`VMj-3S1tku0\`).
+- **Physics & Engineering**: Prof. Walter Lewin Classical Mechanics (\`w-HYZv6HzAs\`).
+- **Statistics & Data Science**: StatQuest PCA Step-by-Step (\`qBigTkBLU6g\`).
 `,
   },
 ];
