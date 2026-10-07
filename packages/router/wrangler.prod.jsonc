@@ -20,6 +20,10 @@
     {
       "binding": "GATEKEEPER_EMAIL",
       "service": "voltrix-email"
+    },
+    {
+      "binding": "GATEKEEPER_GOOGLE",
+      "service": "voltrix-google"
     }
   ],
 

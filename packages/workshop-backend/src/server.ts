@@ -70,6 +70,10 @@ type Env = Cloudflare.Env & {
   CF_ACCESS_ISS?: string,  // team URL, i.e. https://<team>.cloudflareaccess.com
   DEV?: boolean;
   FLAGS?: Flagship;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
 }
 
 // =======================================================================================
@@ -857,6 +861,221 @@ export default {
 
     if (url.pathname === "/api/rag/ingest-youtube" || url.pathname === "/api/youtube/ingest") {
       return handleYouTubeIngestRequest(req);
+    }
+
+    // ── Social OAuth Endpoints (Google & GitHub) ported from CourseHero ──
+    if (req.method === "GET" && url.pathname === "/api/auth/oauth/google/url") {
+      const clientId = (env.GOOGLE_CLIENT_ID || "").trim();
+      const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/`;
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent&state=google`;
+      return Response.json({ enabled: true, url: authUrl, clientId });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/auth/oauth/github/url") {
+      const clientId = (env.GITHUB_CLIENT_ID || "").trim();
+      const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/`;
+      let authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=read:user,user:email&state=github`;
+      if (redirectUri) {
+        authUrl += `&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}`;
+      }
+      return Response.json({ enabled: true, url: authUrl, clientId });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/oauth/social") {
+      try {
+        const body = await req.json() as {
+          provider: "google" | "github";
+          code?: string;
+          credential?: string;
+          redirectUri?: string;
+        };
+        const { provider, code, credential, redirectUri } = body;
+        if (!provider) {
+          return Response.json({ success: false, error: "Provider is required (google or github)" }, { status: 400 });
+        }
+
+        let userEmail = "";
+        let userName = "";
+
+        if (provider === "google") {
+          const googleClientId = (env.GOOGLE_CLIENT_ID || "").trim();
+          const googleClientSecret = (env.GOOGLE_CLIENT_SECRET || "").trim();
+
+          if (code) {
+            const effectiveRedirectUri = redirectUri || `${url.origin}/`;
+            const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                client_id: googleClientId,
+                client_secret: googleClientSecret,
+                code,
+                redirect_uri: effectiveRedirectUri.replace(/\/$/, ""),
+                grant_type: "authorization_code",
+              }),
+            });
+            const tokenData = await tokenResp.json() as any;
+            if (tokenData.access_token) {
+              const googleUserResp = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+                headers: { Authorization: `Bearer ${tokenData.access_token}` },
+              });
+              const googleUser = await googleUserResp.json() as any;
+              if (googleUser.email) {
+                userEmail = googleUser.email.toLowerCase();
+                userName = googleUser.name || googleUser.email.split("@")[0];
+              }
+            } else if (tokenData.id_token) {
+              try {
+                const payloadPart = tokenData.id_token.split(".")[1];
+                const decoded = JSON.parse(atob(payloadPart.replace(/-/g, "+").replace(/_/g, "/")));
+                if (decoded.email) {
+                  userEmail = decoded.email.toLowerCase();
+                  userName = decoded.name || decoded.email.split("@")[0];
+                }
+              } catch {}
+            }
+          } else if (credential) {
+            const tokenInfoResp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+            if (tokenInfoResp.ok) {
+              const tokenInfo = await tokenInfoResp.json() as any;
+              if (tokenInfo.email) {
+                userEmail = tokenInfo.email.toLowerCase();
+                userName = tokenInfo.name || tokenInfo.email.split("@")[0];
+              }
+            }
+          }
+        } else if (provider === "github") {
+          const githubClientId = (env.GITHUB_CLIENT_ID || "").trim();
+          const githubClientSecret = (env.GITHUB_CLIENT_SECRET || "").trim();
+
+          if (code) {
+            const tokenResp = await fetch("https://github.com/login/oauth/access_token", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify({
+                client_id: githubClientId,
+                client_secret: githubClientSecret,
+                code,
+              }),
+            });
+            const tokenData = await tokenResp.json() as any;
+            if (tokenData.access_token) {
+              const userResp = await fetch("https://api.github.com/user", {
+                headers: { Authorization: `Bearer ${tokenData.access_token}`, "User-Agent": "Voltrix" },
+              });
+              const ghUser = await userResp.json() as any;
+              userName = ghUser.name || ghUser.login || "";
+              userEmail = (ghUser.email || "").toLowerCase();
+
+              if (!userEmail) {
+                try {
+                  const emailsResp = await fetch("https://api.github.com/user/emails", {
+                    headers: { Authorization: `Bearer ${tokenData.access_token}`, "User-Agent": "Voltrix" },
+                  });
+                  const emailsData = await emailsResp.json() as any;
+                  if (Array.isArray(emailsData)) {
+                    const primary = emailsData.find((e: any) => e.primary && e.verified) || emailsData[0];
+                    if (primary?.email) userEmail = primary.email.toLowerCase();
+                  }
+                } catch {}
+              }
+            }
+          }
+        }
+
+        if (!userEmail) {
+          return Response.json({ success: false, error: "Could not retrieve verified email from " + provider }, { status: 400 });
+        }
+
+        userName = userName || userEmail.split("@")[0];
+        const userDoId = ctx.exports.UserDurableObject.idFromName(userEmail);
+        const userStub = ctx.exports.UserDurableObject.get(userDoId);
+
+        const secret = await userStub.loginOrCreateViaGatekeeper(userEmail, true);
+        if (!secret) {
+          return Response.json({ success: false, error: "Account creation disabled" }, { status: 403 });
+        }
+
+        if (userName) {
+          await userStub.setOwnDisplayName(userName);
+        }
+
+        const sessionToken = `${userEmail}:${secret}`;
+        return Response.json({
+          success: true,
+          token: sessionToken,
+          user: { id: userEmail, name: userName },
+        });
+      } catch (err) {
+        logger.error("Social OAuth error", { event: "oauth.social.failed", error: err });
+        return Response.json({ success: false, error: err instanceof Error ? err.message : "OAuth exchange failed" }, { status: 500 });
+      }
+    }
+
+    // ── One-Click Demo Scholar Login ──
+    if (req.method === "POST" && url.pathname === "/api/auth/demo-login") {
+      try {
+        const { demoId } = await req.json() as { demoId?: string };
+        const id = demoId || "elena";
+        const demoProfiles: Record<string, { username: string; name: string; discipline: string; university: string; degree: string }> = {
+          elena: {
+            username: "elena",
+            name: "Elena Rostova",
+            discipline: "computer_science",
+            university: "ETH Zürich",
+            degree: "B.Sc. Distributed Computing & Algorithms",
+          },
+          marcus: {
+            username: "marcus",
+            name: "Marcus Vance",
+            discipline: "business",
+            university: "London School of Economics",
+            degree: "B.Sc. Quantitative Economics",
+          },
+          emma: {
+            username: "emma",
+            name: "Emma",
+            discipline: "computer_science",
+            university: "Massachusetts Institute of Technology (MIT)",
+            degree: "B.Sc. Computer Science",
+          },
+          voltrixtest: {
+            username: "voltrixtest",
+            name: "Voltrix Scholar",
+            discipline: "computer_science",
+            university: "University of Nairobi",
+            degree: "B.Sc. Computer Science",
+          },
+        };
+        const selected = demoProfiles[id] || demoProfiles.elena;
+        const userId = ctx.exports.UserDurableObject.idFromName(selected.username);
+        const userStub = ctx.exports.UserDurableObject.get(userId);
+        const secret = await userStub.loginOrCreateViaGatekeeper(selected.username, true);
+        if (!secret) {
+          return Response.json({ success: false, error: "could not create demo" }, { status: 500 });
+        }
+        await userStub.setOwnDisplayName(selected.name);
+        await userStub.setStudentProfile({
+          name: selected.name,
+          discipline: selected.discipline,
+          disciplineTitle: selected.degree,
+          university: selected.university,
+          degreeProgram: selected.degree,
+          academicLevel: "undergraduate",
+          academicYear: "Year 2",
+          semester: "Semester 1",
+          citationStyle: "APA",
+          courses: [],
+          updatedAt: Date.now(),
+        });
+        return Response.json({
+          success: true,
+          token: `${selected.username}:${secret}`,
+          user: { id: selected.username, name: selected.name },
+        });
+      } catch (err) {
+        return Response.json({ success: false, error: String(err) }, { status: 500 });
+      }
     }
 
     // Admin debug: show the DO ID for a username and what getInstanceInstructions returns
