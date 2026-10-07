@@ -1,7 +1,17 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { RpcStub } from 'capnweb'
 import { Switch, Textarea, Input, Button, Tabs, useKumoToastManager } from '@cloudflare/kumo'
-import { Hexagon, ShieldWarning, UserPlus } from '@phosphor-icons/react'
+import {
+  Hexagon,
+  ShieldWarning,
+  UserPlus,
+  Users,
+  GraduationCap,
+  MagnifyingGlass,
+  CheckCircle,
+  Clock,
+  BookOpen,
+} from '@phosphor-icons/react'
 import { useAuthenticatedApi } from './AuthContext'
 import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR } from '@gadgets/workshop-shared/api'
 import { applyAccentColor, DEFAULT_ACCENT_COLOR } from './theme'
@@ -84,6 +94,44 @@ export default function AdminPage() {
 
   // Promoted output formats, in menu order (see AdminFormatsPanel).
   const [formats, setFormats] = useState<AdminFormat[]>([])
+
+  // App users management state
+  interface AdminUserRecord {
+    id: string
+    displayName: string
+    hasPassword: boolean
+    created: boolean
+    onboardingCompleted: boolean
+    studentProfile: import('@gadgets/workshop-shared/api').StudentProfile | null
+    workspacesCount: number
+    sessionsCount: number
+    lastActive?: string
+  }
+  const [usersList, setUsersList] = useState<AdminUserRecord[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [usersSearch, setUsersSearch] = useState('')
+  const [selectedUser, setSelectedUser] = useState<AdminUserRecord | null>(null)
+
+  const fetchUsers = async () => {
+    setUsersLoading(true)
+    try {
+      const res = await fetch('/api/admin/users?token=captain')
+      const data = await res.json() as { success?: boolean; users?: AdminUserRecord[] }
+      if (data?.success && data.users) {
+        setUsersList(data.users)
+      }
+    } catch (err) {
+      toasts.add({ title: 'Failed to load app users', variant: 'error' })
+    } finally {
+      setUsersLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'users' && isAdmin) {
+      fetchUsers()
+    }
+  }, [activeTab, isAdmin])
 
   const resourceKey = (vendorId: string, urlPattern: string) => `${vendorId}\u0000${urlPattern}`
 
@@ -401,6 +449,7 @@ export default function AdminPage() {
         onValueChange={setActiveTab}
         tabs={[
           { value: 'general', label: 'General' },
+          { value: 'users', label: 'App Users' },
           { value: 'gatekeepers', label: 'Gatekeepers' },
           { value: 'formats', label: 'Formats' },
           { value: 'access', label: 'Access' },
@@ -414,6 +463,252 @@ export default function AdminPage() {
           formats={formats}
           onChanged={async () => { setFormats((await admin.api.getSettings()).formats) }}
         />
+      )}
+
+      {/* App Users & Student Profiles Management */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          {/* Top KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-kumo-elevated border border-kumo-line shadow-sm">
+              <div className="flex items-center justify-between text-kumo-subtle mb-1">
+                <span className="text-xs font-semibold uppercase tracking-wider">Total Scholars</span>
+                <Users size={16} />
+              </div>
+              <p className="text-2xl font-bold text-kumo-default">{usersList.length}</p>
+              <p className="text-[11px] text-kumo-subtle mt-0.5">Indexed Durable Object accounts</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-kumo-elevated border border-kumo-line shadow-sm">
+              <div className="flex items-center justify-between text-kumo-subtle mb-1">
+                <span className="text-xs font-semibold uppercase tracking-wider">Profiles Active</span>
+                <GraduationCap size={16} className="text-indigo-500" />
+              </div>
+              <p className="text-2xl font-bold text-kumo-default">
+                {usersList.filter((u) => u.studentProfile !== null).length}
+              </p>
+              <p className="text-[11px] text-kumo-subtle mt-0.5">With academic context</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-kumo-elevated border border-kumo-line shadow-sm">
+              <div className="flex items-center justify-between text-kumo-subtle mb-1">
+                <span className="text-xs font-semibold uppercase tracking-wider">Workspaces</span>
+                <BookOpen size={16} className="text-emerald-500" />
+              </div>
+              <p className="text-2xl font-bold text-kumo-default">
+                {usersList.reduce((acc, u) => acc + (u.workspacesCount || 0), 0)}
+              </p>
+              <p className="text-[11px] text-kumo-subtle mt-0.5">Active research gadgets</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-kumo-elevated border border-kumo-line shadow-sm">
+              <div className="flex items-center justify-between text-kumo-subtle mb-1">
+                <span className="text-xs font-semibold uppercase tracking-wider">Onboarding Done</span>
+                <CheckCircle size={16} className="text-amber-500" />
+              </div>
+              <p className="text-2xl font-bold text-kumo-default">
+                {usersList.filter((u) => u.onboardingCompleted).length}
+              </p>
+              <p className="text-[11px] text-kumo-subtle mt-0.5">Wizard finished</p>
+            </div>
+          </div>
+
+          {/* Directory Filter & Search */}
+          <div className="bg-kumo-elevated border border-kumo-line rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-kumo-subtle" />
+              <input
+                type="text"
+                value={usersSearch}
+                onChange={(e) => setUsersSearch(e.target.value)}
+                placeholder="Search username, university, degree…"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-kumo-control/50 border border-kumo-line text-xs text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-kumo-brand"
+              />
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <Button variant="secondary" size="sm" onClick={fetchUsers} loading={usersLoading}>
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          {/* Users Table */}
+          <div className="bg-kumo-elevated border border-kumo-line rounded-2xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-kumo-line bg-kumo-tint/40 text-kumo-subtle uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4 font-semibold">Scholar / User</th>
+                    <th className="py-3 px-4 font-semibold">Institution &amp; Degree</th>
+                    <th className="py-3 px-4 font-semibold">Academic Level</th>
+                    <th className="py-3 px-4 font-semibold">Workspaces</th>
+                    <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-kumo-line">
+                  {usersList
+                    .filter((u) => {
+                      if (!usersSearch.trim()) return true
+                      const q = usersSearch.toLowerCase()
+                      const matchId = u.id.toLowerCase().includes(q)
+                      const matchName = u.displayName.toLowerCase().includes(q)
+                      const matchUni = u.studentProfile?.university.toLowerCase().includes(q)
+                      const matchDegree = u.studentProfile?.degreeProgram.toLowerCase().includes(q)
+                      return matchId || matchName || matchUni || matchDegree
+                    })
+                    .map((user) => {
+                      const prof = user.studentProfile
+                      return (
+                        <tr key={user.id} className="hover:bg-kumo-tint/30 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                                {user.displayName.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-kumo-default truncate">{user.displayName}</span>
+                                  {user.id === 'captain' && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                                      Admin
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-kumo-subtle truncate">@{user.id}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {prof ? (
+                              <div className="min-w-0">
+                                <p className="font-semibold text-kumo-default truncate">{prof.university}</p>
+                                <p className="text-[11px] text-kumo-subtle truncate">{prof.degreeProgram}</p>
+                              </div>
+                            ) : (
+                              <span className="text-kumo-inactive italic">No profile linked</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {prof ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-kumo-tint border border-kumo-line text-kumo-default text-[11px] font-medium">
+                                <GraduationCap size={12} className="text-indigo-400" />
+                                {prof.academicYear || prof.academicLevel || 'Enrolled'}
+                              </span>
+                            ) : (
+                              <span className="text-kumo-inactive">—</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-semibold text-kumo-default">{user.workspacesCount}</span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {user.created ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-500 font-medium text-[11px]">
+                                <CheckCircle size={13} weight="fill" /> Active DO
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-kumo-inactive text-[11px]">
+                                <Clock size={13} /> Unprovisioned
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedUser(user)}
+                              className="text-xs"
+                            >
+                              Inspect
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {usersList.length === 0 && !usersLoading && (
+              <div className="py-12 text-center text-kumo-subtle">
+                <Users size={32} className="mx-auto mb-2 opacity-40" />
+                <p className="text-sm font-medium">No application users found</p>
+                <p className="text-xs mt-1">Users will appear here once they register or sign in.</p>
+              </div>
+            )}
+          </div>
+
+          {/* User Detail Inspect Drawer / Modal */}
+          {selectedUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-lg bg-kumo-elevated border border-kumo-line rounded-3xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-kumo-line pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+                      {selectedUser.displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-kumo-default">{selectedUser.displayName}</h3>
+                      <p className="text-xs text-kumo-subtle">Username: @{selectedUser.id}</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)}>
+                    Close
+                  </Button>
+                </div>
+
+                {selectedUser.studentProfile ? (
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3 rounded-2xl bg-kumo-tint/50 border border-kumo-line space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-kumo-subtle">University:</span>
+                        <span className="font-bold text-kumo-default">{selectedUser.studentProfile.university}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-kumo-subtle">Degree Program:</span>
+                        <span className="font-bold text-kumo-default">{selectedUser.studentProfile.degreeProgram}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-kumo-subtle">Discipline:</span>
+                        <span className="text-kumo-default">{selectedUser.studentProfile.disciplineTitle}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-kumo-subtle">Year &amp; Semester:</span>
+                        <span className="text-kumo-default">
+                          {selectedUser.studentProfile.academicYear} · {selectedUser.studentProfile.semester}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-kumo-subtle">Citation Style:</span>
+                        <span className="text-kumo-default">{selectedUser.studentProfile.citationStyle}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-kumo-tint/50 border border-kumo-line space-y-1.5">
+                      <p className="font-semibold text-kumo-subtle">Agent System Prompt Context:</p>
+                      <pre className="p-2 rounded-xl bg-kumo-base border border-kumo-line text-[11px] font-mono text-indigo-400 whitespace-pre-wrap">
+                        {`[Academic Context: Student: ${selectedUser.studentProfile.name || selectedUser.displayName} | ${selectedUser.studentProfile.university} | ${selectedUser.studentProfile.degreeProgram} (${selectedUser.studentProfile.academicYear}) | Discipline: ${selectedUser.studentProfile.disciplineTitle} | Citation Style: ${selectedUser.studentProfile.citationStyle}]`}
+                      </pre>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-center">
+                      <div className="p-2.5 rounded-xl bg-kumo-tint/40 border border-kumo-line">
+                        <span className="text-kumo-subtle text-[11px]">Workspaces</span>
+                        <p className="text-base font-bold text-kumo-default">{selectedUser.workspacesCount}</p>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-kumo-tint/40 border border-kumo-line">
+                        <span className="text-kumo-subtle text-[11px]">Active Sessions</span>
+                        <p className="text-base font-bold text-kumo-default">{selectedUser.sessionsCount}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-6 text-center text-kumo-subtle text-xs">
+                    <p>No student profile registered for this account.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Sign-ups */}

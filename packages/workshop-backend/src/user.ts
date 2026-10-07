@@ -631,6 +631,48 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     return profile;
   }
 
+  async getUserOverview(): Promise<{
+    id: string;
+    name: string;
+    hasPassword: boolean;
+    created: boolean;
+    onboardingCompleted: boolean;
+    studentProfile: import("@gadgets/workshop-shared/api").StudentProfile | null;
+    workspacesCount: number;
+    sessionsCount: number;
+    lastActive?: string;
+  }> {
+    const profile = this.storage.profile.get();
+    const studentProf = await this.getStudentProfile();
+    let count = 0;
+    let latestActive: string | undefined = undefined;
+    for (const g of this.storage.gadgets.list()) {
+      count++;
+      if (g.lastActive) {
+        const iso = new Date(g.lastActive).toISOString();
+        if (!latestActive || iso > latestActive) {
+          latestActive = iso;
+        }
+      }
+    }
+    let sessionCount = 0;
+    for (const _ of this.storage.sessions.list()) {
+      sessionCount++;
+    }
+
+    return {
+      id: profile.id,
+      name: profile.name,
+      hasPassword: await this.hasPasswordLogin(),
+      created: this.storage.created.get(),
+      onboardingCompleted: this.storage.onboardingCompleted.get(),
+      studentProfile: studentProf,
+      workspacesCount: count,
+      sessionsCount: sessionCount,
+      lastActive: latestActive,
+    };
+  }
+
   async generateWhatsAppLinkCode(): Promise<string> {
     // 6-digit numeric code, stored in KV with 10-minute TTL
     const code = String(Math.floor(100000 + Math.random() * 900000));

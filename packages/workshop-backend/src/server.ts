@@ -776,6 +776,16 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
     let token = await user.createAccount(username, displayName, passwordHash);
     if (!token) return null;
 
+    // Index user in KV for admin dashboard user directory
+    this.ctx.waitUntil(
+      this.env.BLUEPRINTS.put(`u:${username}`, JSON.stringify({
+        id: username,
+        name: displayName,
+        registeredAt: Date.now(),
+        source: "password"
+      })).catch(() => {})
+    );
+
     recordAnalytics(this.ctx, this.env, {
       event_name: "account_created",
       user_id: id.toString(),
@@ -1000,6 +1010,15 @@ export default {
           await userStub.setOwnDisplayName(userName);
         }
 
+        ctx.waitUntil(
+          env.BLUEPRINTS.put(`u:${userEmail}`, JSON.stringify({
+            id: userEmail,
+            name: userName,
+            registeredAt: Date.now(),
+            source: provider
+          })).catch(() => {})
+        );
+
         const sessionToken = `${userEmail}:${secret}`;
         return Response.json({
           success: true,
@@ -1068,6 +1087,15 @@ export default {
           courses: [],
           updatedAt: Date.now(),
         });
+        ctx.waitUntil(
+          env.BLUEPRINTS.put(`u:${selected.username}`, JSON.stringify({
+            id: selected.username,
+            name: selected.name,
+            registeredAt: Date.now(),
+            source: "demo"
+          })).catch(() => {})
+        );
+
         return Response.json({
           success: true,
           token: `${selected.username}:${secret}`,
@@ -1156,6 +1184,81 @@ export default {
       } catch (err) {
         logger.warn("admin set-student-profile error", { event: "admin.set-student-profile.failed", error: err });
         return Response.json({ success: false, error: "server_error" }, { status: 500 });
+      }
+    }
+
+    // Admin-only: list all indexed application users with full DO details (profiles, workspaces, status).
+    // Usage: GET /api/admin/users
+    //   Authorization: Bearer <admin-username> (or ?token=)
+    if (req.method === "GET" && url.pathname === "/api/admin/users") {
+      const admins: string[] = typeof env.ADMINS === "string"
+          ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
+      const auth = req.headers.get("Authorization") ?? "";
+      let token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (!token) {
+        token = url.searchParams.get("token") || "";
+      }
+      if (!admins.includes(token)) {
+        return Response.json({ success: false, error: "forbidden" }, { status: 403 });
+      }
+
+      try {
+        // Collect known usernames from KV index
+        const listRes = await env.BLUEPRINTS.list({ prefix: "u:" });
+        const userKeys = new Set<string>();
+        for (const k of listRes.keys) {
+          userKeys.add(k.name.slice(2)); // strip "u:"
+        }
+
+        // Always include foundational accounts
+        userKeys.add("captain");
+        userKeys.add("elena");
+        userKeys.add("marcus");
+        userKeys.add("emma");
+        userKeys.add("voltrixtest");
+
+        const userPromises = Array.from(userKeys).map(async (uname) => {
+          try {
+            const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(uname));
+            const userStub = ctx.exports.UserDurableObject.get(userId);
+            const overview = await userStub.getUserOverview();
+            return {
+              id: uname,
+              displayName: overview.name || uname,
+              hasPassword: overview.hasPassword,
+              created: overview.created,
+              onboardingCompleted: overview.onboardingCompleted,
+              studentProfile: overview.studentProfile,
+              workspacesCount: overview.workspacesCount,
+              sessionsCount: overview.sessionsCount,
+              lastActive: overview.lastActive,
+            };
+          } catch (err) {
+            return {
+              id: uname,
+              displayName: uname,
+              hasPassword: false,
+              created: false,
+              onboardingCompleted: false,
+              studentProfile: null,
+              workspacesCount: 0,
+              sessionsCount: 0,
+              error: String(err),
+            };
+          }
+        });
+
+        const users = await Promise.all(userPromises);
+        // Sort: active/created first, then alphabetical
+        users.sort((a, b) => {
+          if (a.created !== b.created) return a.created ? -1 : 1;
+          return a.id.localeCompare(b.id);
+        });
+
+        return Response.json({ success: true, count: users.length, users });
+      } catch (err) {
+        logger.error("Failed to list admin users", { event: "admin.users.list.failed", error: err });
+        return Response.json({ success: false, error: String(err) }, { status: 500 });
       }
     }
 
