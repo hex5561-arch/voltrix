@@ -135,3 +135,126 @@ export type GmailSystemLabel =
 export type GmailLabel =
   | { id: string; name: GmailSystemLabel; type: "system" }
   | { id: string; name: string; type: "custom" };
+
+
+// ── YouTube ─────────────────────────────────────────────────────────
+
+/** Privacy status for a YouTube video or playlist. */
+export type YouTubePrivacyStatus = "public" | "unlisted" | "private";
+
+/** Metadata for a YouTube video. */
+export type YouTubeVideoInfo = {
+  /** YouTube video ID. */
+  id: string;
+  /** Video title. */
+  title: string;
+  /** Video description. */
+  description: string;
+  /** Privacy status. */
+  privacyStatus: YouTubePrivacyStatus;
+  /** ISO 8601 publish timestamp. */
+  publishedAt: string;
+  /** YouTube channel ID. */
+  channelId: string;
+  /** Channel display name. */
+  channelTitle: string;
+  /** Thumbnail URL (high-res when available). */
+  thumbnailUrl?: string;
+  /** View count as a string (YouTube API returns strings for large numbers). */
+  viewCount?: string;
+  /** Duration in ISO 8601 format (e.g. "PT3M42S"). */
+  duration?: string;
+};
+
+/** Result returned after a successful video upload. */
+export type YouTubeUploadResult = {
+  /** YouTube video ID. */
+  videoId: string;
+  /** Full watch URL: https://www.youtube.com/watch?v=<videoId> */
+  watchUrl: string;
+  /** Privacy status as set at upload time. */
+  privacyStatus: YouTubePrivacyStatus;
+  /** Video title as stored by YouTube. */
+  title: string;
+};
+
+/** Options for uploading a video to YouTube. */
+export type YouTubeUploadOptions = {
+  /** Video title (max 100 chars). */
+  title: string;
+  /** Video description (max 5000 chars). */
+  description?: string;
+  /** Privacy status. Defaults to "unlisted". */
+  privacyStatus?: YouTubePrivacyStatus;
+  /** Comma-separated tags (max 500 chars total). */
+  tags?: string[];
+  /** YouTube category ID (e.g. "27" for Education). Defaults to Education. */
+  categoryId?: string;
+};
+
+/** YouTube channel information. */
+export type YouTubeChannelInfo = {
+  /** Channel ID. */
+  id: string;
+  /** Channel title. */
+  title: string;
+  /** Channel description. */
+  description: string;
+  /** Subscriber count (string, may be hidden). */
+  subscriberCount?: string;
+  /** Total video count. */
+  videoCount?: string;
+  /** Channel thumbnail URL. */
+  thumbnailUrl?: string;
+  /** Custom URL handle (e.g. "@VoltrixStudents"). */
+  customUrl?: string;
+};
+
+/**
+ * YouTube session — upload videos and manage a connected YouTube channel.
+ * Requires the youtube.upload and youtube OAuth scopes.
+ */
+export interface YouTubeSession {
+  /**
+   * Get information about the authenticated YouTube channel.
+   */
+  getChannel(): Promise<YouTubeChannelInfo>;
+
+  /**
+   * Upload a video to YouTube from a URL or base64-encoded data.
+   *
+   * @param videoData  URL of the video file (https://...) or base64-encoded video bytes.
+   * @param mimeType   MIME type of the video (e.g. "video/mp4").
+   * @param options    Upload metadata: title, description, privacy, tags.
+   */
+  uploadVideo(
+    videoData: string,
+    mimeType: string,
+    options: YouTubeUploadOptions,
+  ): Promise<YouTubeUploadResult>;
+
+  /**
+   * List the most recent videos on the connected channel.
+   *
+   * @param maxResults  Number of videos to return (1–50, default 10).
+   */
+  listVideos(maxResults?: number): Promise<YouTubeVideoInfo[]>;
+
+  /**
+   * Update the title, description, privacy, or tags of an existing video.
+   *
+   * @param videoId  YouTube video ID.
+   * @param updates  Fields to update.
+   */
+  updateVideo(
+    videoId: string,
+    updates: Partial<Pick<YouTubeUploadOptions, "title" | "description" | "privacyStatus" | "tags">>,
+  ): Promise<YouTubeVideoInfo>;
+
+  /**
+   * Delete a video from the channel.
+   *
+   * @param videoId  YouTube video ID.
+   */
+  deleteVideo(videoId: string): Promise<void>;
+}

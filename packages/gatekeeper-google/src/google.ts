@@ -27,6 +27,11 @@ import type {
   CalendarListEventsOptions, CalendarSendUpdates, CalendarTime, GoogleCalendarCapabilities,
   GoogleCalendarInfo, GoogleCalendarSession, PersonAvailability,
 } from "./calendar-types";
+import { YouTubeApi } from "./youtube-api";
+import type {
+  YouTubeChannelInfo, YouTubePrivacyStatus, YouTubeUploadOptions, YouTubeUploadResult,
+  YouTubeVideoInfo, YouTubeSession,
+} from "./types";
 import TYPES_CODE from "./types.txt";
 import DOCS_TYPES_CODE from "./docs-types.txt";
 import BIGQUERY_TYPES_CODE from "./bigquery-types.txt";
@@ -261,6 +266,13 @@ const BIGQUERY_RESOURCE: SupportedResource = {
   grantable: true,
 };
 
+const YOUTUBE_CHANNEL_RESOURCE: SupportedResource = {
+  urlPattern: "https://www.youtube.com/channel/:channelId/*",
+  title: "YouTube Channel",
+  description: "Upload videos, manage metadata, and list uploads on a YouTube channel.",
+  grantable: true,
+};
+
 // Accounts connected before per-resource scope tracking received scopes for exactly these
 // resources.
 const LEGACY_GRANTED_RESOURCE_URL_PATTERNS = [
@@ -307,6 +319,14 @@ const RESOURCE_SCOPES: {resource: SupportedResource, scopes: string[]}[] = [
       // `bigquery` (not `bigquery.readonly`): dry-runs go through `jobs.insert` for scope
       // enforcement, which `readonly` doesn't permit. Read-only is enforced at the API layer.
       "https://www.googleapis.com/auth/bigquery",
+    ],
+  },
+  {
+    resource: YOUTUBE_CHANNEL_RESOURCE,
+    scopes: [
+      // Upload videos and manage channel content.
+      "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/youtube",
     ],
   },
 ];
@@ -933,6 +953,18 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
       };
     }
 
+    if (parsed.hostname === "www.youtube.com" && parsed.pathname.startsWith("/channel/")) {
+      const channelId = parsed.pathname.split("/")[2] ?? "mine";
+      const props: YouTubeGatekeeperImplProps = {
+        userObjectId: this.ctx.props.userObjectId,
+        channelId,
+      };
+      return {
+        class: this.ctx.exports.YouTubeGatekeeperImpl({props}),
+        resource: YOUTUBE_CHANNEL_RESOURCE,
+      };
+    }
+
     // Default: Gmail
     let props: GmailGatekeeperImplProps = {...this.ctx.props};
 
@@ -1001,6 +1033,18 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
       return {
         iframeHtml: GOOGLE_SHEETS_CONFIGURATOR_HTML,
         ui: new RpcStub(new GoogleSheetsConfiguratorUI(getToken)),
+      };
+    }
+
+    if (resourceUrlPattern === YOUTUBE_CHANNEL_RESOURCE.urlPattern) {
+      // YouTube channel is account-level — no resource picker needed.
+      // Return a minimal iframe that auto-confirms.
+      return {
+        iframeHtml: `<!DOCTYPE html><html><body><script>
+          window.parent?.postMessage({type:"resourceConfigurator",action:"confirm",
+            resourceUrl:"https://www.youtube.com/channel/mine/*"},"*");
+        </script></body></html>`,
+        ui: new RpcStub(new YouTubeChannelConfiguratorUI()),
       };
     }
 
@@ -3775,4 +3819,133 @@ class BigQuerySessionImpl extends RpcTarget implements BigQuerySession {
     });
     return result;
   }
+}
+
+
+// ── YouTube ──────────────────────────────────────────────────────────────────
+
+type YouTubeGatekeeperImplProps = {
+  userObjectId: string;
+  channelId: string;
+};
+
+@validateRpc()
+export class YouTubeGatekeeperImpl
+    extends DurableObject<Env, YouTubeGatekeeperImplProps>
+    implements Gatekeeper<YouTubeSession> {
+
+  #tokens = new AccessTokenCache(opts => {
+    const stub: DurableObjectStub<UserAccount> = this.ctx.exports.UserAccount.get(
+      this.ctx.exports.UserAccount.idFromString(this.ctx.props.userObjectId));
+    return stub.getAccessToken(opts);
+  });
+
+  async #getAccessToken(): Promise<string> {
+    return this.#tokens.get();
+  }
+
+  async describe(): Promise<ResourceDescription> {
+    const channelId = this.ctx.props.channelId;
+    return {
+      url: `https://www.youtube.com/channel/${channelId}`,
+      title: "YouTube Channel",
+      snippet: "Upload videos and manage channel content on YouTube.",
+      suggestedBindingName: "YOUTUBE",
+      tsType: "YouTubeSession",
+    };
+  }
+
+  async getTypeScriptTypes(): Promise<string> {
+    return TYPES_CODE;
+  }
+
+  async getAutoApprovableActions(): Promise<ActionKind[]> {
+    return [];
+  }
+
+  async startSession(approvalQueue: RpcStub<ApprovalQueue>): Promise<YouTubeSession> {
+    const getToken = () => this.#getAccessToken();
+    const api = new YouTubeApi(getToken);
+    return new YouTubeSessionImpl(api, approvalQueue.dup());
+  }
+
+  applyAction(_action: number): Promise<void> {
+    throw new Error("YouTube gatekeeper has no manual actions.");
+  }
+
+  rejectAction(_action: number): Promise<void> {
+    throw new Error("YouTube gatekeeper has no manual actions.");
+  }
+
+  revertAction(_action: number): Promise<void | { message?: string; canRetry?: boolean; restart?: boolean }> {
+    throw new Error("YouTube gatekeeper has no manual actions.");
+  }
+
+  async addObserver(_id: string, _user: Fetcher<GatekeeperUserVerifier>): Promise<void> {}
+  async removeObserver(_id: string): Promise<void> {}
+}
+
+@validateRpc()
+class YouTubeSessionImpl extends RpcTarget implements YouTubeSession {
+  readonly #api: YouTubeApi;
+  readonly #approvalQueue: RpcStub<ApprovalQueue>;
+
+  constructor(api: YouTubeApi, approvalQueue: RpcStub<ApprovalQueue>) {
+    super();
+    this.#api = api;
+    this.#approvalQueue = approvalQueue;
+  }
+
+  async getChannel(): Promise<YouTubeChannelInfo> {
+    await this.#approvalQueue.authorizeObservation({
+      title: "Get YouTube channel info",
+      description: "Reading channel metadata (title, subscriber count, video count).",
+    });
+    return this.#api.getChannel();
+  }
+
+  async listVideos(maxResults = 10): Promise<YouTubeVideoInfo[]> {
+    await this.#approvalQueue.authorizeObservation({
+      title: "List YouTube videos",
+      description: `Listing ${maxResults} most recent videos on the channel.`,
+    });
+    return this.#api.listVideos(maxResults);
+  }
+
+  async uploadVideo(
+    videoData: string,
+    mimeType: string,
+    options: YouTubeUploadOptions,
+  ): Promise<YouTubeUploadResult> {
+    await this.#approvalQueue.authorizeObservation({
+      title: `Upload video: ${options.title}`,
+      description: `Uploading "${options.title}" to YouTube as ${options.privacyStatus ?? "unlisted"}.`,
+    });
+    return this.#api.uploadVideo(videoData, mimeType, options);
+  }
+
+  async updateVideo(
+    videoId: string,
+    updates: Partial<Pick<YouTubeUploadOptions, "title" | "description" | "privacyStatus" | "tags">>,
+  ): Promise<YouTubeVideoInfo> {
+    await this.#approvalQueue.authorizeObservation({
+      title: `Update video ${videoId}`,
+      description: `Updating metadata for video ${videoId}.`,
+    });
+    return this.#api.updateVideo(videoId, updates);
+  }
+
+  async deleteVideo(videoId: string): Promise<void> {
+    await this.#approvalQueue.authorizeObservation({
+      title: `Delete video ${videoId}`,
+      description: `Permanently deleting video ${videoId} from YouTube.`,
+    });
+    return this.#api.deleteVideo(videoId);
+  }
+}
+
+// Minimal configurator UI for YouTube — no resource picker needed.
+class YouTubeChannelConfiguratorUI extends RpcTarget {
+  async getFields(): Promise<[]> { return []; }
+  async buildResourceUrl(): Promise<string> { return "https://www.youtube.com/channel/mine/*"; }
 }
