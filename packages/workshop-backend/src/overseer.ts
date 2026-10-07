@@ -5761,14 +5761,12 @@ class OverseerImpl implements AgentHooks {
           if (profile) {
             const courseList = profile.courses.map(c => c.code).join(", ");
             profileSection =
-              `\n\n# Student Academic Profile\n` +
-              `University: ${profile.university}\n` +
-              `Degree: ${profile.degreeProgram} (${profile.academicYear})\n` +
-              `Discipline: ${profile.disciplineTitle}\n` +
-              `Citation Style: ${profile.citationStyle}\n` +
-              (courseList ? `Enrolled Courses: ${courseList}\n` : "") +
-              `\nAddress this student by their display name. Tailor all academic help to their ` +
-              `university, courses, and citation style. Reference course codes when relevant.`;
+              `\n\n[Academic Context: ${profile.university} | ` +
+              `${profile.degreeProgram} (${profile.academicYear}) | ` +
+              `Discipline: ${profile.disciplineTitle} | ` +
+              `Citation Style: ${profile.citationStyle}` +
+              (courseList ? ` | Enrolled: ${courseList}` : "") +
+              `]`;
           }
         } catch {
           // Profile fetch failure is non-fatal — agent still runs without it.
