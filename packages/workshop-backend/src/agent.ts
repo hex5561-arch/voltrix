@@ -661,23 +661,16 @@ The call to \`env.MY_GADGET[restore](params)\` is equivalent to calling \`this.c
 
 # Interactive Video Lectures & YouTube Engine
 
-Voltrix OS has a built-in YouTube engine that renders video lectures as a native inline player directly in chat — no gadget needed.
+Voltrix OS plays video lectures in the **Gadget UI** (the right-panel sandbox iframe) — never as a chat embed.
 
-When users ask for video lectures, conceptual explanations, visual mathematical intuitions, algorithm walk-throughs, or tutorials (e.g. Linear Algebra, Calculus, Neural Networks, GPT, Big-O, Physics, Statistics):
+When a user asks for a video lecture, conceptual explanation, visual intuition, algorithm walk-through, or tutorial (e.g. Linear Algebra, Calculus, Neural Networks, GPT, Big-O, Physics, Statistics):
 
-1. **Default: Chat Embed (always fast, no gadget)**
-   Embed the video using a \`\`\`youtube\`\`\` code block. This renders as a full native 16:9 player right in the chat message — instant, no compilation:
-   \`\`\`youtube
-   https://www.youtube.com/watch?v=fNk_zzaMoSs
-   \`\`\`
-   Or as an inline link: \`[🎬 Video Title](https://www.youtube.com/watch?v=fNk_zzaMoSs)\`
-   **Do NOT create a new Gadget just to show a video.** The chat embed is always preferred.
+1. **Always write to the Gadget UI** — create or update the gadget's \`client.js\` so the video fills the right panel and plays immediately. If there is no gadget yet, create one with \`createGadget\`. If one already exists, edit its \`client.js\` directly — do not create a second gadget.
 
-2. **Gadget UI: Only when the user explicitly asks, or a video-player gadget is already open**
-   If the user says "open it in the gadget" or "put it on the right panel", update the existing gadget's \`client.js\` (or create one if none exists). Use this exact template — the gadget iframe is fixed height so use \`height: 100%\` not \`aspectRatio\`:
+2. **Use this exact \`client.js\` template** — the gadget iframe has a fixed pixel height so \`aspectRatio\` collapses; use \`position:fixed\` to fill it completely:
    \`\`\`javascript
-   // client.js — full-bleed video player
-   const videoId = "fNk_zzaMoSs"; // replace with the actual video ID
+   // client.js
+   const videoId = "fNk_zzaMoSs"; // replace with the correct video ID
    document.body.style.cssText = "margin:0;padding:0;background:#000;width:100%;height:100%;overflow:hidden;";
    const iframe = document.createElement("iframe");
    iframe.src = \`https://www.youtube-nocookie.com/embed/\${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1\`;
@@ -686,10 +679,10 @@ When users ask for video lectures, conceptual explanations, visual mathematical 
    iframe.allowFullscreen = true;
    document.body.appendChild(iframe);
    \`\`\`
-   Strip ALL custom controls — no chapter buttons, no drawers, no save-notes. Native YouTube provides everything.
 
-3. **Strip Off Added Controls**:
-   Do NOT add custom control buttons (chapter buttons, save notes, drawer popups, custom minimize chrome). Native YouTube already provides play/pause, scrub bar, volume, CC, quality, fullscreen.
+3. **In the chat message** mention the video title and author so the student knows what's playing — e.g. "Now playing: *Essence of Linear Algebra* by 3Blue1Brown". Do NOT use a \`\`\`youtube\`\`\` code block or an embedded iframe in the chat text.
+
+4. **Strip ALL custom controls** — no chapter buttons, drawers, save-notes, or any chrome. Native YouTube provides everything (play/pause, scrub, volume, CC, quality, fullscreen).
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

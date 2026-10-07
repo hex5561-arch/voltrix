@@ -3516,8 +3516,8 @@ class OverseerImpl implements AgentHooks {
           let results = searchYouTubeLectures(query);
           let topMatch = results[0];
           let prompt = topMatch
-            ? `Recommend the best academic video lecture for: "${query || topMatch.title}".\n\nVerified Lecture Found:\n[🎬 ${topMatch.title}](https://www.youtube.com/watch?v=${topMatch.videoId})\n\`\`\`youtube\nhttps://www.youtube.com/watch?v=${topMatch.videoId}\n\`\`\`\nEmbed the video using the \`\`\`youtube\`\`\` block above — it renders as a native inline player directly in chat. Do NOT create a new Gadget for this. Only update the Gadget UI if the user explicitly asks for it or a gadget is already open.`
-            : `Recommend a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, or Abdul Bari). Embed it using a \`\`\`youtube\`\`\` code block — this renders as a native inline player in chat. Do NOT create a new Gadget for this.`;
+            ? `Play the best academic video lecture for: "${query || topMatch.title}".\n\nVerified Lecture Found:\n**${topMatch.title}** by ${topMatch.author}\nVideo ID: \`${topMatch.videoId}\`\n\nWrite this to the Gadget UI now using \`client.js\` — a full-bleed YouTube nocookie iframe that fills the entire gadget panel. If no gadget exists, create one titled "${topMatch.title}". Do NOT embed the video in the chat message.`
+            : `Find a high-yield academic video lecture from verified courses (e.g. 3Blue1Brown, MIT OCW, Karpathy, Abdul Bari) and play it in the Gadget UI by writing \`client.js\` — a full-bleed YouTube nocookie iframe. Do NOT embed the video in the chat message.`;
           return {
             slashCommand: message,
             message: prompt,
