@@ -86,6 +86,23 @@ export default defineConfig(({ mode }) => {
     build: {
       // Production reporting uploads these separately; hidden maps never reveal a map URL to users.
       sourcemap: frontendErrorReporting ? 'hidden' : false,
+      rollupOptions: {
+        output: {
+          // Keep heavy shared modules in a stable vendor chunk so dynamic-import chunks always
+          // load after their dependencies rather than racing with them (prevents TDZ errors like
+          // "can't access lexical declaration before initialization" for minified names).
+          manualChunks(id) {
+            if (id.includes('/node_modules/capnweb/') ||
+                id.includes('/node_modules/flatbuffers/') ||
+                id.includes('/node_modules/react/') ||
+                id.includes('/node_modules/react-dom/') ||
+                id.includes('/node_modules/@tanstack/') ||
+                id.includes('/node_modules/@phosphor-icons/')) {
+              return 'vendor'
+            }
+          },
+        },
+      },
     },
   }
 })
