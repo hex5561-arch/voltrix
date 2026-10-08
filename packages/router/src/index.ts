@@ -87,6 +87,13 @@ export default {
       // Add HSTS so browsers remember to use HTTPS for a year.
       const headers = new Headers(response.headers);
       headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+      // Never cache the HTML shell — it references hashed JS/CSS chunks by name, and a stale
+      // HTML pointing at chunks from a previous deploy causes TDZ / "before initialization" errors
+      // when the browser mixes old cached chunks with new ones.
+      const ct = headers.get("Content-Type") ?? "";
+      if (ct.includes("text/html")) {
+        headers.set("Cache-Control", "no-store");
+      }
       return new Response(response.body, { status: response.status, headers });
     }
 
