@@ -11,6 +11,7 @@ import {
   Trash,
   ArrowsOutSimple,
   Pulse,
+  Sparkle,
   type Icon,
 } from '@phosphor-icons/react'
 import { RpcStub, RpcTarget } from 'capnweb'
@@ -540,6 +541,11 @@ export default function GadgetEditor() {
     duration?: string
   } | null>(null)
 
+  // Stable ref so video event handlers always see the latest setWorkspaceVisibility
+  // without being re-registered on every render.
+  const setWorkspaceVisibilityRef = useRef(setWorkspaceVisibility)
+  useEffect(() => { setWorkspaceVisibilityRef.current = setWorkspaceVisibility }, [setWorkspaceVisibility])
+
   useEffect(() => {
     const handlePlayGadgetVideo = (e: Event) => {
       const custom = e as CustomEvent<{ videoId: string; title?: string }>
@@ -549,8 +555,9 @@ export default function GadgetEditor() {
           videoId: custom.detail.videoId,
           title: custom.detail.title,
         })
+        // Ensure the right pane is visible before switching to the app tab
+        setWorkspaceVisibilityRef.current('open')
         setActiveTab('app')
-        // Set chat panel to VIDEO_CHAT_WIDTH so the gadget panel gets maximum video real estate
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
     }
@@ -564,6 +571,8 @@ export default function GadgetEditor() {
           preset: custom.detail.preset,
           duration: custom.detail.duration,
         })
+        // Ensure the right pane is visible before switching to the app tab
+        setWorkspaceVisibilityRef.current('open')
         setActiveTab('app')
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
@@ -1507,6 +1516,15 @@ export default function GadgetEditor() {
               <Trash size={16} />
             </WorkshopIconButton>
           )}
+
+          {/* Upgrade button */}
+          <Link
+            to="/pricing"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+          >
+            <Sparkle size={13} weight="fill" />
+            Upgrade
+          </Link>
 
           {/* User menu */}
           <div className="ml-2">
