@@ -3508,7 +3508,7 @@ class OverseerImpl implements AgentHooks {
       // The name is typed but arrives over RPC, and one we don't implement would commit an event and
       // then start a turn with no prompt for the model to answer, so reject it here.
       if (message.id.builtin === true) {
-        if (message.id.commandId !== "compact" && message.id.commandId !== "youtube" && message.id.commandId !== "video") {
+        if (message.id.commandId !== "compact" && message.id.commandId !== "youtube" && message.id.commandId !== "video" && message.id.commandId !== "publish") {
           throw new Error("Unknown built-in slash command.");
         }
         if (message.id.commandId === "youtube") {
@@ -3526,13 +3526,62 @@ class OverseerImpl implements AgentHooks {
         }
         if (message.id.commandId === "video") {
           let topic = ((message as any).argument || message.args || "").trim();
+          let isGR = /general[\s_-]?relativity/i.test(topic);
           let prompt = topic
-            ? `Generate a HyperFrames academic explainer video about: "${topic}".\n\nUse the HyperFrames video generation system to create a polished explainer video for this topic. Respond with a \`\`\`hyperframes\n{"topic":"${topic}","status":"generating","title":"${topic} Explained"}\n\`\`\` block so the UI shows the video card immediately, then generate the video.`
-            : `Generate a HyperFrames academic explainer video. Ask the user what topic they want explained, then generate it using HyperFrames.`;
+            ? `Present a HyperFrames academic explainer video about: "${topic}".\n\n${
+                isGR
+                  ? `General Relativity is already rendered and ready! Respond with a \`\`\`hyperframes\n{"topic":"General Relativity","title":"General Relativity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the ready video card immediately, and summarize the key visual intuition.`
+                  : `Emit a \`\`\`hyperframes\n{"topic":"${topic}","title":"${topic} Explained","status":"generating","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the video card, then explain the key concepts and scenes visualised in the video.`
+              }`
+            : `Present a HyperFrames academic explainer video. Recommend available library videos like General Relativity (ready for playback), or ask what topic they want explained and emit the corresponding \`\`\`hyperframes\`\`\` card.`;
           return {
             slashCommand: message,
             message: prompt,
             skillName: "video",
+          };
+        }
+        if (message.id.commandId === "publish") {
+          const titleArg = ((message as any).argument || message.args || "").trim();
+          // Build a prompt that instructs the agent to upload via the YOUTUBE binding.
+          // The agent runs executeCode, calls getSession("YOUTUBE"), then uploadVideo().
+          // We surface the known ready videos so the agent can pick the right R2 URL.
+          const knownVideos = [
+            { topic: "General Relativity", path: "/api/hf-videos/general-relativity.mp4", r2Key: "hf-videos/general-relativity.mp4", title: "General Relativity Explained | Voltrix" },
+          ];
+          const match = titleArg
+            ? knownVideos.find(v => v.topic.toLowerCase().includes(titleArg.toLowerCase()) || titleArg.toLowerCase().includes(v.topic.toLowerCase()))
+            : knownVideos[0];
+
+          const videoList = knownVideos.map(v => `- "${v.topic}": r2Key="${v.r2Key}", streamUrl="https://voltrix.stream${v.path}"`).join("\n");
+
+          const prompt = match
+            ? `Publish the "${match.topic}" HyperFrames video to the connected YouTube channel.
+
+Video details:
+- Stream URL: https://voltrix.stream${match.path}
+- Suggested title: "${match.title}"
+- Category: Education (categoryId "27")
+- Privacy: unlisted (safe default — user can make it public in YouTube Studio)
+
+Steps to execute now using executeCode:
+1. Call \`const yt = await getSession("YOUTUBE")\` to get the YouTube session.
+2. Call \`const result = await yt.uploadVideo("https://voltrix.stream${match.path}", "video/mp4", { title: "${match.title}", description: "An AI-generated explainer video from Voltrix — your academic AI copilot. voltrix.stream", tags: ["education", "explainer", "AI", "${match.topic.toLowerCase()}"], privacyStatus: "unlisted", categoryId: "27" })\`
+3. Return \`{ videoId: result.videoId, watchUrl: result.watchUrl, title: result.title }\`
+
+After the code runs, show the user the YouTube watch URL as a clickable link and confirm the upload. If the YOUTUBE binding is not connected, tell the user to go to Connections and connect their Google account with the YouTube Channel resource.`
+            : `Publish a HyperFrames video to the connected YouTube channel.
+
+Available rendered videos:
+${videoList}
+
+${titleArg ? `The user asked for "${titleArg}" but no matching video was found. ` : ""}Ask the user which video to publish, or default to General Relativity.
+
+When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo(streamUrl, "video/mp4", { title, description, tags, privacyStatus: "unlisted", categoryId: "27" }). Return the YouTube watch URL. If YOUTUBE is not connected, prompt the user to connect it via the Connections panel.`;
+
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "publish",
           };
         }
         return {slashCommand: message};
@@ -5057,6 +5106,11 @@ class OverseerImpl implements AgentHooks {
       selection: {builtin: true, commandId: "video"},
       name: "video",
       description: "Generate a HyperFrames explainer video for any academic topic.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "publish"},
+      name: "publish",
+      description: "Publish a rendered HyperFrames video to your connected YouTube channel.",
       providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
     }, ...await collectSlashCommands(sources)];
   }
