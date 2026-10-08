@@ -816,6 +816,334 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
   }
 }
 
+// ── Silent Edge Geo-Intelligence & Regional Mappings ────────────────────────
+function extractGeoContext(req: Request) {
+  const cf = (req as any).cf || {};
+  const countryHeader = req.headers.get("cf-ipcountry") || "";
+  const cityHeader = req.headers.get("cf-city") || "";
+  const regionHeader = req.headers.get("cf-region") || "";
+  const timezoneHeader = req.headers.get("cf-timezone") || "";
+
+  const country = (cf.country || countryHeader || "UG").toUpperCase();
+  const city = cf.city || cityHeader || "Kampala";
+  const region = cf.region || regionHeader || "Central";
+  const timezone = cf.timezone || timezoneHeader || "Africa/Kampala";
+  const colo = cf.colo || "MBA";
+  const asn = cf.asn || 37075;
+
+  const geoMap: Record<string, {
+    countryName: string;
+    currency: { code: string; symbol: string; rateToUsd: number };
+    sectorDefaults: {
+      higherEdTerm: string;
+      secondaryTerm: string;
+      examinationBody: string;
+      secondaryLevels: string[];
+    };
+  }> = {
+    UG: {
+      countryName: "Uganda",
+      currency: { code: "UGX", symbol: "USh ", rateToUsd: 3750 },
+      sectorDefaults: {
+        higherEdTerm: "University & Tertiary Institution",
+        secondaryTerm: "Secondary School (O/A-Level)",
+        examinationBody: "UNEB (Uganda National Examinations Board)",
+        secondaryLevels: ["Senior 1", "Senior 2", "Senior 3", "Senior 4 (UCE)", "Senior 5", "Senior 6 (UACE)"]
+      }
+    },
+    KE: {
+      countryName: "Kenya",
+      currency: { code: "KES", symbol: "KSh ", rateToUsd: 130 },
+      sectorDefaults: {
+        higherEdTerm: "University & TVET College",
+        secondaryTerm: "Secondary School (KCSE / CBC)",
+        examinationBody: "KNEC (Kenya National Examinations Council)",
+        secondaryLevels: ["Form 1", "Form 2", "Form 3", "Form 4 (KCSE)", "Grade 10 (Senior School)", "Grade 11", "Grade 12"]
+      }
+    },
+    TZ: {
+      countryName: "Tanzania",
+      currency: { code: "TZS", symbol: "TSh ", rateToUsd: 2650 },
+      sectorDefaults: {
+        higherEdTerm: "Chuo Kikuu / Higher Education",
+        secondaryTerm: "Shule ya Sekondari (CSEE / ACSEE)",
+        examinationBody: "NECTA (National Examinations Council of Tanzania)",
+        secondaryLevels: ["Form 1", "Form 2", "Form 3", "Form 4 (CSEE)", "Form 5", "Form 6 (ACSEE)"]
+      }
+    },
+    RW: {
+      countryName: "Rwanda",
+      currency: { code: "RWF", symbol: "FRw ", rateToUsd: 1350 },
+      sectorDefaults: {
+        higherEdTerm: "University & Polytechnic",
+        secondaryTerm: "Secondary School (O/A-Level)",
+        examinationBody: "NESA (National Examination and School Inspection Authority)",
+        secondaryLevels: ["Senior 1", "Senior 2", "Senior 3 (O-Level)", "Senior 4", "Senior 5", "Senior 6 (Advanced)"]
+      }
+    },
+    NG: {
+      countryName: "Nigeria",
+      currency: { code: "NGN", symbol: "₦", rateToUsd: 1550 },
+      sectorDefaults: {
+        higherEdTerm: "University & Polytechnic",
+        secondaryTerm: "Secondary School (WAEC / NECO)",
+        examinationBody: "WAEC / NECO / JAMB",
+        secondaryLevels: ["JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3 (WASSCE)"]
+      }
+    },
+    GH: {
+      countryName: "Ghana",
+      currency: { code: "GHS", symbol: "GH₵", rateToUsd: 15.5 },
+      sectorDefaults: {
+        higherEdTerm: "University & Technical University",
+        secondaryTerm: "Senior High School (SHS)",
+        examinationBody: "WAEC (West African Examinations Council)",
+        secondaryLevels: ["SHS 1", "SHS 2", "SHS 3 (WASSCE)"]
+      }
+    },
+    GB: {
+      countryName: "United Kingdom",
+      currency: { code: "GBP", symbol: "£", rateToUsd: 0.79 },
+      sectorDefaults: {
+        higherEdTerm: "University & Higher Education",
+        secondaryTerm: "Secondary School & Sixth Form",
+        examinationBody: "Ofqual (AQA / Edexcel / OCR)",
+        secondaryLevels: ["Year 7", "Year 8", "Year 9", "Year 10 (GCSE)", "Year 11 (GCSE)", "Year 12 (AS)", "Year 13 (A-Level)"]
+      }
+    },
+    US: {
+      countryName: "United States",
+      currency: { code: "USD", symbol: "$", rateToUsd: 1.0 },
+      sectorDefaults: {
+        higherEdTerm: "College & University",
+        secondaryTerm: "High School (9th-12th Grade)",
+        examinationBody: "College Board / AP / ACT / SAT",
+        secondaryLevels: ["9th Grade (Freshman)", "10th Grade (Sophomore)", "11th Grade (Junior)", "12th Grade (Senior / AP)"]
+      }
+    }
+  };
+
+  const matched = geoMap[country] || {
+    countryName: "Global",
+    currency: { code: "USD", symbol: "$", rateToUsd: 1.0 },
+    sectorDefaults: {
+      higherEdTerm: "College & University",
+      secondaryTerm: "Secondary / High School",
+      examinationBody: "National / International Board",
+      secondaryLevels: ["Grade 9", "Grade 10", "Grade 11", "Grade 12"]
+    }
+  };
+
+  return {
+    country,
+    countryName: matched.countryName,
+    city,
+    region,
+    timezone,
+    colo,
+    asn,
+    currency: matched.currency,
+    sectorDefaults: matched.sectorDefaults,
+  };
+}
+
+const DEFAULT_PLANS = [
+  // Higher Education Sector
+  {
+    id: 'free',
+    sector: 'higher_ed',
+    label: 'Starter',
+    badge: null,
+    description: 'Essential AI tools & study workspace for individual scholars',
+    monthly: 0,
+    annual: 0,
+    dailyQueries: 10,
+    isPopular: false,
+    active: true,
+    cta: 'Current Plan',
+    features: [
+      '10 AI queries per day',
+      'Llama 3.3 & Gemini Flash models',
+      'Coursework research drafting & editor',
+      '5 MB file upload limit',
+      'LaTeX mathematical equation rendering',
+      'Export to Markdown & Plaintext'
+    ]
+  },
+  {
+    id: 'pro',
+    sector: 'higher_ed',
+    label: 'Scholar Pro',
+    badge: 'Most Popular',
+    description: 'Comprehensive research, STEM proofs & coding power for university scholars',
+    monthly: 9.99,
+    annual: 79.99,
+    dailyQueries: 500,
+    isPopular: true,
+    active: true,
+    cta: 'Upgrade to Scholar Pro',
+    features: [
+      '500 AI queries per day (unlimited during exam periods)',
+      'Flagship Reasoning: Claude 3.5 Sonnet, GPT-4o, DeepSeek R1',
+      'Groq LPU ultra-fast token streaming (800+ tok/s)',
+      'Multi-document RAG (PDFs, URLs, YouTube lectures, textbooks)',
+      'Socratic Code Review & Big-O algorithm breakdown',
+      'LaTeX & SymPy math derivations with step-by-step proofs',
+      'Writing Coach & Academic Paraphraser',
+      '50 MB document ingestion per upload',
+      '1-click Word (.docx) & PDF publication export'
+    ]
+  },
+  {
+    id: 'cohort',
+    sector: 'higher_ed',
+    label: 'Study Cohort / Group',
+    badge: 'Best for Groups (5–25)',
+    description: 'Collaborative research, shared lecture RAG & 6-char PIN join code for 5–25 students',
+    monthly: 22.45,
+    annual: 179.99,
+    perSeatMonthly: 4.49,
+    minSeats: 5,
+    dailyQueries: 1500,
+    isPopular: false,
+    active: true,
+    cta: 'Create Study Cohort',
+    features: [
+      '5 to 25 shared student seats with instant 6-char PIN join codes',
+      'Shared Cohort Document Vault (upload textbook/slides once for all members)',
+      'Shared query pool (1,500 queries/day pooled or per-seat limits)',
+      'Collaborative coursework revision & study group chat',
+      'Department / Lead Student admin dashboard',
+      'Split billing & Mobile Money / Card checkout'
+    ]
+  },
+  {
+    id: 'campus',
+    sector: 'higher_ed',
+    label: 'Campus Institutional',
+    badge: 'For Departments & Labs',
+    description: 'Departmental oversight, Socratic cheating lock, custom rubrics & LMS sync for faculties',
+    monthly: 149.00,
+    annual: 1190.00,
+    dailyQueries: 10000,
+    isPopular: false,
+    active: true,
+    cta: 'Deploy Campus License',
+    features: [
+      'Unlimited student enrollments under departmental domain',
+      'Educator Cockpit: Socratic Guidance toggle (prevents direct answer copy-pasting)',
+      'Class struggle detection & topic mastery heatmaps',
+      'Moodle / Canvas LMS roster sync plugin endpoints',
+      'Custom faculty grading rubric importer & audit presets',
+      'Bulk multi-language academic document translation',
+      'Dedicated SLA, institutional compliance & audit logs'
+    ]
+  },
+  // Secondary School Sector
+  {
+    id: 'secondary_candidate',
+    sector: 'secondary',
+    label: 'Candidate Revision Pass',
+    badge: 'Exam Preparation',
+    description: 'Targeted syllabus mastery, step-by-step math solver & past paper breakdown for candidates',
+    monthly: 4.99,
+    annual: 39.99,
+    dailyQueries: 200,
+    isPopular: true,
+    active: true,
+    cta: 'Get Candidate Pass',
+    features: [
+      'National Examination past paper breakdowns (UNEB / KCSE / WAEC / GCSE)',
+      'Step-by-step formula explanations for Physics, Chemistry & Math',
+      'Socratic hint tutor: guides student thinking without spoiling answers',
+      'Audio & diagram explainer for complex biology & geography cycles',
+      'Parent & Guardian weekly progress summary export'
+    ]
+  },
+  {
+    id: 'secondary_stream',
+    sector: 'secondary',
+    label: 'Class Stream / Study Squad',
+    badge: 'For Classes (10–45 Students)',
+    description: 'Teacher broadcast hub, class homework assistance & instant PIN joining for whole streams',
+    monthly: 24.90,
+    annual: 199.00,
+    perSeatMonthly: 2.49,
+    minSeats: 10,
+    dailyQueries: 3500,
+    isPopular: false,
+    active: true,
+    cta: 'Register Class Stream',
+    features: [
+      '10 to 45 student seats with simple 6-character class join code',
+      'Teacher Variable Levers: set daily query caps & enable Exam Lockout during tests',
+      'Curriculum alignment: UNEB UCE/UACE, KNEC KCSE, WAEC, GCSE',
+      'Class announcement broadcaster directly to student screens',
+      'Automatic homework feedback & concept explanation generator'
+    ]
+  },
+  {
+    id: 'secondary_academy',
+    sector: 'secondary',
+    label: 'Whole-School Academy License',
+    badge: 'Principal & School Board',
+    description: 'Complete secondary institution deployment with grade-level oversight & teacher lesson planning',
+    monthly: 199.00,
+    annual: 1590.00,
+    dailyQueries: 25000,
+    isPopular: false,
+    active: true,
+    cta: 'Deploy School Academy',
+    features: [
+      'Whole-school access across all streams and grade levels',
+      'Teacher AI Assistant: 1-click lesson planning, quiz & worksheet generation',
+      'Strict Academic Integrity: locked Socratic mode for students',
+      'Principal & Head of Department curriculum coverage dashboard',
+      'Offline/low-bandwidth compressed responses for school computer labs',
+      'Multi-teacher co-admin permissions & centralized school billing'
+    ]
+  }
+];
+
+const DEFAULT_PLAN_REASONS = [
+  {
+    id: 'integrity',
+    icon: 'ShieldCheck',
+    title: 'Guaranteed Academic Integrity & Socratic Enforcement',
+    summary: 'Prevent AI from writing homework for students. Educators can lock the cohort to Socratic Mode, compelling the model to ask guiding questions, verify student working, and scaffold conceptual mastery rather than outputting raw solutions.'
+  },
+  {
+    id: 'curriculum',
+    icon: 'Target',
+    title: 'Regional Exam Board & Curriculum Calibration',
+    summary: 'Pre-calibrated for national and regional curricula—including UNEB (UCE/UACE), KNEC (KCSE), WAEC (WASSCE), Cambridge GCSE/A-Levels, and AP. Learner queries match authentic marking guides and local syllabus depth.'
+  },
+  {
+    id: 'levers',
+    icon: 'Sliders',
+    title: 'Educator Variable Control Levers',
+    summary: 'Department heads, lecturers, and teachers gain precise control over AI tools: dial daily query caps per learner, toggle solution generation on/off, schedule Exam Mode lockouts during live assessments, and upload custom grading rubrics.'
+  },
+  {
+    id: 'struggle',
+    icon: 'ChartLineUp',
+    title: 'Early Struggle Detection & Mastery Heatmaps',
+    summary: 'Know which topics pupils or undergrads are finding difficult before exam results arrive. The educator cockpit tracks aggregated question themes (e.g. Organic Chemistry, Calculus, Data Structures) in real time without compromising individual student privacy.'
+  },
+  {
+    id: 'provisioning',
+    icon: 'UsersFour',
+    title: 'Frictionless 6-Char PIN & Magic Link Join',
+    summary: 'Eliminate tedious student account setup. Instructors generate a simple 6-character PIN code (e.g. MAK-26, BDO-19) that students type on their phone or laptop to instantly bind to the cohort plan and shared syllabus library.'
+  },
+  {
+    id: 'savings',
+    icon: 'Coins',
+    title: 'Up to 60% Multi-Seat Cost Advantage',
+    summary: 'Pooled licenses drop per-learner rates as low as $2.49/month, with unified institutional invoicing, split student contributions, and direct Mobile Money (MTN, Airtel, M-Pesa) or card payment.'
+  }
+];
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
@@ -1374,79 +1702,51 @@ export default {
       });
     }
 
+    // Silent Edge Geo-Intelligence: GET /api/geo/context
+    if (req.method === "GET" && url.pathname === "/api/geo/context") {
+      const geo = extractGeoContext(req);
+      const userParam = url.searchParams.get("userId") || "";
+      if (userParam) {
+        const uEmail = userParam.toLowerCase().trim();
+        try {
+          const uRecord = (await env.BLUEPRINTS.get(`u:${uEmail}`, "json")) as any;
+          if (uRecord) {
+            const prevLoc = uRecord.currentLocation;
+            if (prevLoc && (prevLoc.country !== geo.country || prevLoc.region !== geo.region)) {
+              const history = Array.isArray(uRecord.locationHistory) ? uRecord.locationHistory : [];
+              history.unshift({
+                from: { country: prevLoc.country, region: prevLoc.region, city: prevLoc.city },
+                to: { country: geo.country, region: geo.region, city: geo.city },
+                changedAt: new Date().toISOString()
+              });
+              uRecord.lastLocation = prevLoc;
+              uRecord.locationHistory = history.slice(0, 10);
+            }
+            uRecord.currentLocation = {
+              country: geo.country,
+              region: geo.region,
+              city: geo.city,
+              timezone: geo.timezone,
+              updatedAt: new Date().toISOString()
+            };
+            await env.BLUEPRINTS.put(`u:${uEmail}`, JSON.stringify(uRecord));
+          }
+        } catch (e) {
+          logger.warn("Could not record geo migration", { error: e });
+        }
+      }
+      return Response.json({ success: true, geo });
+    }
+
     // Command Center & Public SaaS: GET /api/admin/plans & GET /api/plans
     if (url.pathname === "/api/admin/plans" || url.pathname === "/api/plans") {
       if (req.method === "GET") {
         const stored = await env.BLUEPRINTS.get("sys:plans", "json");
-        return Response.json({ success: true, plans: stored || [
-          {
-            id: 'free',
-            label: 'Starter',
-            badge: null,
-            description: 'Essential AI tools & study workspace for individual scholars',
-            monthly: 0,
-            annual: 0,
-            dailyQueries: 10,
-            isPopular: false,
-            active: true,
-            cta: 'Current Plan',
-            features: [
-              '10 AI queries per day',
-              'Llama 3.3 & Gemini Flash models',
-              'Coursework research drafting & editor',
-              '5 MB file upload limit',
-              'LaTeX mathematical equation rendering',
-              'Export to Markdown & Plaintext',
-              'Academic discussion forum'
-            ]
-          },
-          {
-            id: 'pro',
-            label: 'Scholar Pro',
-            badge: 'Most Popular',
-            description: 'Comprehensive research, STEM proofs & coding power for university scholars',
-            monthly: 9.99,
-            annual: 79.99,
-            dailyQueries: 500,
-            isPopular: true,
-            active: true,
-            cta: 'Upgrade to Pro',
-            features: [
-              '500 AI queries per day (unlimited during exam periods)',
-              'Flagship Reasoning: Claude 3.5 Sonnet, GPT-4o, DeepSeek R1',
-              'Groq LPU ultra-fast token streaming (800+ tok/s)',
-              'Multi-document RAG (PDFs, URLs, YouTube lectures, textbooks)',
-              'Socratic Code Review & Big-O algorithm complexity breakdown',
-              'LaTeX & SymPy math derivations with step-by-step proofs',
-              'Writing Coach, Academic Paraphraser & Rubric Audit',
-              '50 MB document ingestion per upload',
-              '1-click Word (.docx) & PDF publication export',
-              'Autonomous Agent UI & file management skills'
-            ]
-          },
-          {
-            id: 'campus',
-            label: 'Campus Institutional',
-            badge: 'For Cohorts & Labs',
-            description: 'Multi-seat access, custom course rubrics & priority compute for study groups & labs',
-            monthly: 34.99,
-            annual: 279.99,
-            dailyQueries: 2500,
-            isPopular: false,
-            active: true,
-            cta: 'Get Campus Access',
-            features: [
-              'Everything in Scholar Pro',
-              '2,500 AI queries per day with multi-seat sharing',
-              'High-throughput priority queue with 0ms starvation bonus',
-              'OpenAlex 250M+ literature ingestion & deep research agent',
-              'Custom course rubric matching & faculty grading presets',
-              'Bulk multi-language academic document translation',
-              'Admin analytics dashboard & team audit logging',
-              'Dedicated SLA & institutional priority support'
-            ]
-          }
-        ]});
+        return Response.json({
+          success: true,
+          plans: stored || DEFAULT_PLANS,
+          reasons: DEFAULT_PLAN_REASONS
+        });
       }
       if (req.method === "POST") {
         const body = await req.json() as { plans?: any };
@@ -1454,6 +1754,505 @@ export default {
         await env.BLUEPRINTS.put("sys:plans", JSON.stringify(plansToSave));
         return Response.json({ success: true, plans: plansToSave });
       }
+    }
+
+    // Cohorts: GET /api/cohorts/list
+    if (req.method === "GET" && url.pathname === "/api/cohorts/list") {
+      const educatorEmail = url.searchParams.get("educatorEmail")?.toLowerCase().trim();
+      const storedCohorts = (await env.BLUEPRINTS.get("sys:cohorts", "json")) as any[] || [
+        {
+          id: 'coh_makerere_eng',
+          name: 'Makerere Software Engineering 2026',
+          sector: 'higher_ed',
+          institution: 'Makerere University (MAK)',
+          departmentOrGrade: 'Dept of Computer Science & Software Eng',
+          educatorEmail: 'prof.ssemakula@eng.mak.ac.ug',
+          educatorName: 'Prof. Dennis Ssemakula',
+          plan: 'campus',
+          joinCode: 'MAK-48',
+          maxSeats: 45,
+          currentSeats: 38,
+          variables: {
+            dailyQueryLimit: 50,
+            socraticMode: true,
+            examLock: false,
+            allowSharedUploads: true,
+            curriculumFocus: 'CS310: Algorithms & Distributed Systems'
+          },
+          createdAt: '2026-09-15T08:00:00Z'
+        },
+        {
+          id: 'coh_gayaza_s4',
+          name: 'Gayaza High S4 Physics Stream A',
+          sector: 'secondary',
+          institution: 'Gayaza High School',
+          departmentOrGrade: 'Senior 4 Science Stream',
+          educatorEmail: 'tr.nabukenya@gayazahs.sc.ug',
+          educatorName: 'Mrs. Rebecca Nabukenya',
+          plan: 'secondary_stream',
+          joinCode: 'GHS-22',
+          maxSeats: 35,
+          currentSeats: 32,
+          variables: {
+            dailyQueryLimit: 25,
+            socraticMode: true,
+            examLock: false,
+            allowSharedUploads: true,
+            curriculumFocus: 'UNEB UCE Physics 535 / Chemistry 545'
+          },
+          createdAt: '2026-09-20T10:30:00Z'
+        },
+        {
+          id: 'coh_uon_med',
+          name: 'UoN Clinical Medicine Year 3',
+          sector: 'higher_ed',
+          institution: 'University of Nairobi (UoN)',
+          departmentOrGrade: 'School of Medicine',
+          educatorEmail: 'dr.omondi@uonbi.ac.ke',
+          educatorName: 'Dr. Kennedy Omondi',
+          plan: 'campus',
+          joinCode: 'UON-91',
+          maxSeats: 50,
+          currentSeats: 44,
+          variables: {
+            dailyQueryLimit: 75,
+            socraticMode: false,
+            examLock: false,
+            allowSharedUploads: true,
+            curriculumFocus: 'Internal Medicine & Pharmacology Diagnostics'
+          },
+          createdAt: '2026-09-28T14:15:00Z'
+        }
+      ];
+
+      if (educatorEmail) {
+        const filtered = storedCohorts.filter(c => c.educatorEmail?.toLowerCase() === educatorEmail);
+        return Response.json({ success: true, count: filtered.length, cohorts: filtered });
+      }
+      return Response.json({ success: true, count: storedCohorts.length, cohorts: storedCohorts });
+    }
+
+    // Cohorts: POST /api/cohorts/create
+    if (req.method === "POST" && url.pathname === "/api/cohorts/create") {
+      const body = await req.json().catch(() => ({})) as any;
+      const { name, sector, institution, departmentOrGrade, educatorEmail, educatorName, plan, maxSeats, variables } = body;
+      if (!name || !institution) {
+        return Response.json({ success: false, error: "Cohort name and institution required" }, { status: 400 });
+      }
+
+      const prefix = (institution.slice(0, 3).toUpperCase().replace(/[^A-Z]/g, '') || 'VOL').padEnd(3, 'X');
+      const numCode = Math.floor(10 + Math.random() * 90);
+      const joinCode = `${prefix}-${numCode}`;
+      const cohortId = `coh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+      const newCohort = {
+        id: cohortId,
+        name: name.trim(),
+        sector: sector || 'higher_ed',
+        institution: institution.trim(),
+        departmentOrGrade: departmentOrGrade || '',
+        educatorEmail: (educatorEmail || 'educator@voltrix.ai').toLowerCase().trim(),
+        educatorName: educatorName || 'Lead Educator',
+        plan: plan || 'cohort',
+        joinCode,
+        maxSeats: Number(maxSeats) || 30,
+        currentSeats: 1,
+        variables: {
+          dailyQueryLimit: Number(variables?.dailyQueryLimit) || 50,
+          socraticMode: variables?.socraticMode !== undefined ? !!variables.socraticMode : true,
+          examLock: !!variables?.examLock,
+          allowSharedUploads: variables?.allowSharedUploads !== undefined ? !!variables.allowSharedUploads : true,
+          curriculumFocus: variables?.curriculumFocus || 'General Syllabus'
+        },
+        createdAt: new Date().toISOString()
+      };
+
+      await env.BLUEPRINTS.put(`coh:${cohortId}`, JSON.stringify(newCohort));
+      await env.BLUEPRINTS.put(`coh_code:${joinCode.toUpperCase()}`, cohortId);
+
+      const storedCohorts = (await env.BLUEPRINTS.get("sys:cohorts", "json")) as any[] || [];
+      await env.BLUEPRINTS.put("sys:cohorts", JSON.stringify([newCohort, ...storedCohorts].slice(0, 50)));
+
+      const initialMembers = [
+        {
+          email: newCohort.educatorEmail,
+          name: newCohort.educatorName,
+          role: 'lead_educator',
+          joinedAt: newCohort.createdAt,
+          queriesUsed: 0,
+          lastActive: newCohort.createdAt,
+          struggleTopics: []
+        }
+      ];
+      await env.BLUEPRINTS.put(`coh:${cohortId}:members`, JSON.stringify(initialMembers));
+
+      return Response.json({ success: true, cohort: newCohort });
+    }
+
+    // Cohorts: POST /api/cohorts/join
+    if (req.method === "POST" && url.pathname === "/api/cohorts/join") {
+      const body = await req.json().catch(() => ({})) as any;
+      const code = (body.code || body.joinCode || "").trim().toUpperCase();
+      const studentEmail = (body.studentEmail || body.email || "").toLowerCase().trim();
+      const studentName = (body.studentName || body.name || "Scholar").trim();
+
+      if (!code || !studentEmail) {
+        return Response.json({ success: false, error: "6-character join code and email required" }, { status: 400 });
+      }
+
+      let cohortId = await env.BLUEPRINTS.get(`coh_code:${code}`);
+      let cohortData: any = null;
+
+      if (cohortId) {
+        cohortData = await env.BLUEPRINTS.get(`coh:${cohortId}`, "json");
+      } else {
+        const storedCohorts = (await env.BLUEPRINTS.get("sys:cohorts", "json")) as any[] || [];
+        const match = storedCohorts.find(c => c.joinCode?.toUpperCase() === code);
+        if (match) {
+          cohortId = match.id;
+          cohortData = match;
+        }
+      }
+
+      if (!cohortData || !cohortId) {
+        return Response.json({ success: false, error: "Invalid or expired cohort PIN code" }, { status: 404 });
+      }
+
+      const members = (await env.BLUEPRINTS.get(`coh:${cohortId}:members`, "json")) as any[] || [];
+      const alreadyJoined = members.some(m => m.email?.toLowerCase() === studentEmail);
+
+      if (!alreadyJoined) {
+        if (cohortData.maxSeats && members.length >= cohortData.maxSeats) {
+          return Response.json({ success: false, error: "This cohort has reached maximum capacity" }, { status: 403 });
+        }
+        members.push({
+          email: studentEmail,
+          name: studentName,
+          role: 'learner',
+          joinedAt: new Date().toISOString(),
+          queriesUsed: 0,
+          lastActive: new Date().toISOString(),
+          struggleTopics: []
+        });
+        cohortData.currentSeats = members.length;
+        await env.BLUEPRINTS.put(`coh:${cohortId}`, JSON.stringify(cohortData));
+        await env.BLUEPRINTS.put(`coh:${cohortId}:members`, JSON.stringify(members));
+
+        const allCohorts = (await env.BLUEPRINTS.get("sys:cohorts", "json")) as any[] || [];
+        const updatedAll = allCohorts.map(c => c.id === cohortId ? { ...c, currentSeats: members.length } : c);
+        await env.BLUEPRINTS.put("sys:cohorts", JSON.stringify(updatedAll));
+      }
+
+      // Link student user profile to cohort and upgrade plan privileges
+      const existingUser = (await env.BLUEPRINTS.get(`u:${studentEmail}`, "json")) as any || { id: studentEmail };
+      existingUser.cohortId = cohortId;
+      existingUser.cohortName = cohortData.name;
+      existingUser.cohortInstitution = cohortData.institution;
+      existingUser.plan = cohortData.plan || 'cohort';
+      existingUser.isPro = true;
+      existingUser.cohortVariables = cohortData.variables;
+      existingUser.updatedAt = Date.now();
+      await env.BLUEPRINTS.put(`u:${studentEmail}`, JSON.stringify(existingUser));
+
+      return Response.json({
+        success: true,
+        cohortId,
+        cohortName: cohortData.name,
+        institution: cohortData.institution,
+        plan: cohortData.plan,
+        variables: cohortData.variables,
+        alreadyJoined
+      });
+    }
+
+    // Cohorts: GET /api/cohorts/:id & subresources
+    if (req.method === "GET" && url.pathname.startsWith("/api/cohorts/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const cohortId = parts[2];
+      const sub = parts[3];
+
+      if (cohortId && sub === "members") {
+        const members = (await env.BLUEPRINTS.get(`coh:${cohortId}:members`, "json")) as any[] || [
+          { email: 'alex.t@eng.mak.ac.ug', name: 'Alex Tumwesigye', role: 'learner', queriesUsed: 42, lastActive: '2026-10-08T09:12:00Z', struggleTopics: ['Dynamic Programming', 'Graph Theory'] },
+          { email: 'sarah.k@eng.mak.ac.ug', name: 'Sarah Kemigisha', role: 'learner', queriesUsed: 38, lastActive: '2026-10-08T11:45:00Z', struggleTopics: ['Distributed Consensus (Raft)'] },
+          { email: 'kevin.o@eng.mak.ac.ug', name: 'Kevin Ouma', role: 'learner', queriesUsed: 50, lastActive: '2026-10-08T12:05:00Z', struggleTopics: ['SQL Indexing & B-Trees'] },
+          { email: 'patience.n@eng.mak.ac.ug', name: 'Patience Namuli', role: 'learner', queriesUsed: 19, lastActive: '2026-10-07T18:30:00Z', struggleTopics: [] },
+          { email: 'prof.ssemakula@eng.mak.ac.ug', name: 'Prof. Dennis Ssemakula', role: 'lead_educator', queriesUsed: 12, lastActive: '2026-10-08T13:00:00Z', struggleTopics: [] },
+        ];
+        return Response.json({ success: true, count: members.length, members });
+      }
+
+      if (cohortId && sub === "metrics") {
+        return Response.json({
+          success: true,
+          cohortId,
+          metrics: {
+            totalQueriesThisWeek: 482,
+            activeStudentPct: 88,
+            socraticInteractions: 312,
+            peakStudyHours: "19:00 - 23:00 EAT",
+            struggleHeatmap: [
+              { topic: 'Dynamic Programming & Memoization', queryCount: 84, severity: 'high' },
+              { topic: 'Distributed Consensus & Raft', queryCount: 65, severity: 'medium' },
+              { topic: 'Database Concurrency & ACID Locks', queryCount: 51, severity: 'medium' },
+              { topic: 'TCP/IP Socket Buffers', queryCount: 29, severity: 'low' }
+            ]
+          }
+        });
+      }
+
+      if (cohortId && sub === "announcements") {
+        const announcements = (await env.BLUEPRINTS.get(`coh:${cohortId}:announcements`, "json")) as any[] || [
+          {
+            id: 'ann_1',
+            title: 'Midterm Lab Assignment 2 Deadline Extended',
+            content: 'The distributed systems lab submission is moved to Friday 23:59 EAT. Socratic Mode is active to help you trace deadlock vectors.',
+            author: 'Prof. Dennis Ssemakula',
+            createdAt: '2026-10-07T10:00:00Z'
+          }
+        ];
+        return Response.json({ success: true, announcements });
+      }
+
+      if (cohortId && !sub) {
+        const cohort = (await env.BLUEPRINTS.get(`coh:${cohortId}`, "json")) as any;
+        if (cohort) {
+          return Response.json({ success: true, cohort });
+        }
+        return Response.json({ success: false, error: "Cohort not found" }, { status: 404 });
+      }
+    }
+
+    // Cohorts: POST /api/cohorts/:id/variables (Educator Levers)
+    if (req.method === "POST" && url.pathname.includes("/variables")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const cohortId = parts[2];
+      const body = await req.json().catch(() => ({})) as any;
+
+      const cohort = (await env.BLUEPRINTS.get(`coh:${cohortId}`, "json")) as any;
+      if (!cohort) {
+        return Response.json({ success: false, error: "Cohort not found" }, { status: 404 });
+      }
+
+      cohort.variables = {
+        dailyQueryLimit: Number(body.dailyQueryLimit) || cohort.variables?.dailyQueryLimit || 50,
+        socraticMode: body.socraticMode !== undefined ? !!body.socraticMode : cohort.variables?.socraticMode,
+        examLock: body.examLock !== undefined ? !!body.examLock : cohort.variables?.examLock,
+        allowSharedUploads: body.allowSharedUploads !== undefined ? !!body.allowSharedUploads : cohort.variables?.allowSharedUploads,
+        curriculumFocus: body.curriculumFocus || cohort.variables?.curriculumFocus || 'General'
+      };
+      cohort.updatedAt = new Date().toISOString();
+
+      await env.BLUEPRINTS.put(`coh:${cohortId}`, JSON.stringify(cohort));
+
+      const allCohorts = (await env.BLUEPRINTS.get("sys:cohorts", "json")) as any[] || [];
+      const updatedAll = allCohorts.map(c => c.id === cohortId ? cohort : c);
+      await env.BLUEPRINTS.put("sys:cohorts", JSON.stringify(updatedAll));
+
+      return Response.json({ success: true, variables: cohort.variables });
+    }
+
+    // Cohorts: POST /api/cohorts/:id/announcements
+    if (req.method === "POST" && url.pathname.includes("/announcements")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const cohortId = parts[2];
+      const body = await req.json().catch(() => ({})) as any;
+      const title = (body.title || "").trim();
+      const content = (body.content || body.message || "").trim();
+      const author = body.author || body.senderName || 'Department Faculty';
+
+      if (!title || !content) {
+        return Response.json({ success: false, error: "Title and content required" }, { status: 400 });
+      }
+
+      const existingAnn = (await env.BLUEPRINTS.get(`coh:${cohortId}:announcements`, "json")) as any[] || [];
+      const newAnn = {
+        id: `ann_${Date.now()}`,
+        title: title.trim(),
+        content: content.trim(),
+        author: author || 'Department Faculty',
+        createdAt: new Date().toISOString()
+      };
+      const updatedAnn = [newAnn, ...existingAnn].slice(0, 30);
+      await env.BLUEPRINTS.put(`coh:${cohortId}:announcements`, JSON.stringify(updatedAnn));
+
+      return Response.json({ success: true, announcement: newAnn });
+    }
+
+    // Plugins & LMS Extensibility: POST /api/plugins/lms/sync
+    if (req.method === "POST" && url.pathname === "/api/plugins/lms/sync") {
+      const body = await req.json().catch(() => ({})) as any;
+      const { cohortId, provider } = body;
+      const rosterList = body.roster || body.students || body.members;
+
+      if (!cohortId || !Array.isArray(rosterList) || rosterList.length === 0) {
+        return Response.json({ success: false, error: "cohortId and roster array required" }, { status: 400 });
+      }
+
+      const members = (await env.BLUEPRINTS.get(`coh:${cohortId}:members`, "json")) as any[] || [];
+      const existingEmails = new Set(members.map(m => m.email?.toLowerCase()));
+      let addedCount = 0;
+
+      for (const item of rosterList) {
+        const email = (item.email || "").toLowerCase().trim();
+        if (email && !existingEmails.has(email)) {
+          members.push({
+            email,
+            name: item.name || email.split('@')[0],
+            role: item.role || 'learner',
+            studentId: item.studentId || '',
+            joinedAt: new Date().toISOString(),
+            queriesUsed: 0,
+            lastActive: new Date().toISOString(),
+            struggleTopics: []
+          });
+          existingEmails.add(email);
+          addedCount++;
+
+          const uRec = (await env.BLUEPRINTS.get(`u:${email}`, "json")) as any || { id: email };
+          uRec.cohortId = cohortId;
+          uRec.isPro = true;
+          uRec.plan = 'cohort';
+          await env.BLUEPRINTS.put(`u:${email}`, JSON.stringify(uRec));
+        }
+      }
+
+      await env.BLUEPRINTS.put(`coh:${cohortId}:members`, JSON.stringify(members));
+
+      const cohort = (await env.BLUEPRINTS.get(`coh:${cohortId}`, "json")) as any;
+      if (cohort) {
+        cohort.currentSeats = members.length;
+        await env.BLUEPRINTS.put(`coh:${cohortId}`, JSON.stringify(cohort));
+      }
+
+      return Response.json({
+        success: true,
+        provider: provider || 'generic_lms',
+        totalMembers: members.length,
+        addedCount
+      });
+    }
+
+    // Plugins: POST /api/plugins/rubric/import
+    if (req.method === "POST" && url.pathname === "/api/plugins/rubric/import") {
+      const body = await req.json().catch(() => ({})) as any;
+      const { cohortId, title, criteria } = body;
+
+      if (!cohortId || !title || !Array.isArray(criteria)) {
+        return Response.json({ success: false, error: "cohortId, title and criteria array required" }, { status: 400 });
+      }
+
+      const existingRubrics = (await env.BLUEPRINTS.get(`coh:${cohortId}:rubrics`, "json")) as any[] || [];
+      const newRubric = {
+        id: `rub_${Date.now()}`,
+        title: title.trim(),
+        criteria,
+        importedAt: new Date().toISOString()
+      };
+      await env.BLUEPRINTS.put(`coh:${cohortId}:rubrics`, JSON.stringify([newRubric, ...existingRubrics]));
+
+      return Response.json({ success: true, rubric: newRubric });
+    }
+
+    // Plugins: GET /api/plugins/manifest
+    if (req.method === "GET" && url.pathname === "/api/plugins/manifest") {
+      return Response.json({
+        success: true,
+        plugins: [
+          {
+            id: 'moodle_sync',
+            name: 'Moodle LMS Roster Sync',
+            version: '2.4.0',
+            status: 'connected',
+            description: 'Automated student enrollment sync via Moodle Web Services API token'
+          },
+          {
+            id: 'canvas_lms',
+            name: 'Instructure Canvas Connector',
+            version: '1.9.2',
+            status: 'ready',
+            description: 'Course section syncing, assignments and gradebook rubric alignment'
+          },
+          {
+            id: 'google_classroom',
+            name: 'Google Classroom Bridge',
+            version: '1.2.0',
+            status: 'ready',
+            description: '1-click roster import and announcement dissemination to Google Classroom'
+          },
+          {
+            id: 'rubric_auditor',
+            name: 'Course Rubric Pre-Submission Auditor',
+            version: '3.1.0',
+            status: 'active',
+            description: 'Evaluates student drafts against department grading criteria before submission'
+          }
+        ]
+      });
+    }
+
+    // National Syllabus & Past Papers: GET /api/syllabus/past-papers
+    if (req.method === "GET" && url.pathname === "/api/syllabus/past-papers") {
+      const examBody = url.searchParams.get("examBody");
+      const papers = [
+        {
+          id: 'uneb-uce-phy-2023-p1',
+          examBody: 'UNEB_UCE',
+          examBodyName: 'UNEB (Uganda National Examinations Board)',
+          subject: 'Physics Paper 1 (Theory)',
+          subjectCode: '535/1',
+          year: 2023,
+          level: 'O-Level',
+          questionsCount: 2,
+          topics: ['Mechanics & Linear Momentum', 'Electricity & Ohm\'s Law']
+        },
+        {
+          id: 'uneb-uce-math-2023-p1',
+          examBody: 'UNEB_UCE',
+          examBodyName: 'UNEB (Uganda National Examinations Board)',
+          subject: 'Mathematics Paper 1',
+          subjectCode: '456/1',
+          year: 2023,
+          level: 'O-Level',
+          questionsCount: 2,
+          topics: ['Quadratic Equations', 'Matrices & Determinants']
+        },
+        {
+          id: 'knec-kcse-math-2023-p1',
+          examBody: 'KNEC_KCSE',
+          examBodyName: 'KNEC (Kenya National Examinations Council)',
+          subject: 'Mathematics Alt A',
+          subjectCode: '121/1',
+          year: 2023,
+          level: 'High School',
+          questionsCount: 2,
+          topics: ['Linear Programming', 'Thermal Physics']
+        },
+        {
+          id: 'waec-wassce-chem-2023-p1',
+          examBody: 'WAEC_WASSCE',
+          examBodyName: 'WAEC (West African Examinations Council)',
+          subject: 'Chemistry Paper 2',
+          subjectCode: 'SC5052',
+          year: 2023,
+          level: 'Secondary',
+          questionsCount: 1,
+          topics: ['Stoichiometry & Empirical Formula']
+        },
+        {
+          id: 'cambridge-alevel-math-9709-p1',
+          examBody: 'CAMBRIDGE_ALEVEL',
+          examBodyName: 'Cambridge Assessment International Education',
+          subject: 'Pure Mathematics 1',
+          subjectCode: '9709/12',
+          year: 2023,
+          level: 'A-Level',
+          questionsCount: 1,
+          topics: ['Calculus & Differentiation']
+        }
+      ];
+      const filtered = examBody ? papers.filter(p => p.examBody === examBody) : papers;
+      return Response.json({ success: true, count: filtered.length, papers: filtered });
     }
 
     // Command Center & Public SaaS: GET /api/admin/promos & GET /api/promos
@@ -1611,9 +2410,9 @@ export default {
           id: `tx_${Date.now().toString().slice(-4)}`,
           student: userEmail || 'guest@scholar.os',
           plan: targetTier === 'campus' ? 'Campus Institutional' : 'Scholar Pro',
-          amount: parseFloat(amount) || 0,
-          method: currency === 'UGX' ? 'MTN/Airtel Money' : currency === 'KES' ? 'M-Pesa' : 'Stripe / Card',
+          method: currency === 'UGX' ? 'Pesapal (MTN/Airtel Money)' : currency === 'KES' ? 'Pesapal (M-Pesa)' : 'Pesapal (Visa/Mastercard)',
           status: 'verified',
+          processor: 'pesapal',
           timestamp: new Date().toISOString()
         };
         await env.BLUEPRINTS.put("sys:transactions", JSON.stringify([newTx, ...currentTx].slice(0, 100)));
@@ -1635,6 +2434,8 @@ export default {
       const id = parts[parts.length - 1];
       const ordData = (await env.BLUEPRINTS.get(`ord:${id}`, "json")) as any;
 
+      let invoice: any = null;
+
       if (ordData && ordData.userId) {
         // Upgrade user tier in KV and DO
         const uEmail = ordData.userId;
@@ -1654,6 +2455,22 @@ export default {
             await userStub.setStudentProfile({ ...prof, tier, isPro: tier !== 'free' } as any);
           }
         } catch {}
+
+        // Persist official Pesapal receipt / invoice
+        invoice = {
+          invoiceId: `INV-${id.slice(-6).toUpperCase()}`,
+          orderTrackingId: id,
+          orderId: ordData.order_id,
+          userId: uEmail,
+          tier,
+          planLabel: ordData.planLabel || (tier === 'campus' ? 'Campus Institutional' : tier === 'cohort' ? 'Study Cohort' : 'Scholar Pro'),
+          amount: ordData.amount,
+          currency: ordData.currency,
+          processor: 'Pesapal Payment Gateway',
+          paidAt: new Date().toISOString(),
+          status: 'PAID'
+        };
+        await env.BLUEPRINTS.put(`inv:${id}`, JSON.stringify(invoice));
       }
 
       return Response.json({
@@ -1661,7 +2478,9 @@ export default {
         completed: true,
         status_code: 1,
         tier: ordData?.tier || 'pro',
-        order_tracking_id: id
+        order_tracking_id: id,
+        processor: 'pesapal',
+        invoice
       });
     }
 
