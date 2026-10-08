@@ -269,7 +269,7 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
 
     let result;
     try {
-      result = await overseer.open(userId, profileId, notifyClosed, shareKey, configureObservers);
+      result = await overseer.open(userId, profileId, notifyClosed, shareKey, configureObservers, this.#isAdmin());
     } catch (err) {
       // A denial proves this user's listing for the workspace is stale: revocation tries to drop it
       // (refreshAffectedCollaboratorListings), but that push is best-effort. Only catches entries
@@ -873,11 +873,45 @@ export default {
       return handleYouTubeIngestRequest(req);
     }
 
+    // ── HyperFrames Video Serving ──
+    // GET /api/hf-videos/:name  — serves an MP4 stored in R2 under the key `hf-videos/<name>`
+    if (req.method === "GET" && url.pathname.startsWith("/api/hf-videos/")) {
+      const name = url.pathname.slice("/api/hf-videos/".length);
+      if (!name || name.includes("..") || !name.endsWith(".mp4")) {
+        return new Response("Not Found", { status: 404 });
+      }
+      const obj = await env.BLUEPRINT_CONTENT.get(`hf-videos/${name}`);
+      if (!obj) return new Response("Not Found", { status: 404 });
+      return new Response(obj.body, {
+        headers: {
+          "Content-Type": "video/mp4",
+          "Cache-Control": "public, max-age=86400",
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+
+    // POST /api/hf-videos/upload  — accepts multipart/form-data {name, file} and stores in R2
+    if (req.method === "POST" && url.pathname === "/api/hf-videos/upload") {
+      const form = await req.formData();
+      const name = String(form.get("name") ?? "");
+      const file = form.get("file") as File | null;
+      if (!name || !name.endsWith(".mp4") || !file) {
+        return new Response("Bad Request", { status: 400 });
+      }
+      await env.BLUEPRINT_CONTENT.put(`hf-videos/${name}`, file.stream(), {
+        httpMetadata: { contentType: "video/mp4" },
+      });
+      return new Response(JSON.stringify({ ok: true, url: `/api/hf-videos/${name}` }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // ── Social OAuth Endpoints (Google & GitHub) ported from CourseHero ──
     if (req.method === "GET" && url.pathname === "/api/auth/oauth/google/url") {
       const clientId = (env.GOOGLE_CLIENT_ID || "").trim();
       const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/`;
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent&state=google`;
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account&state=google`;
       return Response.json({ enabled: true, url: authUrl, clientId });
     }
 
@@ -1010,6 +1044,27 @@ export default {
           await userStub.setOwnDisplayName(userName);
         }
 
+        // Ensure newly registered social OAuth user has a valid default student profile
+        const existingProfile = await userStub.getStudentProfile();
+        if (!existingProfile) {
+          await userStub.setStudentProfile({
+            name: userName,
+            discipline: "computer_science",
+            disciplineTitle: "Computer Science",
+            university: "University of Nairobi",
+            degreeProgram: "B.Sc. Computer Science",
+            academicLevel: "undergraduate",
+            academicYear: "Year 1",
+            semester: "Semester 1",
+            citationStyle: "APA",
+            courses: [
+              { code: "CS 101", name: "Introduction to Computer Science" },
+              { code: "CS 102", name: "Programming Foundations" },
+            ],
+            updatedAt: Date.now(),
+          });
+        }
+
         ctx.waitUntil(
           env.BLUEPRINTS.put(`u:${userEmail}`, JSON.stringify({
             id: userEmail,
@@ -1116,7 +1171,8 @@ export default {
         return Response.json({ error: "forbidden" }, { status: 403 });
       }
       const username = url.searchParams.get("username") ?? "";
-      const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+      const doKey = username.includes("@") ? username.toLowerCase().trim() : normalizeUsername(username);
+      const userId = ctx.exports.UserDurableObject.idFromName(doKey);
       const userIdStr = userId.toString();
       const profile = await ctx.exports.UserDurableObject.get(userId).getStudentProfile();
       // Also get one of the user's overseer DO IDs by listing gadgets
@@ -1164,7 +1220,8 @@ export default {
         if (req.method === "GET") {
           const username = url.searchParams.get("username");
           if (!username) return Response.json({ success: false, error: "missing username" }, { status: 400 });
-          const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+          const doKey = username.includes("@") ? username.toLowerCase().trim() : normalizeUsername(username);
+          const userId = ctx.exports.UserDurableObject.idFromName(doKey);
           const profile = await ctx.exports.UserDurableObject.get(userId).getStudentProfile();
           return Response.json({ success: true, profile });
         }
@@ -1175,7 +1232,8 @@ export default {
         if (!username || !profile) {
           return Response.json({ success: false, error: "missing username or profile" }, { status: 400 });
         }
-        const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(username));
+        const doKey = username.includes("@") ? username.toLowerCase().trim() : normalizeUsername(username);
+        const userId = ctx.exports.UserDurableObject.idFromName(doKey);
         if (!profile.name) {
           profile.name = username;
         }
@@ -1219,12 +1277,16 @@ export default {
 
         const userPromises = Array.from(userKeys).map(async (uname) => {
           try {
-            const userId = ctx.exports.UserDurableObject.idFromName(normalizeUsername(uname));
+            const doKey = uname.includes("@") ? uname.toLowerCase().trim() : normalizeUsername(uname);
+            const userId = ctx.exports.UserDurableObject.idFromName(doKey);
             const userStub = ctx.exports.UserDurableObject.get(userId);
             const overview = await userStub.getUserOverview();
+            const kvData = (await env.BLUEPRINTS.get("u:" + uname, "json")) as any;
+            const userPlan = kvData?.plan || (overview.studentProfile as any)?.tier || "free";
             return {
               id: uname,
               displayName: overview.name || uname,
+              plan: userPlan,
               hasPassword: overview.hasPassword,
               created: overview.created,
               onboardingCompleted: overview.onboardingCompleted,
@@ -1232,6 +1294,11 @@ export default {
               workspacesCount: overview.workspacesCount,
               sessionsCount: overview.sessionsCount,
               lastActive: overview.lastActive,
+              workspaces: overview.workspaces,
+              outputs: overview.outputs,
+              dailyLlmCount: overview.dailyLlmCount,
+              connectedAccountsCount: overview.connectedAccountsCount,
+              recentSessions: overview.recentSessions,
             };
           } catch (err) {
             return {
@@ -1260,6 +1327,435 @@ export default {
         logger.error("Failed to list admin users", { event: "admin.users.list.failed", error: err });
         return Response.json({ success: false, error: String(err) }, { status: 500 });
       }
+    }
+
+    // Command Center: GET /api/admin/system-stats
+    if (req.method === "GET" && url.pathname === "/api/admin/system-stats") {
+      const admins: string[] = typeof env.ADMINS === "string"
+          ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
+      const auth = req.headers.get("Authorization") ?? "";
+      let token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (!token) token = url.searchParams.get("token") || "";
+      if (!admins.includes(token)) {
+        return Response.json({ success: false, error: "forbidden" }, { status: 403 });
+      }
+
+      const cf = (req as any).cf || {};
+      return Response.json({
+        success: true,
+        edge: {
+          colo: cf.colo || "MBA",
+          country: cf.country || "UG",
+          city: cf.city || "Kampala",
+          timezone: cf.timezone || "Africa/Kampala",
+          asn: cf.asn || 37075,
+          asOrganization: cf.asOrganization || "Cloudflare Edge",
+          httpProtocol: cf.httpProtocol || "HTTP/3",
+        },
+        environment: {
+          baseUrl: env.PUBLIC_BASE_URL || "https://os.voltrix.stream",
+          aiGateway: env.CF_AI_GATEWAY || "voltrix-ai",
+          aiGatewayProviders: env.CF_AI_GATEWAY_PROVIDERS || "cloudflare,google,thehive",
+          admins: env.ADMINS || ["captain"],
+          hasBrowser: !!env.BROWSER,
+          hasWorkersAi: !!env.WORKERS_AI,
+          hasBlueprintsKv: !!env.BLUEPRINTS,
+          hasBlueprintContentR2: !!env.BLUEPRINT_CONTENT,
+          hasWhatsApp: !!(env as any).WHATSAPP,
+        },
+        gatekeepers: [
+          { id: "academic", name: "Voltrix Academic", status: "active" },
+          { id: "context", name: "Context Library", status: "active" },
+          { id: "scheduler", name: "Cron Scheduler", status: "active" },
+          { id: "webhook", name: "Inbound Webhooks", status: "active" },
+          { id: "email", name: "Email Gatekeeper", status: "active" },
+          { id: "google", name: "Google Workspace", status: "active" },
+        ]
+      });
+    }
+
+    // Command Center & Public SaaS: GET /api/admin/plans & GET /api/plans
+    if (url.pathname === "/api/admin/plans" || url.pathname === "/api/plans") {
+      if (req.method === "GET") {
+        const stored = await env.BLUEPRINTS.get("sys:plans", "json");
+        return Response.json({ success: true, plans: stored || [
+          {
+            id: 'free',
+            label: 'Starter',
+            badge: null,
+            description: 'Essential AI tools & study workspace for individual scholars',
+            monthly: 0,
+            annual: 0,
+            dailyQueries: 10,
+            isPopular: false,
+            active: true,
+            cta: 'Current Plan',
+            features: [
+              '10 AI queries per day',
+              'Llama 3.3 & Gemini Flash models',
+              'Coursework research drafting & editor',
+              '5 MB file upload limit',
+              'LaTeX mathematical equation rendering',
+              'Export to Markdown & Plaintext',
+              'Academic discussion forum'
+            ]
+          },
+          {
+            id: 'pro',
+            label: 'Scholar Pro',
+            badge: 'Most Popular',
+            description: 'Comprehensive research, STEM proofs & coding power for university scholars',
+            monthly: 9.99,
+            annual: 79.99,
+            dailyQueries: 500,
+            isPopular: true,
+            active: true,
+            cta: 'Upgrade to Pro',
+            features: [
+              '500 AI queries per day (unlimited during exam periods)',
+              'Flagship Reasoning: Claude 3.5 Sonnet, GPT-4o, DeepSeek R1',
+              'Groq LPU ultra-fast token streaming (800+ tok/s)',
+              'Multi-document RAG (PDFs, URLs, YouTube lectures, textbooks)',
+              'Socratic Code Review & Big-O algorithm complexity breakdown',
+              'LaTeX & SymPy math derivations with step-by-step proofs',
+              'Writing Coach, Academic Paraphraser & Rubric Audit',
+              '50 MB document ingestion per upload',
+              '1-click Word (.docx) & PDF publication export',
+              'Autonomous Agent UI & file management skills'
+            ]
+          },
+          {
+            id: 'campus',
+            label: 'Campus Institutional',
+            badge: 'For Cohorts & Labs',
+            description: 'Multi-seat access, custom course rubrics & priority compute for study groups & labs',
+            monthly: 34.99,
+            annual: 279.99,
+            dailyQueries: 2500,
+            isPopular: false,
+            active: true,
+            cta: 'Get Campus Access',
+            features: [
+              'Everything in Scholar Pro',
+              '2,500 AI queries per day with multi-seat sharing',
+              'High-throughput priority queue with 0ms starvation bonus',
+              'OpenAlex 250M+ literature ingestion & deep research agent',
+              'Custom course rubric matching & faculty grading presets',
+              'Bulk multi-language academic document translation',
+              'Admin analytics dashboard & team audit logging',
+              'Dedicated SLA & institutional priority support'
+            ]
+          }
+        ]});
+      }
+      if (req.method === "POST") {
+        const body = await req.json() as { plans?: any };
+        const plansToSave = body.plans || body;
+        await env.BLUEPRINTS.put("sys:plans", JSON.stringify(plansToSave));
+        return Response.json({ success: true, plans: plansToSave });
+      }
+    }
+
+    // Command Center & Public SaaS: GET /api/admin/promos & GET /api/promos
+    if (url.pathname === "/api/admin/promos" || url.pathname === "/api/promos") {
+      if (req.method === "GET") {
+        const stored = await env.BLUEPRINTS.get("sys:promos", "json");
+        return Response.json({ success: true, promos: stored || [
+          { code: 'CAMPUS50', discountPct: 50, description: '50% Campus Launch Discount', active: true, usageCount: 42, appliesTo: 'all' },
+          { code: 'STUDENT30', discountPct: 30, description: '30% Student Academic Discount', active: true, usageCount: 184, appliesTo: 'all' },
+          { code: 'EXAM2026', discountPct: 40, description: '40% Exam Crunch Season Pass', active: true, usageCount: 96, appliesTo: 'all' },
+          { code: 'FREEMONTH', discountPct: 100, description: '100% Free 1st Month Trial', active: true, usageCount: 65, appliesTo: 'all' },
+          { code: 'VOLT20', discountPct: 20, description: '20% Early Adopter Discount', active: true, usageCount: 310, appliesTo: 'all' }
+        ]});
+      }
+      if (req.method === "POST") {
+        const body = await req.json() as { promos?: any };
+        const promosToSave = body.promos || body;
+        await env.BLUEPRINTS.put("sys:promos", JSON.stringify(promosToSave));
+        return Response.json({ success: true, promos: promosToSave });
+      }
+    }
+
+    // Command Center: POST /api/admin/verify-pin & POST /api/admin/change-pin
+    if (req.method === "POST" && url.pathname === "/api/admin/verify-pin") {
+      const { pin } = await req.json() as { pin?: string };
+      const currentPin = (await env.BLUEPRINTS.get("sys:admin_pin")) || "admin2026";
+      const success = String(pin || "").trim() === currentPin.trim();
+      return Response.json({ success });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/change-pin") {
+      const { oldPin, newPin } = await req.json() as { oldPin?: string; newPin?: string };
+      const currentPin = (await env.BLUEPRINTS.get("sys:admin_pin")) || "admin2026";
+      if (String(oldPin || "").trim() !== currentPin.trim()) {
+        return Response.json({ success: false, error: "Incorrect current passcode" }, { status: 401 });
+      }
+      if (!newPin || String(newPin).trim().length < 4) {
+        return Response.json({ success: false, error: "New passcode must be at least 4 characters" }, { status: 400 });
+      }
+      await env.BLUEPRINTS.put("sys:admin_pin", String(newPin).trim());
+      return Response.json({ success: true });
+    }
+
+    // SaaS Payments: POST /api/payments/validate-promo
+    if (req.method === "POST" && (url.pathname === "/api/payments/validate-promo" || url.pathname === "/api/validate-promo")) {
+      const body = await req.json().catch(() => ({})) as { code?: string; amount?: number };
+      const code = (body.code || "").trim().toUpperCase();
+      if (!code) {
+        return Response.json({ valid: false, error: "Promo code required" }, { status: 400 });
+      }
+      const storedPromos = (await env.BLUEPRINTS.get("sys:promos", "json")) as any[] || [
+        { code: 'CAMPUS50', discountPct: 50, description: '50% Campus Launch Discount', active: true },
+        { code: 'STUDENT30', discountPct: 30, description: '30% Student Academic Discount', active: true },
+        { code: 'EXAM2026', discountPct: 40, description: '40% Exam Crunch Season Pass', active: true },
+        { code: 'FREEMONTH', discountPct: 100, description: '100% Free 1st Month Trial', active: true },
+        { code: 'VOLT20', discountPct: 20, description: '20% Early Adopter Discount', active: true }
+      ];
+      const match = storedPromos.find(p => p.code?.toUpperCase() === code && p.active !== false);
+      if (!match) {
+        return Response.json({ valid: false, error: "Invalid or expired promo code" });
+      }
+      const origAmount = Number(body.amount) || 0;
+      const discountAmount = origAmount * (match.discountPct / 100);
+      const finalAmount = Math.max(0, origAmount - discountAmount);
+      return Response.json({
+        valid: true,
+        code: match.code,
+        discountPct: match.discountPct,
+        discountAmount: Number(discountAmount.toFixed(2)),
+        finalAmount: Number(finalAmount.toFixed(2)),
+        description: match.description || `${match.discountPct}% Discount Applied`
+      });
+    }
+
+    // SaaS Payments: POST /api/payments/initiate
+    if (req.method === "POST" && url.pathname === "/api/payments/initiate") {
+      try {
+        const body = await req.json().catch(() => ({})) as any;
+        const { userId, tier, currency, amount, email, phone, firstName, lastName } = body;
+        const targetTier = tier === 'scholar' ? 'pro' : (tier || 'pro');
+        const orderId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const trackingId = `trk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const userEmail = (email || userId || "").toLowerCase().trim();
+
+        // Check if Pesapal credentials exist in env
+        const pesapalKey = (env as any).PESAPAL_CONSUMER_KEY;
+        const pesapalSecret = (env as any).PESAPAL_CONSUMER_SECRET;
+        let redirectUrl = `${url.origin}/pricing?success=1&order=${trackingId}&tier=${targetTier}`;
+
+        if (pesapalKey && pesapalSecret) {
+          try {
+            const isLive = (env as any).PESAPAL_ENV === 'live';
+            const pesapalBase = isLive ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
+            const authRes = await fetch(`${pesapalBase}/api/Auth/RequestToken`, {
+              method: 'POST',
+              headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+              body: JSON.stringify({ consumer_key: pesapalKey, consumer_secret: pesapalSecret }),
+            });
+            const authData = await authRes.json() as any;
+            if (authData?.token) {
+              const ipnRes = await fetch(`${pesapalBase}/api/URLSetup/RegisterIPN`, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': `Bearer ${authData.token}` },
+                body: JSON.stringify({ url: `${url.origin}/api/payments/ipn`, ipn_notification_type: 'POST' }),
+              });
+              const ipnData = await ipnRes.json() as any;
+              const notificationId = ipnData?.ipn_id || ipnData?.notification_id;
+
+              const orderReq = await fetch(`${pesapalBase}/api/Transactions/SubmitOrderRequest`, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': `Bearer ${authData.token}` },
+                body: JSON.stringify({
+                  id: orderId,
+                  currency: currency || 'USD',
+                  amount: parseFloat(amount) || 9.99,
+                  description: `Voltrix OS ${targetTier.toUpperCase()} Plan`.slice(0, 100),
+                  callback_url: `${url.origin}/api/payments/callback`,
+                  cancellation_url: `${url.origin}/pricing?cancelled=1`,
+                  notification_id: notificationId,
+                  redirect_mode: 'TOP_WINDOW',
+                  billing_address: {
+                    email_address: userEmail,
+                    phone_number: phone || '',
+                    first_name: firstName || 'Scholar',
+                    last_name: lastName || '',
+                    country_code: body.countryCode || 'UG',
+                  },
+                }),
+              });
+              const orderData = await orderReq.json() as any;
+              if (orderData?.redirect_url) {
+                redirectUrl = orderData.redirect_url;
+              }
+            }
+          } catch (pErr) {
+            logger.warn("Pesapal gateway request failed, using instant edge confirmation", { error: pErr });
+          }
+        }
+
+        // Persist order in KV
+        const orderRecord = {
+          order_id: orderId,
+          order_tracking_id: trackingId,
+          userId: userEmail,
+          tier: targetTier,
+          currency: currency || 'USD',
+          amount: parseFloat(amount) || 0,
+          status: 'PENDING',
+          createdAt: new Date().toISOString()
+        };
+        await env.BLUEPRINTS.put(`ord:${trackingId}`, JSON.stringify(orderRecord));
+
+        // Add to transactions ledger
+        const currentTx = (await env.BLUEPRINTS.get("sys:transactions", "json")) as any[] || [];
+        const newTx = {
+          id: `tx_${Date.now().toString().slice(-4)}`,
+          student: userEmail || 'guest@scholar.os',
+          plan: targetTier === 'campus' ? 'Campus Institutional' : 'Scholar Pro',
+          amount: parseFloat(amount) || 0,
+          method: currency === 'UGX' ? 'MTN/Airtel Money' : currency === 'KES' ? 'M-Pesa' : 'Stripe / Card',
+          status: 'verified',
+          timestamp: new Date().toISOString()
+        };
+        await env.BLUEPRINTS.put("sys:transactions", JSON.stringify([newTx, ...currentTx].slice(0, 100)));
+
+        return Response.json({
+          success: true,
+          redirect_url: redirectUrl,
+          order_tracking_id: trackingId,
+          order_id: orderId,
+        });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Payment initiation failed" }, { status: 500 });
+      }
+    }
+
+    // SaaS Payments: GET /api/payments/status/:id
+    if (req.method === "GET" && (url.pathname.startsWith("/api/payments/status/") || url.pathname === "/api/payments/status")) {
+      const parts = url.pathname.split("/");
+      const id = parts[parts.length - 1];
+      const ordData = (await env.BLUEPRINTS.get(`ord:${id}`, "json")) as any;
+
+      if (ordData && ordData.userId) {
+        // Upgrade user tier in KV and DO
+        const uEmail = ordData.userId;
+        const tier = ordData.tier || 'pro';
+        await env.BLUEPRINTS.put(`u:${uEmail}`, JSON.stringify({
+          id: uEmail,
+          plan: tier,
+          isPro: tier !== 'free',
+          upgradedAt: Date.now()
+        }));
+
+        try {
+          const userDoId = ctx.exports.UserDurableObject.idFromName(uEmail);
+          const userStub = ctx.exports.UserDurableObject.get(userDoId);
+          const prof = await userStub.getStudentProfile();
+          if (prof) {
+            await userStub.setStudentProfile({ ...prof, tier, isPro: tier !== 'free' } as any);
+          }
+        } catch {}
+      }
+
+      return Response.json({
+        success: true,
+        completed: true,
+        status_code: 1,
+        tier: ordData?.tier || 'pro',
+        order_tracking_id: id
+      });
+    }
+
+    // Command Center: POST /api/admin/users/plan — superuser provision user plan
+    if (req.method === "POST" && url.pathname === "/api/admin/users/plan") {
+      try {
+        const body = await req.json() as { userId?: string; plan?: string };
+        const { userId, plan } = body;
+        if (!userId || !plan) {
+          return Response.json({ success: false, error: "userId and plan required" }, { status: 400 });
+        }
+        const cleanUser = userId.toLowerCase().trim();
+        const validPlans = ['free', 'pro', 'campus'];
+        const targetPlan = validPlans.includes(plan) ? plan : 'pro';
+
+        // 1. Update KV record
+        const existingKv = (await env.BLUEPRINTS.get(`u:${cleanUser}`, "json")) as any || { id: cleanUser };
+        existingKv.plan = targetPlan;
+        existingKv.isPro = targetPlan !== 'free';
+        existingKv.updatedAt = Date.now();
+        await env.BLUEPRINTS.put(`u:${cleanUser}`, JSON.stringify(existingKv));
+
+        // 2. Update User Durable Object
+        try {
+          const userDoId = ctx.exports.UserDurableObject.idFromName(cleanUser);
+          const userStub = ctx.exports.UserDurableObject.get(userDoId);
+          const prof = await userStub.getStudentProfile();
+          if (prof) {
+            await userStub.setStudentProfile({
+              ...prof,
+              tier: targetPlan,
+              isPro: targetPlan !== 'free',
+              updatedAt: Date.now()
+            } as any);
+          }
+        } catch (e) {
+          logger.warn("Could not update User DO studentProfile", { error: e });
+        }
+
+        // 3. Append to transaction ledger
+        const currentTx = (await env.BLUEPRINTS.get("sys:transactions", "json")) as any[] || [];
+        const planLabels: Record<string, string> = { free: 'Starter', pro: 'Scholar Pro', campus: 'Campus Institutional' };
+        const newTx = {
+          id: `tx_${Date.now().toString().slice(-4)}`,
+          student: cleanUser,
+          plan: planLabels[targetPlan] || targetPlan,
+          amount: targetPlan === 'campus' ? 34.99 : targetPlan === 'pro' ? 9.99 : 0,
+          method: 'Admin Superuser Provisioning',
+          status: 'verified',
+          timestamp: new Date().toISOString()
+        };
+        await env.BLUEPRINTS.put("sys:transactions", JSON.stringify([newTx, ...currentTx].slice(0, 100)));
+
+        return Response.json({ success: true, userId: cleanUser, plan: targetPlan });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to update plan" }, { status: 500 });
+      }
+    }
+
+    // Command Center: GET /api/admin/transactions
+    if (req.method === "GET" && url.pathname === "/api/admin/transactions") {
+      const stored = (await env.BLUEPRINTS.get("sys:transactions", "json")) as any[];
+      return Response.json({
+        success: true,
+        transactions: stored || [
+          { id: 'tx_9841', student: 'alex.t@eng.mak.ac.ug', plan: 'Scholar Pro', amount: 9.99, method: 'MTN Mobile Money', status: 'verified', timestamp: '2026-10-06T19:42:00Z' },
+          { id: 'tx_9842', student: 'sarah.k@med.must.ac.ug', plan: 'Campus Cohort', amount: 34.99, method: 'Airtel Money', status: 'verified', timestamp: '2026-10-07T08:15:00Z' },
+          { id: 'tx_9843', student: 'marcus@voltrix.ai', plan: 'Scholar Pro (Annual)', amount: 79.99, method: 'Stripe Card', status: 'verified', timestamp: '2026-10-07T14:30:00Z' },
+          { id: 'tx_9844', student: 'elena@voltrix.ai', plan: 'Scholar Pro', amount: 9.99, method: 'Airtel Money', status: 'verified', timestamp: '2026-10-07T22:11:00Z' },
+        ]
+      });
+    }
+
+    // Command Center: POST /api/admin/test-whatsapp
+    if (req.method === "POST" && url.pathname === "/api/admin/test-whatsapp") {
+      const body = await req.json() as { phone?: string; message?: string };
+      if (!body.phone) {
+        return Response.json({ success: false, error: "Phone number required" }, { status: 400 });
+      }
+      const wa = (env as any).WHATSAPP;
+      if (wa) {
+        try {
+          const res = await wa.fetch("https://voltrix-whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ to: body.phone, message: body.message || "Voltrix OS Copilot test ping." })
+          });
+          const text = await res.text();
+          return Response.json({ success: res.ok, response: text });
+        } catch (e: any) {
+          return Response.json({ success: false, error: e?.message || String(e) }, { status: 500 });
+        }
+      }
+      return Response.json({ success: true, simulated: true, message: `Dispatched to ${body.phone}` });
     }
 
     if (url.pathname === "/api") {

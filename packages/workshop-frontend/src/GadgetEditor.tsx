@@ -56,6 +56,7 @@ import WorkspaceOpenErrorPage from './components/WorkspaceOpenErrorPage'
 import { useWorkspaceOpen } from './useWorkspaceOpen'
 import { reportIssue } from './errorReporting'
 import GadgetExportMenu from './GadgetExportMenu'
+import { HyperFramesVideoPlayer } from './components/video/HyperFramesVideoPlayer'
 
 const NO_GADGETS: ReadonlySet<WorkpieceId> = new Set()
 
@@ -531,10 +532,19 @@ export default function GadgetEditor() {
     title?: string
   } | null>(null)
 
+  // HyperFrames MP4 playback in the Gadget UI (App tab)
+  const [activeHyperFramesVideo, setActiveHyperFramesVideo] = useState<{
+    path: string
+    title?: string
+    preset?: string
+    duration?: string
+  } | null>(null)
+
   useEffect(() => {
     const handlePlayGadgetVideo = (e: Event) => {
       const custom = e as CustomEvent<{ videoId: string; title?: string }>
       if (custom.detail?.videoId) {
+        setActiveHyperFramesVideo(null)
         setActiveGadgetVideo({
           videoId: custom.detail.videoId,
           title: custom.detail.title,
@@ -544,8 +554,26 @@ export default function GadgetEditor() {
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
     }
+    const handlePlayHyperFramesVideo = (e: Event) => {
+      const custom = e as CustomEvent<{ path: string; title?: string; preset?: string; duration?: string }>
+      if (custom.detail?.path) {
+        setActiveGadgetVideo(null)
+        setActiveHyperFramesVideo({
+          path: custom.detail.path,
+          title: custom.detail.title,
+          preset: custom.detail.preset,
+          duration: custom.detail.duration,
+        })
+        setActiveTab('app')
+        setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
+      }
+    }
     window.addEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
-    return () => window.removeEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
+    window.addEventListener('voltrix-play-hyperframes-video', handlePlayHyperFramesVideo)
+    return () => {
+      window.removeEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
+      window.removeEventListener('voltrix-play-hyperframes-video', handlePlayHyperFramesVideo)
+    }
   }, [])
 
   // Brief hint banner shown when entering fullscreen, instructing the user how to exit.
@@ -1622,7 +1650,7 @@ export default function GadgetEditor() {
                     <PaneTab
                       key={tab.value}
                       active={activeTab === tab.value}
-                      label={tab.value === 'app' && activeGadgetVideo ? 'Video' : tab.label}
+                      label={tab.value === 'app' && (activeGadgetVideo ?? activeHyperFramesVideo) ? 'Video' : tab.label}
                       onClick={() => handleTabSelect(tab.value)}
                     />
                   ))}
@@ -1655,6 +1683,8 @@ export default function GadgetEditor() {
                 onClick={() => {
                   if (activeGadgetVideo) {
                     setActiveGadgetVideo(null)
+                  } else if (activeHyperFramesVideo) {
+                    setActiveHyperFramesVideo(null)
                   } else {
                     closeWorkspacePane()
                   }
@@ -1706,6 +1736,12 @@ export default function GadgetEditor() {
                     </div>
                   </div>
                 </div>
+              ) : activeHyperFramesVideo ? (
+                <HyperFramesVideoPlayer
+                  path={activeHyperFramesVideo.path}
+                  title={activeHyperFramesVideo.title}
+                  preset={activeHyperFramesVideo.preset}
+                />
               ) : selectedGadgetStub && !previewMode ? (
                 <GadgetUI
                   key={selectedGadgetId}

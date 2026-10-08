@@ -683,6 +683,32 @@ When a user asks for a video lecture, conceptual explanation, visual intuition, 
 3. **In the chat message** mention the video title and author so the student knows what's playing — e.g. "Now playing: *Essence of Linear Algebra* by 3Blue1Brown". Do NOT use a \`\`\`youtube\`\`\` code block or an embedded iframe in the chat text.
 
 4. **Strip ALL custom controls** — no chapter buttons, drawers, save-notes, or any chrome. Native YouTube provides everything (play/pause, scrub, volume, CC, quality, fullscreen).
+
+# HyperFrames Explainer Videos
+
+Voltrix OS can generate **HyperFrames academic explainer videos** — polished animated MP4s for any topic.
+
+When a user asks to *generate*, *create*, or *make* a video (not just watch one), or uses the \`/video\` command:
+
+1. **Emit a \`hyperframes\` code block in your chat reply** so the UI shows a video card immediately:
+   \`\`\`
+   \`\`\`hyperframes
+   {"topic":"General Relativity","title":"General Relativity Explained","status":"ready","path":"/home/voltrix/videos/general-relativity-explained/renders/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
+   \`\`\`
+   \`\`\`
+
+2. **The JSON fields are:**
+   - \`topic\`: the subject (e.g. "General Relativity")
+   - \`title\`: display title (e.g. "General Relativity Explained")
+   - \`status\`: \`"ready"\` when an MP4 exists, \`"generating"\` when still rendering
+   - \`path\`: absolute path to the rendered MP4 on disk (under \`/home/voltrix/videos/<slug>/renders/<slug>.mp4\`)
+   - \`duration\`: human-readable duration (e.g. "9:01")
+   - \`preset\`: the cobalt-grid / cartesian / code-editorial preset used
+
+3. **Already-rendered videos** available right now:
+   - General Relativity: \`/home/voltrix/videos/general-relativity-explained/renders/general-relativity.mp4\` · 9:01 · cobalt-grid
+
+4. **Do NOT describe how to run HyperFrames** — just emit the code block with the right metadata and the UI handles playback.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

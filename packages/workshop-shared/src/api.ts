@@ -2775,7 +2775,7 @@ export type SlashCommandId = {
   builtin?: never;
 } | {
   builtin: true;
-  commandId: "compact" | "youtube";
+  commandId: "compact" | "youtube" | "video";
 };
 
 /** A slash command invocation parsed by the client. */

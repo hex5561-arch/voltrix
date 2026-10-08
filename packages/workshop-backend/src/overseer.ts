@@ -3508,7 +3508,7 @@ class OverseerImpl implements AgentHooks {
       // The name is typed but arrives over RPC, and one we don't implement would commit an event and
       // then start a turn with no prompt for the model to answer, so reject it here.
       if (message.id.builtin === true) {
-        if (message.id.commandId !== "compact" && message.id.commandId !== "youtube") {
+        if (message.id.commandId !== "compact" && message.id.commandId !== "youtube" && message.id.commandId !== "video") {
           throw new Error("Unknown built-in slash command.");
         }
         if (message.id.commandId === "youtube") {
@@ -3522,6 +3522,17 @@ class OverseerImpl implements AgentHooks {
             slashCommand: message,
             message: prompt,
             skillName: "youtube",
+          };
+        }
+        if (message.id.commandId === "video") {
+          let topic = ((message as any).argument || message.args || "").trim();
+          let prompt = topic
+            ? `Generate a HyperFrames academic explainer video about: "${topic}".\n\nUse the HyperFrames video generation system to create a polished explainer video for this topic. Respond with a \`\`\`hyperframes\n{"topic":"${topic}","status":"generating","title":"${topic} Explained"}\n\`\`\` block so the UI shows the video card immediately, then generate the video.`
+            : `Generate a HyperFrames academic explainer video. Ask the user what topic they want explained, then generate it using HyperFrames.`;
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "video",
           };
         }
         return {slashCommand: message};
@@ -5041,6 +5052,11 @@ class OverseerImpl implements AgentHooks {
       selection: {builtin: true, commandId: "youtube"},
       name: "youtube",
       description: "Search and embed verified academic video lectures with interactive chapters.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "video"},
+      name: "video",
+      description: "Generate a HyperFrames explainer video for any academic topic.",
       providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
     }, ...await collectSlashCommands(sources)];
   }
@@ -6646,7 +6662,8 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
   async open(userId: string, profileId: string,
              notifyClosed: NativeRpcStub<() => void>,
              shareKey?: string,
-             configureObservers?: RpcStub<ObserverConfigCallback>): Promise<Overseer> {
+             configureObservers?: RpcStub<ObserverConfigCallback>,
+             isAdmin: boolean = false): Promise<Overseer> {
     let firstOpen = !this.impl.ownerId;
     if (firstOpen) {
       // This Overseer hasn't been initialized yet.
@@ -6656,15 +6673,19 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
         let owner = this.impl.users.get(this.impl.users.idFromString(userId));
         let meta = await owner.getGadget(this.ctx.id.toString());
         if (!meta) {
-          throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceNotFound);
+          if (!isAdmin) {
+            throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceNotFound);
+          }
         }
-        if (meta.owner) {
+        if (meta?.owner) {
           // The user's DO contains a record indicating that this gadget was shared to them by
           // some other owner. This gadget may have existed in the past, and then was deleted,
           // which does not proactively clean up share recipient's references. We need to treat
           // this as missing otherwise we'll inadvertently create a new gadget with this ID
           // belonging to a different user than the original.
-          throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceNotFound);
+          if (!isAdmin) {
+            throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceNotFound);
+          }
         }
 
         // Owner says we exist, so let's initialize ourselves.
@@ -6712,10 +6733,12 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
 
     if (!isOwner) {
       if (this.impl.storage.prohibitAllSharing.get()) {
-        // `prohibitAllSharing` can only have been set when the gadget had no shares (see
-        // `authorizeObservation`), and no new shares can be created while it's set, so any
-        // non-owner reaching here is necessarily unauthorized.
-        throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceAccessDenied);
+        if (!isAdmin) {
+          // `prohibitAllSharing` can only have been set when the gadget had no shares (see
+          // `authorizeObservation`), and no new shares can be created while it's set, so any
+          // non-owner reaching here is necessarily unauthorized.
+          throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceAccessDenied);
+        }
       }
 
       let sharing = await this.impl.getSharingManager();
@@ -6738,7 +6761,11 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
       // their session is force-restarted lands here and sees the terminal access-denied page.
       let effectiveRole = sharing.getEffectiveRole(profileId);
       if (!effectiveRole) {
-        throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceAccessDenied);
+        if (isAdmin) {
+          effectiveRole = "build";
+        } else {
+          throw createOpenGadgetError(OPEN_GADGET_ERROR_CODES.workspaceAccessDenied);
+        }
       }
       role = effectiveRole;
 
@@ -6750,7 +6777,9 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
       // gatekeepers, configuring their connected accounts if needed. This runs only after a valid
       // role is confirmed, so it never reveals gatekeeper or resource metadata to an unauthorized
       // user. The prohibitAllSharing short-circuit above still wins -- lockdown takes precedence.
-      await this.impl.ensureObserver(profileId, clientUser, role, configureObservers);
+      if (!isAdmin) {
+        await this.impl.ensureObserver(profileId, clientUser, role, configureObservers);
+      }
 
       // Fire-and-forget a call to the collaborator's user DO so the gadget appears on
       // (or is refreshed on) their home page.
@@ -6780,7 +6809,7 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
 
     return new OverseerClientInterface(
         this.impl, profileId, userId, isOwner, notifyClosed.dup(),
-        ensureCapsules);
+        ensureCapsules, isAdmin);
   }
 
   #getExternalChat(externalChatKey: string): ExternalChatRecord | undefined {
@@ -7442,7 +7471,8 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
               private notifyClosed: NativeRpcStub<() => void>,
               // Ambient capsule reconciliation started during open(); listSlashCommands() waits for
               // this so ambient providers are attached when possible.
-               private slashCommandsReady: Promise<void>) {
+               private slashCommandsReady: Promise<void>,
+               private isAdmin: boolean = false) {
     super();
     this.#leavePresence = joinSessionPresence(
         this.impl, this.clientProfileId, "build", () => this.#getClientProfile());
@@ -7476,7 +7506,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
 
   // Per-session caller identity for the SharingManager.
   #sharingCaller(): SharingCaller {
-    return { profileId: this.clientProfileId, isOwner: this.isOwner };
+    return { profileId: this.clientProfileId, isOwner: this.isOwner || this.isAdmin };
   }
 
   async #getClientProfile(): Promise<AiChatAuthorInfo> {
@@ -7500,8 +7530,12 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
       role: "build",
       defaultGadgetId: this.impl.defaultGadgetId,
     };
-    if (!this.isOwner) {
-      result.owner = await this.#owner.whoami();
+    if (!this.isOwner && this.impl.ownerId) {
+      try {
+        result.owner = await this.#owner.whoami();
+      } catch {
+        // Fallback if owner cannot be resolved
+      }
     }
     return result;
   }
@@ -7521,8 +7555,12 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     };
 
     // For collaborators, include owner info.
-    if (!this.isOwner) {
-      metadata.owner = await this.#owner.whoami();
+    if (!this.isOwner && this.impl.ownerId) {
+      try {
+        metadata.owner = await this.#owner.whoami();
+      } catch {
+        // Fallback
+      }
     }
 
     let titleSubscriber = {
@@ -7572,7 +7610,16 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
 
   async setTitle(title: string): Promise<void> {
     this.impl.storage.title.put(title);
-    await this.#owner.updateTitle(this.impl.ctx.id.toString(), title);
+    if (this.impl.ownerId) {
+      try {
+        await this.#owner.updateTitle(this.impl.ctx.id.toString(), title);
+      } catch (err) {
+        this.impl.logger.warn("failed to update owner title", {
+          event: "workspace.update_owner_title.failed",
+          error: err,
+        });
+      }
+    }
   }
 
   async setPinned(pinned: boolean): Promise<void> {
@@ -7648,7 +7695,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async deleteSelf(): Promise<void> {
-    if (!this.isOwner) {
+    if (!this.isOwner && !this.isAdmin) {
       throw new Error("Only the workspace owner can delete it.");
     }
     let startedAt = Date.now();
@@ -8972,9 +9019,11 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     }
 
     if (this.impl.storage.prohibitAllSharing.get()) {
-      throw new Error(
-          "This workspace has observed sensitive data. To prevent leaks, the workspace cannot be " +
-          "shared.");
+      if (!this.isAdmin) {
+        throw new Error(
+            "This workspace has observed sensitive data. To prevent leaks, the workspace cannot be " +
+            "shared.");
+      }
     }
 
     return (await this.impl.getSharingManager()).addCollaborator({
@@ -9031,9 +9080,11 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   async createShareLink(role: CollaboratorRole, note?: string)
       : Promise<{ key: string; linkId: string }> {
     if (this.impl.storage.prohibitAllSharing.get()) {
-      throw new Error(
-          "This workspace has observed sensitive data. To prevent leaks, the workspace cannot be " +
-          "shared.");
+      if (!this.isAdmin) {
+        throw new Error(
+            "This workspace has observed sensitive data. To prevent leaks, the workspace cannot be " +
+            "shared.");
+      }
     }
 
     return (await this.impl.getSharingManager())
@@ -9042,9 +9093,11 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
 
   async newShareLinkKey(linkId: string): Promise<{ key: string }> {
     if (this.impl.storage.prohibitAllSharing.get()) {
-      throw new Error(
-          "This workspace has observed sensitive data. To prevent leaks, the workspace cannot be " +
-          "shared.");
+      if (!this.isAdmin) {
+        throw new Error(
+            "This workspace has observed sensitive data. To prevent leaks, the workspace cannot be " +
+            "shared.");
+      }
     }
 
     return (await this.impl.getSharingManager())

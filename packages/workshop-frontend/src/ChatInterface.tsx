@@ -133,6 +133,7 @@ import {
 } from "./composerDraft";
 import { formatStudentContextPrompt } from "./services/studentProfile";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
+import { HyperFramesChatCard } from "./components/video/HyperFramesChatCard";
 
 export interface StreamingProposedChanges {
   updates: Uint8Array[];
@@ -1179,6 +1180,23 @@ function getMarkdownComponents(
     ),
     code: ({ node: _node, className, children, ...props }) => {
       const lang = (className || "").replace("language-", "").trim().toLowerCase();
+      if (lang === "hyperframes") {
+        try {
+          const raw = String(children).trim();
+          const parsed = raw.startsWith("{") ? JSON.parse(raw) : { topic: raw };
+          return (
+            <div className="my-2 not-prose font-sans">
+              <HyperFramesChatCard data={parsed} />
+            </div>
+          );
+        } catch {
+          return (
+            <div className="my-2 not-prose font-sans">
+              <HyperFramesChatCard raw={String(children).trim()} />
+            </div>
+          );
+        }
+      }
       if (lang === "youtube" || lang === "video") {
         try {
           const raw = String(children).trim();
