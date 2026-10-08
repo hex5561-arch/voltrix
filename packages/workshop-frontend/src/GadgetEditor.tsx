@@ -544,6 +544,23 @@ export default function GadgetEditor() {
     duration?: string
   } | null>(null)
 
+  // Declared here (before the video event-listener useEffect below) so Rollup places the
+  // definition before any use of setWorkspaceVisibility in the bundle, avoiding a TDZ error.
+  const setWorkspaceVisibility = useCallback((visibility: 'open' | 'closed', appId?: WorkpieceId) => {
+    setWorkspaceTransitionEnabled(true)
+    setActivityClosing(false)
+    activityReturnViewRef.current = null
+    if (visibility === 'closed') {
+      const view = { mode: 'chat' } as const
+      setWorkspaceView(view)
+      if (id) persistWorkspaceView(id, view)
+    } else {
+      // Opening a draft is intentionally session-only. The normalization effect persists it if
+      // and when the app is accepted.
+      setWorkspaceView({ mode: 'app', appId })
+    }
+  }, [id])
+
   useEffect(() => {
     const handlePlayGadgetVideo = (e: Event) => {
       const custom = e as CustomEvent<{ videoId: string; title?: string }>
@@ -890,21 +907,6 @@ export default function GadgetEditor() {
       // private mode / sandboxed iframes
     }
   }, [])
-
-  const setWorkspaceVisibility = useCallback((visibility: 'open' | 'closed', appId?: WorkpieceId) => {
-    setWorkspaceTransitionEnabled(true)
-    setActivityClosing(false)
-    activityReturnViewRef.current = null
-    if (visibility === 'closed') {
-      const view = { mode: 'chat' } as const
-      setWorkspaceView(view)
-      if (id) persistWorkspaceView(id, view)
-    } else {
-      // Opening a draft is intentionally session-only. The normalization effect persists it if
-      // and when the app is accepted.
-      setWorkspaceView({ mode: 'app', appId })
-    }
-  }, [id])
 
   // Arriving with ?w= (from the Outputs page, say) has to show that workpiece, not whichever view
   // this workspace was last left on -- selectedGadgetId already honours the parameter, but the
