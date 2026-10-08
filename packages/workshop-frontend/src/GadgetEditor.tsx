@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, type PointerEvent as ReactPointerEvent } from 'react'
 import { useParams, useNavigate, useSearch, Link } from '@tanstack/react-router'
 import { useKumoToastManager } from '@cloudflare/kumo'
 import {
@@ -57,7 +57,10 @@ import WorkspaceOpenErrorPage from './components/WorkspaceOpenErrorPage'
 import { useWorkspaceOpen } from './useWorkspaceOpen'
 import { reportIssue } from './errorReporting'
 import GadgetExportMenu from './GadgetExportMenu'
-import { HyperFramesVideoPlayer } from './components/video/HyperFramesVideoPlayer'
+
+const HyperFramesVideoPlayer = lazy(() =>
+  import('./components/video/HyperFramesVideoPlayer').then(m => ({ default: m.HyperFramesVideoPlayer }))
+)
 
 const NO_GADGETS: ReadonlySet<WorkpieceId> = new Set()
 
@@ -1755,11 +1758,13 @@ export default function GadgetEditor() {
                   </div>
                 </div>
               ) : activeHyperFramesVideo ? (
-                <HyperFramesVideoPlayer
-                  path={activeHyperFramesVideo.path}
-                  title={activeHyperFramesVideo.title}
-                  preset={activeHyperFramesVideo.preset}
-                />
+                <Suspense fallback={<div className="w-full h-full bg-black" />}>
+                  <HyperFramesVideoPlayer
+                    path={activeHyperFramesVideo.path}
+                    title={activeHyperFramesVideo.title}
+                    preset={activeHyperFramesVideo.preset}
+                  />
+                </Suspense>
               ) : selectedGadgetStub && !previewMode ? (
                 <GadgetUI
                   key={selectedGadgetId}

@@ -1,7 +1,9 @@
 import { isTransientRpcError, logRpcFailure } from "./rpcErrors";
 import {
   Fragment,
+  lazy,
   memo,
+  Suspense,
   useState,
   useEffect,
   useLayoutEffect,
@@ -131,9 +133,20 @@ import {
   writeComposerDraft,
   type StoredComposerDraft,
 } from "./composerDraft";
-import { formatStudentContextPrompt } from "./services/studentProfile";
+import {
+  formatStudentContextPrompt,
+  getStudentProfile,
+  subscribeStudentProfile,
+  canSubmitQuery,
+  recordQueryUsage,
+  type StudentProfile,
+} from "./services/studentProfile";
+import { PastPaperModal } from "./components/academic/PastPaperModal";
+import type { PastPaperQuestion, PastPaper } from "./data/pastPapersData";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
-import { HyperFramesChatCard } from "./components/video/HyperFramesChatCard";
+const HyperFramesChatCard = lazy(() =>
+  import("./components/video/HyperFramesChatCard").then(m => ({ default: m.HyperFramesChatCard }))
+);
 
 export interface StreamingProposedChanges {
   updates: Uint8Array[];
@@ -1186,13 +1199,17 @@ function getMarkdownComponents(
           const parsed = raw.startsWith("{") ? JSON.parse(raw) : { topic: raw };
           return (
             <div className="my-2 not-prose font-sans">
-              <HyperFramesChatCard data={parsed} />
+              <Suspense fallback={<div className="h-16 rounded-xl bg-kumo-base border border-kumo-line animate-pulse" />}>
+                <HyperFramesChatCard data={parsed} />
+              </Suspense>
             </div>
           );
         } catch {
           return (
             <div className="my-2 not-prose font-sans">
-              <HyperFramesChatCard raw={String(children).trim()} />
+              <Suspense fallback={<div className="h-16 rounded-xl bg-kumo-base border border-kumo-line animate-pulse" />}>
+                <HyperFramesChatCard raw={String(children).trim()} />
+              </Suspense>
             </div>
           );
         }
@@ -4574,6 +4591,29 @@ function ChatInterface({
   const [renamingChatId, setRenamingChatId] = useState<number | null>(null);
   const renamingChatIdRef = useRef<number | null>(null);
   const [renamingInput, setRenamingInput] = useState("");
+
+  // Academic Cohort & National Syllabus state
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(() => getStudentProfile());
+  const [isPastPaperOpen, setIsPastPaperOpen] = useState(false);
+  const [cohortAnnouncements, setCohortAnnouncements] = useState<any[]>([]);
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    return subscribeStudentProfile((p) => setStudentProfile(p));
+  }, []);
+
+  useEffect(() => {
+    if (studentProfile?.cohortId) {
+      fetch(`/api/cohorts/${studentProfile.cohortId}/announcements`)
+        .then(res => res.json())
+        .then((data: any) => {
+          if (data?.success && Array.isArray(data.announcements)) {
+            setCohortAnnouncements(data.announcements);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [studentProfile?.cohortId]);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: number;
     title: string;
@@ -5644,6 +5684,12 @@ function ChatInterface({
     const message = typeof messageText === "string" ? messageText.trim() : messageText ?? "";
     if (!message && (!attachments || attachments.length === 0)) return;
 
+    const guard = canSubmitQuery(studentProfile);
+    if (!guard.allowed) {
+      toasts.add({ title: guard.reason || "AI querying blocked", variant: "error" });
+      return;
+    }
+
     // Use provided modelId or fall back to selectedModel
     const model = modelId !== undefined ? modelId : selectedModel;
 
@@ -5666,12 +5712,37 @@ function ChatInterface({
           formats,
         );
       }
+      recordQueryUsage();
     } catch (err) {
       if (!logRpcFailure("Failed to send message:", err, { reportSite: "chat.send" })) {
         toasts.add({ title: "Failed to send message", variant: "error" });
       }
       throw err;
     }
+  };
+
+  const handleSelectPastPaperQuestion = (q: PastPaperQuestion, paper: PastPaper, mode: 'solve' | 'hint') => {
+    const promptText = mode === 'solve'
+      ? `[NATIONAL SYLLABUS PRACTICE - ${paper.examBodyName}]
+Subject: ${paper.subjectName} (${paper.subjectCode}) · Year ${paper.year}
+Question ${q.questionNumber} (${q.marks} Marks):
+
+${q.prompt}
+
+---
+Student Attempt / Working:
+(Please evaluate my steps below against the official ${paper.examBodyName} marking rubric. Award Method (M), Accuracy (A), or Independent (B) marks, point out any errors, and calculate my score.)`
+      : `[SOCRATIC SYLLABUS HINT REQUEST - ${paper.examBodyName}]
+Subject: ${paper.subjectName} (${paper.subjectCode}) · Year ${paper.year}
+Question ${q.questionNumber} (${q.marks} Marks):
+
+${q.prompt}
+
+---
+Guidance Request:
+Please give me a Socratic diagnostic clue to help me determine the right starting formula or concept without revealing the final answer.`;
+
+    void handleSend(promptText);
   };
 
   // Handle creating a new chat from the sidebar (always creates, never sends to existing)
@@ -7883,6 +7954,54 @@ function ChatInterface({
               {/* ── Bottom: input, update state, and cost ──────────────── */}
               <div className={`flex-shrink-0 bg-kumo-base ${sidebarMode ? "" : "border-t border-kumo-line"}`}>
                 <div className={useConstrainedChatWidth ? "mx-auto w-full max-w-[920px]" : ""}>
+                  {/* Cohort Educator Broadcast Announcements */}
+                  {cohortAnnouncements.filter(a => !dismissedAnnouncements.has(a.id)).map(a => (
+                    <div
+                      key={a.id}
+                      className="mx-3.5 mb-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start justify-between gap-3 animate-fade-in"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="font-bold shrink-0">📢 [{a.author || 'Educator'}]:</span>
+                        <div>
+                          <span className="font-semibold">{a.title}</span> — {a.content}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDismissedAnnouncements(prev => new Set(prev).add(a.id))}
+                        className="text-amber-400/70 hover:text-amber-200 shrink-0 font-bold p-0.5 cursor-pointer"
+                        title="Dismiss"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+
+                  {/* Socratic / Exam Mode Pill & National Past Papers Trigger */}
+                  <div className="flex items-center justify-between px-3.5 pt-2 pb-1 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      {studentProfile?.cohortVariables?.socraticMode && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                          Socratic Guidance Mode Active ({studentProfile.cohortName || 'Cohort'})
+                        </span>
+                      )}
+                      {studentProfile?.cohortVariables?.examLock && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                          Exam Assessment Lockout Active
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsPastPaperOpen(true)}
+                      className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/70 text-zinc-300 hover:text-white transition cursor-pointer font-medium"
+                    >
+                      <span>📚 National Past Papers & Rubrics</span>
+                    </button>
+                  </div>
+
                   {/* Remount all transient composer state when the conversation changes. */}
                   <ChatInput
                     key={`${workspaceId}:${selectedChatId}`}
@@ -7911,11 +8030,13 @@ function ChatInterface({
                         )
                       : undefined}
                     blockedReason={
-                      hasPendingConnectionRequest
-                        ? "Set up or deny the connection request above to continue."
-                        : hasPendingAwaitedAction
-                          ? "Approve or reject the pending action above to continue."
-                          : undefined
+                      !canSubmitQuery(studentProfile).allowed
+                        ? canSubmitQuery(studentProfile).reason
+                        : hasPendingConnectionRequest
+                          ? "Set up or deny the connection request above to continue."
+                          : hasPendingAwaitedAction
+                            ? "Approve or reject the pending action above to continue."
+                            : undefined
                     }
                     draftUpdateBanner={(() => {
                       if (!currentChatMetadata?.hasProposedChanges) return null;
@@ -8041,6 +8162,11 @@ function ChatInterface({
       <OutOfCreditsModal
         open={usageModalOpen}
         onClose={() => setUsageModalOpen(false)}
+      />
+      <PastPaperModal
+        isOpen={isPastPaperOpen}
+        onClose={() => setIsPastPaperOpen(false)}
+        onSelectQuestion={handleSelectPastPaperQuestion}
       />
     </div>
   );
