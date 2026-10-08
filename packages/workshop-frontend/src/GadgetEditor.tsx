@@ -544,11 +544,6 @@ export default function GadgetEditor() {
     duration?: string
   } | null>(null)
 
-  // Stable ref so video event handlers always see the latest setWorkspaceVisibility
-  // without being re-registered on every render.
-  const setWorkspaceVisibilityRef = useRef(setWorkspaceVisibility)
-  useEffect(() => { setWorkspaceVisibilityRef.current = setWorkspaceVisibility }, [setWorkspaceVisibility])
-
   useEffect(() => {
     const handlePlayGadgetVideo = (e: Event) => {
       const custom = e as CustomEvent<{ videoId: string; title?: string }>
@@ -558,8 +553,7 @@ export default function GadgetEditor() {
           videoId: custom.detail.videoId,
           title: custom.detail.title,
         })
-        // Ensure the right pane is visible before switching to the app tab
-        setWorkspaceVisibilityRef.current('open')
+        setWorkspaceVisibility('open')
         setActiveTab('app')
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
@@ -574,8 +568,7 @@ export default function GadgetEditor() {
           preset: custom.detail.preset,
           duration: custom.detail.duration,
         })
-        // Ensure the right pane is visible before switching to the app tab
-        setWorkspaceVisibilityRef.current('open')
+        setWorkspaceVisibility('open')
         setActiveTab('app')
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
@@ -586,7 +579,7 @@ export default function GadgetEditor() {
       window.removeEventListener('voltrix-play-gadget-video', handlePlayGadgetVideo)
       window.removeEventListener('voltrix-play-hyperframes-video', handlePlayHyperFramesVideo)
     }
-  }, [])
+  }, [setWorkspaceVisibility])
 
   // Brief hint banner shown when entering fullscreen, instructing the user how to exit.
   // We don't use the global Kumo toast manager here because the fullscreen overlay sits above
