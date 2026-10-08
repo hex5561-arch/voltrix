@@ -3501,7 +3501,8 @@ class OverseerImpl implements AgentHooks {
   // message. A result without a message suppresses only the generated message, not the invocation.
   async #prepareChatMessage(
       message: string | SlashCommandRequest,
-      hasAttachments: boolean): Promise<PreparedChatMessage> {
+      hasAttachments: boolean,
+      isAdmin: boolean = false): Promise<PreparedChatMessage> {
     if (typeof message !== "string") {
       // A built-in command is handled by the Workshop, not a Gatekeeper: there is nothing to invoke
       // here. Committing the event is what makes the turn a compaction turn (see isCompactionTurn).
@@ -3526,14 +3527,14 @@ class OverseerImpl implements AgentHooks {
         }
         if (message.id.commandId === "video") {
           let topic = ((message as any).argument || message.args || "").trim();
-          let isGR = /general[\s_-]?relativity/i.test(topic);
+          let isGR = /general[\s_-]?relativity|gravity|gravitation|spacetime/i.test(topic);
           let prompt = topic
             ? `Present a HyperFrames academic explainer video about: "${topic}".\n\n${
                 isGR
-                  ? `General Relativity is already rendered and ready! Respond with a \`\`\`hyperframes\n{"topic":"General Relativity","title":"General Relativity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the ready video card immediately, and summarize the key visual intuition.`
+                  ? `General Relativity and Gravity are already rendered and ready! Respond with a \`\`\`hyperframes\n{"topic":"${topic || "General Relativity"}","title":"${topic ? topic.charAt(0).toUpperCase() + topic.slice(1) + " Explained" : "General Relativity Explained"}","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the ready video card with the active Play button immediately, and summarize the key visual intuition.`
                   : `Emit a \`\`\`hyperframes\n{"topic":"${topic}","title":"${topic} Explained","status":"generating","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the video card, then explain the key concepts and scenes visualised in the video.`
               }`
-            : `Present a HyperFrames academic explainer video. Recommend available library videos like General Relativity (ready for playback), or ask what topic they want explained and emit the corresponding \`\`\`hyperframes\`\`\` card.`;
+            : `Present a HyperFrames academic explainer video. Recommend available library videos like General Relativity & Gravity (ready for playback), or ask what topic they want explained and emit the corresponding \`\`\`hyperframes\`\`\` card.`;
           return {
             slashCommand: message,
             message: prompt,
@@ -3541,6 +3542,12 @@ class OverseerImpl implements AgentHooks {
           };
         }
         if (message.id.commandId === "publish") {
+          if (!isAdmin) {
+            return {
+              slashCommand: message,
+              message: "Only workspace admins can publish videos to YouTube.",
+            };
+          }
           const titleArg = ((message as any).argument || message.args || "").trim();
           // Build a prompt that instructs the agent to upload via the YOUTUBE binding.
           // The agent runs executeCode, calls getSession("YOUTUBE"), then uploadVideo().
@@ -3775,6 +3782,7 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
     attachments?: ChatAttachmentHandle[],
     responseTargetRegistration?: ExternalMessageResponseTargetRegistration,
     formats?: MessageFormatRef[],
+    isAdmin: boolean = false,
   ): Promise<void> {
     if (responseTargetRegistration) {
       let decision = this.#prepareExternalMessageResponseTargetRegistration(responseTargetRegistration);
@@ -3788,7 +3796,7 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
     this.assertChatNotActive(chatId);
     using _chatMessageReservation = this.reserveChatMessagePreparation(chatId);
     let prepared = await this.#prepareChatMessage(
-        message, (canonicalAttachments?.length ?? 0) > 0);
+        message, (canonicalAttachments?.length ?? 0) > 0, isAdmin);
 
     let meta = this.assertChatNotActive(chatId, true);
     let result = this.materializeChatDraft(chatId, meta);
@@ -5084,7 +5092,7 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
     return result;
   }
 
-  async listSlashCommands(): Promise<SlashCommandChoice[]> {
+  async listSlashCommands(isAdmin: boolean = false): Promise<SlashCommandChoice[]> {
     let sources = [...this.storage.gatekeepers.list()]
       .filter(record => record.hasSlashCommands)
       .map(record => ({
@@ -5107,13 +5115,15 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
       name: "video",
       description: "Generate a HyperFrames explainer video for any academic topic.",
       providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
-    }, {
-      selection: {builtin: true, commandId: "publish"},
+    },
+    // /publish is admin-only — only show it to admins in the picker
+    ...(isAdmin ? [{
+      selection: {builtin: true, commandId: "publish"} as const,
       name: "publish",
       description: "Publish a rendered HyperFrames video to your connected YouTube channel.",
       providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
-    }, ...await collectSlashCommands(sources)];
-  }
+    }] : []),
+    ...await collectSlashCommands(sources)];  }
 
   // =======================================================================================
   // Blueprint helpers
@@ -8392,7 +8402,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
 
   async listSlashCommands(): Promise<SlashCommandChoice[]> {
     await this.slashCommandsReady;
-    return this.impl.listSlashCommands();
+    return this.impl.listSlashCommands(this.isAdmin);
   }
 
   async uploadChatAttachment(
@@ -8636,7 +8646,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
       formats?: MessageFormatRef[]): Promise<void> {
     let userMeta = await this.#clientUser.getChatContext(chosenModelId);
     return this.impl.sendChatMessage(
-        this.#clientUser, userMeta, chatId, message, capsules, attachments, undefined, formats);
+        this.#clientUser, userMeta, chatId, message, capsules, attachments, undefined, formats, this.isAdmin);
   }
 
   async setChatTitle(chatId: number, title: string): Promise<void> {
