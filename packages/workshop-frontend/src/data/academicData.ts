@@ -1079,6 +1079,18 @@ export const UNIVERSITIES: University[] = [
     acronyms: ['MAK']
   },
   {
+    id: 'iuea_uganda',
+    name: 'International University of East Africa (IUEA)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'IUEA',
+    region: 'East Africa',
+    domains: ['iuea.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['IUEA', 'East Africa'],
+    website: 'https://iuea.ac.ug/'
+  },
+  {
     id: 'mubs',
     name: 'Makerere University Business School (MUBS)',
     country: 'Uganda',
@@ -1546,8 +1558,341 @@ export const UNIVERSITIES: University[] = [
     domains: ['ub.bw'],
     city: 'Gaborone',
     acronyms: ['UB']
+  },
+  {
+    id: 'iuea_uganda',
+    name: 'International University of East Africa (IUEA)',
+    country: 'Uganda',
+    countryCode: 'UG',
+    code: 'IUEA',
+    region: 'East Africa',
+    domains: ['iuea.ac.ug'],
+    city: 'Kampala',
+    acronyms: ['IUEA'],
+    website: 'https://iuea.ac.ug/'
   }
 ];
+
+// Lazy loader and parser for the full 16,314+ university global dataset
+import rawCatalog from './universitiesCatalog.json';
+
+let _fullUniversitiesCache: University[] | null = null;
+
+export interface SecondarySchool {
+  id: string;
+  name: string;
+  country: string;
+  countryCode: string;
+  code: string;
+  curriculum: string;
+  city: string;
+  levels: string[];
+}
+
+export const SECONDARY_SCHOOLS: SecondarySchool[] = [
+  // ── Uganda (UNEB: UCE O-Level & UACE A-Level) ──
+  { id: 'budo', name: "King's College Budo", country: 'Uganda', countryCode: 'UG', code: 'KCB', curriculum: 'UNEB (UCE / UACE)', city: 'Wakiso / Kampala', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'smack', name: "St. Mary's College Kisubi (SMACK)", country: 'Uganda', countryCode: 'UG', code: 'SMACK', curriculum: 'UNEB (UCE / UACE)', city: 'Entebbe / Wakiso', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'gayaza', name: 'Gayaza High School', country: 'Uganda', countryCode: 'UG', code: 'GHS', curriculum: 'UNEB (UCE / UACE)', city: 'Gayaza / Kampala', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'namagunga', name: "Mt. St. Mary's College Namagunga", country: 'Uganda', countryCode: 'UG', code: 'MSMCN', curriculum: 'UNEB (UCE / UACE)', city: 'Mukono', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'namilyango', name: 'Namilyango College', country: 'Uganda', countryCode: 'UG', code: 'NAM', curriculum: 'UNEB (UCE / UACE)', city: 'Mukono', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'namugongo', name: 'Uganda Martyrs S.S. Namugongo', country: 'Uganda', countryCode: 'UG', code: 'UMSSN', curriculum: 'UNEB (UCE / UACE)', city: 'Kira / Wakiso', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'kibuli', name: 'Kibuli Secondary School', country: 'Uganda', countryCode: 'UG', code: 'KSS', curriculum: 'UNEB (UCE / UACE)', city: 'Kampala', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'maco', name: 'Makerere College School', country: 'Uganda', countryCode: 'UG', code: 'MACOS', curriculum: 'UNEB (UCE / UACE)', city: 'Kampala', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'mengo', name: 'Mengo Senior School', country: 'Uganda', countryCode: 'UG', code: 'MSS', curriculum: 'UNEB (UCE / UACE)', city: 'Kampala', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'ntare', name: 'Ntare School', country: 'Uganda', countryCode: 'UG', code: 'NTS', curriculum: 'UNEB (UCE / UACE)', city: 'Mbarara', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'seeta', name: 'Seeta High School (Main Campus)', country: 'Uganda', countryCode: 'UG', code: 'SHS', curriculum: 'UNEB (UCE / UACE)', city: 'Mukono', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'nabingo', name: 'Trinity College Nabbingo', country: 'Uganda', countryCode: 'UG', code: 'TRICONA', curriculum: 'UNEB (UCE / UACE)', city: 'Wakiso', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+  { id: 'nabisunsa', name: 'Nabisunsa Girls Secondary School', country: 'Uganda', countryCode: 'UG', code: 'NGSS', curriculum: 'UNEB (UCE / UACE)', city: 'Kampala', levels: ['S.1', 'S.2', 'S.3', 'S.4 (UCE)', 'S.5', 'S.6 (UACE)'] },
+
+  // ── Kenya (KNEC: KCSE & CBC Senior School) ──
+  { id: 'alliance_boys', name: 'Alliance High School', country: 'Kenya', countryCode: 'KE', code: 'AHS', curriculum: 'KNEC (KCSE / CBC)', city: 'Kikuyu', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'kenya_high', name: 'The Kenya High School', country: 'Kenya', countryCode: 'KE', code: 'KHS', curriculum: 'KNEC (KCSE / CBC)', city: 'Nairobi', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'mangu', name: "Mang'u High School", country: 'Kenya', countryCode: 'KE', code: 'MHS', curriculum: 'KNEC (KCSE / CBC)', city: 'Thika', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'starehe', name: "Starehe Boys' Centre and School", country: 'Kenya', countryCode: 'KE', code: 'SBC', curriculum: 'KNEC (KCSE / CBC)', city: 'Nairobi', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'lenana', name: 'Lenana School', country: 'Kenya', countryCode: 'KE', code: 'LNS', curriculum: 'KNEC (KCSE / CBC)', city: 'Nairobi', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'nairobi_school', name: 'Nairobi School', country: 'Kenya', countryCode: 'KE', code: 'NSC', curriculum: 'KNEC (KCSE / CBC)', city: 'Nairobi', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'riruta', name: 'Precious Blood Secondary School Riruta', country: 'Kenya', countryCode: 'KE', code: 'PBR', curriculum: 'KNEC (KCSE / CBC)', city: 'Nairobi', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'maseno', name: 'Maseno School', country: 'Kenya', countryCode: 'KE', code: 'MSN', curriculum: 'KNEC (KCSE / CBC)', city: 'Kisumu', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+  { id: 'strathmore_sec', name: 'Strathmore School', country: 'Kenya', countryCode: 'KE', code: 'STRATH', curriculum: 'KNEC (KCSE / CBC)', city: 'Nairobi', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (KCSE)', 'Grade 10', 'Grade 11', 'Grade 12'] },
+
+  // ── Tanzania (NECTA: CSEE / ACSEE) ──
+  { id: 'ilboru', name: 'Ilboru Secondary School', country: 'Tanzania', countryCode: 'TZ', code: 'ILB', curriculum: 'NECTA (CSEE / ACSEE)', city: 'Arusha', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (CSEE)', 'Form 5', 'Form 6 (ACSEE)'] },
+  { id: 'tabora_boys', name: 'Tabora Boys Secondary School', country: 'Tanzania', countryCode: 'TZ', code: 'TBS', curriculum: 'NECTA (CSEE / ACSEE)', city: 'Tabora', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (CSEE)', 'Form 5', 'Form 6 (ACSEE)'] },
+  { id: 'kibaha_sec', name: 'Kibaha Secondary School', country: 'Tanzania', countryCode: 'TZ', code: 'KSS', curriculum: 'NECTA (CSEE / ACSEE)', city: 'Pwani', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (CSEE)', 'Form 5', 'Form 6 (ACSEE)'] },
+  { id: 'marian_girls', name: 'Marian Girls High School', country: 'Tanzania', countryCode: 'TZ', code: 'MGHS', curriculum: 'NECTA (CSEE / ACSEE)', city: 'Bagamoyo', levels: ['Form 1', 'Form 2', 'Form 3', 'Form 4 (CSEE)', 'Form 5', 'Form 6 (ACSEE)'] },
+
+  // ── Rwanda (NESA) ──
+  { id: 'fawe_rwanda', name: 'FAWE Girls School Gisozi', country: 'Rwanda', countryCode: 'RW', code: 'FAWE', curriculum: 'NESA (O / A-Level)', city: 'Kigali', levels: ['S.1', 'S.2', 'S.3 (O-Level)', 'S.4', 'S.5', 'S.6 (Advanced)'] },
+  { id: 'lycee_kigali', name: 'Lycée de Kigali', country: 'Rwanda', countryCode: 'RW', code: 'LDK', curriculum: 'NESA (O / A-Level)', city: 'Kigali', levels: ['S.1', 'S.2', 'S.3 (O-Level)', 'S.4', 'S.5', 'S.6 (Advanced)'] },
+  { id: 'green_hills', name: 'Green Hills Academy', country: 'Rwanda', countryCode: 'RW', code: 'GHA', curriculum: 'Cambridge / IB / NESA', city: 'Kigali', levels: ['Grade 9', 'Grade 10 (IGCSE)', 'Grade 11', 'Grade 12 (IB DP)'] },
+
+  // ── Nigeria (WAEC / NECO / JAMB) ──
+  { id: 'kings_college_lagos', name: "King's College Lagos", country: 'Nigeria', countryCode: 'NG', code: 'KCL', curriculum: 'WAEC / NECO', city: 'Lagos', levels: ['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3 (WASSCE)'] },
+  { id: 'queens_college_lagos', name: "Queen's College Lagos", country: 'Nigeria', countryCode: 'NG', code: 'QCL', curriculum: 'WAEC / NECO', city: 'Lagos', levels: ['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3 (WASSCE)'] },
+  { id: 'loyola_jesuit', name: 'Loyola Jesuit College', country: 'Nigeria', countryCode: 'NG', code: 'LJC', curriculum: 'WAEC / Cambridge', city: 'Abuja', levels: ['JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3 (WASSCE)'] },
+
+  // ── Ghana (WAEC WASSCE) ──
+  { id: 'presec_legon', name: "Presbyterian Boys' Secondary School (PRESEC Legon)", country: 'Ghana', countryCode: 'GH', code: 'PRESEC', curriculum: 'WAEC (WASSCE)', city: 'Accra', levels: ['SHS 1', 'SHS 2', 'SHS 3 (WASSCE)'] },
+  { id: 'achimota', name: 'Achimota School', country: 'Ghana', countryCode: 'GH', code: 'ACHI', curriculum: 'WAEC (WASSCE)', city: 'Accra', levels: ['SHS 1', 'SHS 2', 'SHS 3 (WASSCE)'] },
+  { id: 'prempeh', name: 'Prempeh College', country: 'Ghana', countryCode: 'GH', code: 'PREM', curriculum: 'WAEC (WASSCE)', city: 'Kumasi', levels: ['SHS 1', 'SHS 2', 'SHS 3 (WASSCE)'] },
+
+  // ── United Kingdom (GCSE & A-Levels) ──
+  { id: 'eton_college', name: 'Eton College', country: 'United Kingdom', countryCode: 'GB', code: 'ETON', curriculum: 'Ofqual (GCSE / A-Level)', city: 'Windsor', levels: ['Year 9', 'Year 10 (GCSE)', 'Year 11 (GCSE)', 'Year 12 (Sixth Form)', 'Year 13 (A-Level)'] },
+  { id: 'westminster_school', name: 'Westminster School', country: 'United Kingdom', countryCode: 'GB', code: 'WEST', curriculum: 'Ofqual (GCSE / A-Level)', city: 'London', levels: ['Year 9', 'Year 10 (GCSE)', 'Year 11 (GCSE)', 'Year 12 (Sixth Form)', 'Year 13 (A-Level)'] },
+
+  // ── United States (High School / AP / IB) ──
+  { id: 'exeter', name: 'Phillips Exeter Academy', country: 'United States', countryCode: 'US', code: 'PEA', curriculum: 'US High School / AP', city: 'Exeter, NH', levels: ['9th Grade (Freshman)', '10th Grade (Sophomore)', '11th Grade (Junior)', '12th Grade (Senior)'] },
+  { id: 'stuyvesant', name: 'Stuyvesant High School', country: 'United States', countryCode: 'US', code: 'STUY', curriculum: 'US High School / AP / Regents', city: 'New York, NY', levels: ['9th Grade (Freshman)', '10th Grade (Sophomore)', '11th Grade (Junior)', '12th Grade (Senior)'] },
+];
+
+export function getSecondarySchools(countryCode?: string): SecondarySchool[] {
+  if (!countryCode) return SECONDARY_SCHOOLS;
+  const cc = countryCode.toUpperCase();
+  const regionalMatch = SECONDARY_SCHOOLS.filter(s => s.countryCode === cc);
+  const others = SECONDARY_SCHOOLS.filter(s => s.countryCode !== cc);
+  return [...regionalMatch, ...others];
+}
+
+export type InstitutionSector = 'higher_ed' | 'secondary';
+
+export interface SecondarySystemInfo {
+  countryCode: string;
+  countryName: string;
+  systemName: string;
+  examBoards: string[];
+  levels: { id: string; label: string; stage: 'Ordinary Level / Junior' | 'Advanced Level / Senior' | 'General' }[];
+  defaultTracks: string[];
+}
+
+export const REGIONAL_SECONDARY_SYSTEMS: Record<string, SecondarySystemInfo> = {
+  UG: {
+    countryCode: 'UG',
+    countryName: 'Uganda',
+    systemName: 'UNEB (UCE & UACE)',
+    examBoards: ['UNEB'],
+    levels: [
+      { id: 'S.1', label: 'Senior 1 (S.1)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.2', label: 'Senior 2 (S.2)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.3', label: 'Senior 3 (S.3)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.4', label: 'Senior 4 (S.4 - UCE Candidate)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.5', label: 'Senior 5 (S.5)', stage: 'Advanced Level / Senior' },
+      { id: 'S.6', label: 'Senior 6 (S.6 - UACE Candidate)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'PCM (Physics, Chemistry, Math)',
+      'PCB (Physics, Chemistry, Biology)',
+      'BCG (Biology, Chemistry, Geography)',
+      'MEG (Math, Economics, Geography)',
+      'HEL (History, Economics, Literature)',
+      'Arts & Humanities (O-Level)',
+      'Sciences & Tech (O-Level)',
+    ],
+  },
+  KE: {
+    countryCode: 'KE',
+    countryName: 'Kenya',
+    systemName: 'KNEC (KCSE & CBC Senior School)',
+    examBoards: ['KNEC'],
+    levels: [
+      { id: 'Form 1', label: 'Form 1', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 2', label: 'Form 2', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 3', label: 'Form 3', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 4', label: 'Form 4 (KCSE Candidate)', stage: 'Ordinary Level / Junior' },
+      { id: 'Grade 10', label: 'Grade 10 (Senior School)', stage: 'Advanced Level / Senior' },
+      { id: 'Grade 11', label: 'Grade 11 (Senior School)', stage: 'Advanced Level / Senior' },
+      { id: 'Grade 12', label: 'Grade 12 (Senior School Candidate)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'STEM Pathway (Pure Sciences & Math)',
+      'STEM Pathway (Applied Sciences & Tech)',
+      'Social Sciences Pathway (Humanities & Business)',
+      'Arts & Sports Science Pathway',
+      'KCSE Sciences (Math, Chem, Bio, Phys)',
+      'KCSE Humanities (Hist, Geo, CRE, Bus)',
+    ],
+  },
+  TZ: {
+    countryCode: 'TZ',
+    countryName: 'Tanzania',
+    systemName: 'NECTA (CSEE & ACSEE)',
+    examBoards: ['NECTA'],
+    levels: [
+      { id: 'Form 1', label: 'Form 1', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 2', label: 'Form 2', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 3', label: 'Form 3', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 4', label: 'Form 4 (CSEE Candidate)', stage: 'Ordinary Level / Junior' },
+      { id: 'Form 5', label: 'Form 5 (High School)', stage: 'Advanced Level / Senior' },
+      { id: 'Form 6', label: 'Form 6 (ACSEE Candidate)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'PCM (Physics, Chemistry, Mathematics)',
+      'PCB (Physics, Chemistry, Biology)',
+      'CBG (Chemistry, Biology, Geography)',
+      'EGM (Economics, Geography, Mathematics)',
+      'HGL (History, Geography, Language)',
+      'HGK (History, Geography, Kiswahili)',
+    ],
+  },
+  RW: {
+    countryCode: 'RW',
+    countryName: 'Rwanda',
+    systemName: 'NESA (O & A-Level)',
+    examBoards: ['NESA'],
+    levels: [
+      { id: 'S.1', label: 'Senior 1 (S.1)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.2', label: 'Senior 2 (S.2)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.3', label: 'Senior 3 (S.3 - O-Level Exam)', stage: 'Ordinary Level / Junior' },
+      { id: 'S.4', label: 'Senior 4 (S.4)', stage: 'Advanced Level / Senior' },
+      { id: 'S.5', label: 'Senior 5 (S.5)', stage: 'Advanced Level / Senior' },
+      { id: 'S.6', label: 'Senior 6 (S.6 - National Exam)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'MCB (Mathematics, Chemistry, Biology)',
+      'MPC (Mathematics, Physics, Computer)',
+      'PCB (Physics, Chemistry, Biology)',
+      'HEG (History, Economics, Geography)',
+      'MEG (Mathematics, Economics, Geography)',
+    ],
+  },
+  NG: {
+    countryCode: 'NG',
+    countryName: 'Nigeria',
+    systemName: 'WAEC / NECO / JAMB',
+    examBoards: ['WAEC', 'NECO', 'JAMB'],
+    levels: [
+      { id: 'JSS 1', label: 'JSS 1 (Junior Secondary)', stage: 'Ordinary Level / Junior' },
+      { id: 'JSS 2', label: 'JSS 2', stage: 'Ordinary Level / Junior' },
+      { id: 'JSS 3', label: 'JSS 3 (BECE Candidate)', stage: 'Ordinary Level / Junior' },
+      { id: 'SSS 1', label: 'SSS 1 (Senior Secondary)', stage: 'Advanced Level / Senior' },
+      { id: 'SSS 2', label: 'SSS 2', stage: 'Advanced Level / Senior' },
+      { id: 'SSS 3', label: 'SSS 3 (WASSCE / JAMB UTME)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'Science Stream (Math, Physics, Chemistry, Biology)',
+      'Commercial / Business Stream (Accounting, Commerce, Economics)',
+      'Arts & Humanities (Literature, Government, CRS/IRS, History)',
+      'Technical & Vocational',
+    ],
+  },
+  GH: {
+    countryCode: 'GH',
+    countryName: 'Ghana',
+    systemName: 'WAEC (WASSCE)',
+    examBoards: ['WAEC'],
+    levels: [
+      { id: 'JHS 1', label: 'JHS 1', stage: 'Ordinary Level / Junior' },
+      { id: 'JHS 2', label: 'JHS 2', stage: 'Ordinary Level / Junior' },
+      { id: 'JHS 3', label: 'JHS 3 (BECE Candidate)', stage: 'Ordinary Level / Junior' },
+      { id: 'SHS 1', label: 'SHS 1 (Senior High)', stage: 'Advanced Level / Senior' },
+      { id: 'SHS 2', label: 'SHS 2', stage: 'Advanced Level / Senior' },
+      { id: 'SHS 3', label: 'SHS 3 (WASSCE Candidate)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'General Science (Elective Maths, Physics, Chemistry, Biology)',
+      'General Arts (Government, Literature, Economics, History)',
+      'Business (Accounting, Costing, Economics, Elective Maths)',
+      'Visual Arts & Home Economics',
+    ],
+  },
+  GB: {
+    countryCode: 'GB',
+    countryName: 'United Kingdom',
+    systemName: 'GCSE & A-Levels',
+    examBoards: ['Edexcel', 'AQA', 'OCR', 'Cambridge'],
+    levels: [
+      { id: 'Year 9', label: 'Year 9 (Key Stage 3)', stage: 'Ordinary Level / Junior' },
+      { id: 'Year 10', label: 'Year 10 (GCSE Year 1)', stage: 'Ordinary Level / Junior' },
+      { id: 'Year 11', label: 'Year 11 (GCSE Exam Year)', stage: 'Ordinary Level / Junior' },
+      { id: 'Year 12', label: 'Year 12 (Sixth Form / AS-Level)', stage: 'Advanced Level / Senior' },
+      { id: 'Year 13', label: 'Year 13 (Upper Sixth / A-Level Final)', stage: 'Advanced Level / Senior' },
+    ],
+    defaultTracks: [
+      'STEM A-Levels (Maths, Further Maths, Physics, Chemistry)',
+      'Biological Sciences (Biology, Chemistry, Psychology)',
+      'Humanities & Social Sciences (History, Politics, Economics, English)',
+      'GCSE Core Curriculum',
+    ],
+  },
+  US: {
+    countryCode: 'US',
+    countryName: 'United States',
+    systemName: 'High School (AP / IB / Honors)',
+    examBoards: ['College Board (AP)', 'ACT / SAT', 'IB'],
+    levels: [
+      { id: '9th Grade', label: '9th Grade (Freshman)', stage: 'General' },
+      { id: '10th Grade', label: '10th Grade (Sophomore)', stage: 'General' },
+      { id: '11th Grade', label: '11th Grade (Junior / APs)', stage: 'General' },
+      { id: '12th Grade', label: '12th Grade (Senior / AP / Honors)', stage: 'General' },
+    ],
+    defaultTracks: [
+      'Advanced Placement (AP STEM Track: Calc BC, Physics C, Chem)',
+      'AP Humanities Track (AP Lit, AP US History, AP Gov)',
+      'International Baccalaureate (IB Diploma Programme)',
+      'General College Prep Curriculum',
+    ],
+  },
+};
+
+export function getRegionalSecondarySystem(countryCode?: string): SecondarySystemInfo {
+  const code = (countryCode || 'UG').toUpperCase();
+  return REGIONAL_SECONDARY_SYSTEMS[code] || REGIONAL_SECONDARY_SYSTEMS['UG'];
+}
+
+export function getFullUniversities(preferredCountryCode?: string): University[] {
+  const catalogItems: University[] = (rawCatalog as Array<[string, string, string, string, string, string, string[]]>).map((item) => ({
+    id: item[0],
+    name: item[1],
+    country: item[2],
+    countryCode: item[3],
+    code: item[4],
+    city: item[5],
+    region: item[2],
+    domains: [],
+    acronyms: item[6] || [],
+  }));
+
+  // Merge with initial hardcoded curated list, deduplicating by lowercase name
+  const seenNames = new Set<string>();
+  const merged: University[] = [];
+
+  for (const u of UNIVERSITIES) {
+    const key = u.name.toLowerCase().trim();
+    if (!seenNames.has(key)) {
+      seenNames.add(key);
+      merged.push(u);
+    }
+  }
+
+  for (const u of catalogItems) {
+    const key = u.name.toLowerCase().trim();
+    if (!seenNames.has(key)) {
+      seenNames.add(key);
+      merged.push(u);
+    }
+  }
+
+  // Prioritize based on detected preferredCountryCode (e.g. 'UG', 'KE', 'TZ', 'RW', 'NG', 'GH', 'GB', 'US')
+  const pref = (preferredCountryCode || '').toUpperCase();
+  const defaultRegionalCodes = new Set(['UG', 'KE', 'RW', 'TZ']);
+
+  const prioritized = merged.sort((a, b) => {
+    if (pref) {
+      const aIsPref = a.countryCode === pref;
+      const bIsPref = b.countryCode === pref;
+      if (aIsPref && !bIsPref) return -1;
+      if (!aIsPref && bIsPref) return 1;
+    }
+    const aIsRegional = defaultRegionalCodes.has(a.countryCode);
+    const bIsRegional = defaultRegionalCodes.has(b.countryCode);
+    if (aIsRegional && !bIsRegional) return -1;
+    if (!aIsRegional && bIsRegional) return 1;
+    return 0;
+  });
+
+  return prioritized;
+}
+
 
 export const PERSONAS: Persona[] = [
   {

@@ -44,3 +44,10 @@ wrangler.dev.jsonc
 .dev.vars.*
 **/.dev.vars
 **/.dev.vars.*
+
+# Media / Large video files
+*.mp4
+hf-videos/
+packages/workshop-backend/hf-videos/
+
+

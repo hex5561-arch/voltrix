@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from 'react'
 import { AiChatAuthorInfo } from '@gadgets/workshop-shared/api'
 import { hashPassword } from './passwordHash'
 import { CF_ACCESS_MODE } from './useAuth'
-import { User, Pencil, Check, X, Lock, Camera, Copy, Eye, EyeSlash, GraduationCap, Plus, Trash } from '@phosphor-icons/react'
+import { User, Pencil, Check, X, Lock, Camera, Copy, Eye, EyeSlash, GraduationCap, BookOpen, Plus, Trash } from '@phosphor-icons/react'
 import { useAvatar, invalidateAvatarCache } from './useAvatar'
 import { compressAvatar, avatarBlobUrl } from './avatarUtils'
 import UsageSettings from './components/billing/UsageSettings'
+import AcademicSubscriptionCard from './components/academic/AcademicSubscriptionCard'
 import { useDocumentTitle } from './useDocumentTitle'
 import {
   getStudentProfile,
@@ -244,6 +245,35 @@ export default function SettingsPage() {
     }
 
     fetchUserInfo()
+
+    // Fetch and sync student profile from DO (server) to keep cross-device state in sync
+    authenticatedApi.getStudentProfile().then((remoteProf) => {
+      if (!cancelled && remoteProf) {
+        const local = getStudentProfile();
+        // If local is missing or remote is newer, sync local and UI
+        if (!local || (remoteProf.updatedAt && remoteProf.updatedAt >= (local.updatedAt || 0))) {
+          const synced = saveStudentProfile({
+            ...remoteProf,
+            courses: remoteProf.courses.map((c) => ({
+              id: `course-${c.code}`,
+              code: c.code,
+              name: c.name,
+              color: COURSE_COLORS[0],
+              semester: remoteProf.semester,
+              selected: true,
+            })),
+          });
+          setStudentProfile(synced);
+          setAcademicUni(synced.university);
+          setAcademicDegree(synced.degreeProgram);
+          setAcademicYear(synced.academicYear);
+          setAcademicSemester(synced.semester);
+          setAcademicCitation(synced.citationStyle);
+          setAcademicCourses(synced.courses);
+        }
+      }
+    }).catch(() => {});
+
     return () => { cancelled = true }
   }, [authenticatedApi])
 
@@ -495,27 +525,48 @@ export default function SettingsPage() {
             {/* Campus & Degree Card */}
             <div className="p-5 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600/15 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
-                  <GraduationCap size={22} weight="fill" />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                  studentProfile.institutionSector === 'secondary'
+                    ? 'bg-purple-600/15 text-purple-400 border-purple-500/20'
+                    : 'bg-indigo-600/15 text-indigo-400 border-indigo-500/20'
+                }`}>
+                  {studentProfile.institutionSector === 'secondary' ? (
+                    <BookOpen size={22} weight="fill" />
+                  ) : (
+                    <GraduationCap size={22} weight="fill" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   {isEditingAcademic ? (
                     <div className="space-y-2">
-                      <FieldLabel>University or College Campus</FieldLabel>
+                      <FieldLabel>
+                        {studentProfile.institutionSector === 'secondary'
+                          ? 'Secondary / High School Campus'
+                          : 'University or College Campus'}
+                      </FieldLabel>
                       <input
                         value={academicUni}
                         onChange={(e) => setAcademicUni(e.target.value)}
-                        placeholder="e.g. University of Nairobi, JKUAT, MIT..."
+                        placeholder="e.g. Makerere University, Kibuli S.S, Alliance High..."
                         className={INPUT}
                       />
                     </div>
                   ) : (
                     <>
-                      <h3 className="text-[15px] font-semibold tracking-[-0.25px] text-kumo-default truncate">
-                        {studentProfile.university}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-[15px] font-semibold tracking-[-0.25px] text-kumo-default truncate">
+                          {studentProfile.university}
+                        </h3>
+                        {studentProfile.institutionSector === 'secondary' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-semibold">
+                            Secondary School
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[12px] text-indigo-400 font-medium truncate mt-0.5">
-                        {studentProfile.degreeProgram} · {studentProfile.academicYear}
+                        {studentProfile.institutionSector === 'secondary'
+                          ? `${studentProfile.streamOrCombination || studentProfile.degreeProgram} · ${studentProfile.academicYear}`
+                          : `${studentProfile.degreeProgram} · ${studentProfile.academicYear}`}
                       </p>
                     </>
                   )}
@@ -525,11 +576,15 @@ export default function SettingsPage() {
               {isEditingAcademic && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <div>
-                    <FieldLabel>Degree Program</FieldLabel>
+                    <FieldLabel>
+                      {studentProfile.institutionSector === 'secondary'
+                        ? 'Combination / Stream / Track'
+                        : 'Degree Program'}
+                    </FieldLabel>
                     <input
                       value={academicDegree}
                       onChange={(e) => setAcademicDegree(e.target.value)}
-                      placeholder="e.g. B.Sc. Computer Science"
+                      placeholder={studentProfile.institutionSector === 'secondary' ? "e.g. PCM (Physics, Chemistry, Math)" : "e.g. B.Sc. Computer Science"}
                       className={`mt-1.5 ${INPUT}`}
                     />
                   </div>
@@ -671,6 +726,12 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+        </section>
+
+        {/* Academic Subscription & Quotas */}
+        <section className="flex flex-col gap-3">
+          <SectionLabel>Academic Subscription &amp; AI Quotas</SectionLabel>
+          <AcademicSubscriptionCard />
         </section>
 
         {/* Usage & billing — only when the Cloudflare limits flow is enabled server-side */}

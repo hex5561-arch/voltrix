@@ -14,6 +14,8 @@ import {
   Sparkle, Star, Lightning, ArrowRight, Question, CaretDown,
   CaretUp, Medal, FileText, CheckFat, PencilSimple,
 } from '@phosphor-icons/react'
+import { useOptionalAuthenticatedApi } from '../AuthContext'
+import { getStudentProfile } from '../services/studentProfile'
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +56,7 @@ const DEFAULT_PLANS: Plan[] = [
     badge: 'Most Popular',
     description: 'Comprehensive research, STEM proofs & coding power for scholars',
     monthly: 9.99, annual: 79.99, dailyQueries: 500, isPopular: true, active: true,
-    cta: 'Upgrade to Pro',
+    cta: 'Start now',
     features: [
       '500 AI queries/day (unlimited during exams)',
       'Claude 3.5 Sonnet, GPT-4o & DeepSeek R1',
@@ -156,7 +158,7 @@ const COMPARISON_SPECS = [
 const FAQS = [
   { q: 'Can I cancel or change my plan anytime?',             a: 'Yes. Cancel anytime in account settings with zero fees. You retain full access until the end of your billing period.' },
   { q: 'How does the academic student discount work?',        a: 'Students with a valid university email (.edu, .ac.uk, .ac.ug, .ac.ke, etc.) or promo code STUDENT30 receive 30% off any tier.' },
-  { q: 'Which payment methods are supported in my region?',   a: 'Visa, Mastercard, American Express, M-Pesa, MTN Mobile Money, Airtel Money, and direct bank transfers via Pesapal.' },
+  { q: 'Which payment methods are supported in my region?',   a: 'Visa, Mastercard, American Express, M-Pesa, MTN Mobile Money, Airtel Money, and direct bank transfers via Voltrix Secure Billing (PCI-DSS compliant).' },
   { q: 'What happens to my coursework drafts if I downgrade?',a: 'All projects, notes, flashcards, and citations remain safe. Downgrading only limits daily AI reasoning queries.' },
   { q: 'Can our study group or department get a group discount?', a: 'Yes! The Campus Institutional tier is designed for cohorts and labs with multi-seat licensing and centralized billing.' },
 ]
@@ -167,7 +169,7 @@ const TESTIMONIALS = [
   { quote: 'Our distributed systems research group relies on the Campus tier to index lecture videos and synthesize benchmarks.', author: 'David K.', role: 'Distributed Systems Lab, UoN', badge: 'Campus Cohort Lead' },
 ]
 
-const API = 'https://voltrix.stream/api'
+const API = '/api'
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -200,20 +202,43 @@ export default function UpgradeModal({
   const [polls,             setPolls]             = useState(0)
   const [errMsg,            setErrMsg]            = useState('')
 
+  const auth = useOptionalAuthenticatedApi()
+  const currentUser = auth?.currentUser
+  const studentProfile = getStudentProfile()
+
   const pollRef      = useRef<ReturnType<typeof setInterval>|null>(null)
   const sliderRef    = useRef<HTMLDivElement>(null)
   const emailRef     = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    if (currentUser?.id && currentUser.id.includes('@') && !email) {
+      setEmail(currentUser.id)
+    }
+    if (currentUser?.name && !name) {
+      setName(currentUser.name)
+    } else if (studentProfile?.name && !name) {
+      setName(studentProfile.name)
+    }
+  }, [currentUser, studentProfile, email, name])
+
   // Load plans
   useEffect(() => {
     if (!isOpen) return
-    fetch(`${API}/plans`)
+    fetch('/api/plans')
       .then(r => r.json())
       .then((d: { plans?: Plan[] } | Plan[]) => {
         const arr = Array.isArray(d) ? d : (d as { plans?: Plan[] }).plans
         if (arr && arr.length > 0) setPlans(arr)
       })
-      .catch(() => {})
+      .catch(() => {
+        fetch(`${API}/plans`)
+          .then(r => r.json())
+          .then((d: { plans?: Plan[] } | Plan[]) => {
+            const arr = Array.isArray(d) ? d : (d as { plans?: Plan[] }).plans
+            if (arr && arr.length > 0) setPlans(arr)
+          })
+          .catch(() => {})
+      })
     setStep('idle'); setIframeUrl(''); setErrMsg(''); setEditDetails(false)
   }, [isOpen])
 

@@ -303,6 +303,34 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
   async getTypeScriptTypes(): Promise<string> {
     return TYPES_CODE;
   }
+
+  async sendSystemEmail(to: string, subject: string, html: string, from?: string): Promise<boolean> {
+    const apiKey = this.env.RESEND_API_KEY;
+    if (!apiKey) {
+      logger.warn("sendSystemEmail: RESEND_API_KEY missing");
+      return false;
+    }
+    const defaultFrom = this.env.DEFAULT_FROM || "Voltrix Billing <noreply@em.voltrix.stream>";
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: from || defaultFrom,
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+      return res.ok;
+    } catch (e) {
+      logger.error("sendSystemEmail failed", { error: e });
+      return false;
+    }
+  }
 }
 
 // =======================================================================================

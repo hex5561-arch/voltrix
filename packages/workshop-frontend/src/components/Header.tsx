@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Hexagon, List, X } from '@phosphor-icons/react'
+import { Hexagon, List, X, Sparkle, Tray } from '@phosphor-icons/react'
 import { useOptionalAuthenticatedApi } from '../AuthContext'
 import { useGatekeeperApps } from '../useGatekeeperApps'
 import { useSiteName } from '../ServerConfigContext'
@@ -7,12 +7,15 @@ import { useState, useEffect, useRef } from 'react'
 import UserMenu from './UserMenu'
 import TopBarNotice from '../TopBarNotice'
 import SiteLogo from './SiteLogo'
+import InboxModal from './InboxModal'
 
 export default function Header() {
   const auth = useOptionalAuthenticatedApi()
   const gatekeeperApps = useGatekeeperApps()
   const siteName = useSiteName()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [inboxOpen, setInboxOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   const headerRef = useRef<HTMLElement>(null)
 
@@ -28,12 +31,31 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [mobileMenuOpen])
 
+  // Poll unread messages
+  useEffect(() => {
+    if (!auth?.currentUser?.id) return
+    const fetchUnread = () => {
+      fetch(`/api/inbox?user=${encodeURIComponent(auth.currentUser.id)}`)
+        .then(r => r.json())
+        .then((d: any) => {
+          if (typeof d?.unreadCount === 'number') {
+            setUnreadCount(d.unreadCount)
+          }
+        })
+        .catch(() => {})
+    }
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 60000)
+    return () => clearInterval(interval)
+  }, [auth?.currentUser?.id])
+
   const closeMobileMenu = () => setMobileMenuOpen(false)
 
   const navLinkClass = "text-sm px-3 py-1.5 rounded-md transition-colors text-kumo-subtle"
   const navLinkActiveClass = "text-sm font-medium px-3 py-1.5 rounded-md transition-colors text-kumo-default bg-kumo-tint"
 
   return (
+    <>
     <header
       ref={headerRef}
       className="app-header sticky top-0 z-50 backdrop-blur-md border-b border-kumo-line"
@@ -95,6 +117,31 @@ export default function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          {auth && (
+            <button
+              type="button"
+              onClick={() => setInboxOpen(true)}
+              className="relative p-1.5 rounded-full text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint transition cursor-pointer"
+              title="Inbox & Invoices"
+              aria-label="Inbox & Invoices"
+            >
+              <Tray size={17} />
+              {unreadCount > 0 && (
+                <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-zinc-950" />
+              )}
+            </button>
+          )}
+
+          {auth && (
+            <Link
+              to="/pricing"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+            >
+              <Sparkle size={13} weight="fill" />
+              Upgrade
+            </Link>
+          )}
+
           {/* Desktop avatar dropdown */}
           {auth && (
             <div className="hidden sm:block">
@@ -199,5 +246,7 @@ export default function Header() {
         </div>
       )}
     </header>
+    <InboxModal isOpen={inboxOpen} onClose={() => setInboxOpen(false)} />
+    </>
   )
 }

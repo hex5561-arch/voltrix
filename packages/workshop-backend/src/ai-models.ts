@@ -567,6 +567,8 @@ function getModelViaThehiveDirect(
   // GLM-5.3-Flash supports video input natively, but pi's Model.input type is constrained to
   // ("text" | "image")[] in the current version. Video stays as a todo for when pi adds the
   // modality; the attachment validator already permits video MIME types for thehive.
+  const isGlm = config.model.includes("glm");
+  const isDeepSeek = config.model.includes("deepseek");
   return makeHandle({
     model: {
       id: config.model,
@@ -574,7 +576,7 @@ function getModelViaThehiveDirect(
       api: "openai-completions",
       provider: "openai",
       baseUrl: "https://api-cdn.thehive.ai/api/v3",
-      reasoning: false,
+      reasoning: isGlm || isDeepSeek,
       input: ["text", "image"],
       cost: THEHIVE_MODEL_COSTS[config.model] ?? ZERO_COST,
       ...window,
@@ -583,6 +585,7 @@ function getModelViaThehiveDirect(
         supportsDeveloperRole: false,
         supportsLongCacheRetention: false,
         sendSessionAffinityHeaders: false,
+        thinkingFormat: isGlm ? "zai" : isDeepSeek ? "deepseek" : undefined,
       },
     },
     // Inject the API key as a real Authorization header; suppress SDK-derived auth so

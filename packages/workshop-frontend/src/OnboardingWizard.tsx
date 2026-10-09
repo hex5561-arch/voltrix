@@ -7,6 +7,7 @@ import {
 } from '@gadgets/workshop-shared/api'
 import {
   GraduationCap,
+  BookOpen,
   CheckCircle,
   Plus,
   Trash,
@@ -17,6 +18,7 @@ import {
   Camera,
   Lightning,
   X,
+  CaretDown,
 } from '@phosphor-icons/react'
 import AddModelModal from './AddModelModal'
 import { persistSelectedModel } from './modelSelection'
@@ -27,6 +29,13 @@ import SiteLogo from './components/SiteLogo'
 import { useDocumentTitle } from './useDocumentTitle'
 import {
   UNIVERSITIES,
+  getFullUniversities,
+  SECONDARY_SCHOOLS,
+  SecondarySchool,
+  getSecondarySchools,
+  InstitutionSector,
+  REGIONAL_SECONDARY_SYSTEMS,
+  getRegionalSecondarySystem,
   PERSONAS,
   ACADEMIC_LEVELS,
   SEMESTERS,
@@ -78,6 +87,9 @@ export default function OnboardingWizard({
   }, [selectedDiscipline])
 
   // ── Step 1: Campus & Degree Standing ──────────────────────────────────────
+  const [institutionSector, setInstitutionSector] = useState<InstitutionSector>(
+    existing?.institutionSector || 'higher_ed'
+  )
   const [universitySearch, setUniversitySearch] = useState('')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -89,6 +101,31 @@ export default function OnboardingWizard({
   )
   const [isCustomUniversity, setIsCustomUniversity] = useState(false)
   const [customUniversityName, setCustomUniversityName] = useState('')
+
+  // Secondary School State
+  const [secondarySearch, setSecondarySearch] = useState('')
+  const [isSecondaryDropdownOpen, setIsSecondaryDropdownOpen] = useState(false)
+  const secondaryDropdownRef = useRef<HTMLDivElement>(null)
+  const [selectedSecondarySchool, setSelectedSecondarySchool] = useState<string>(
+    existing?.secondarySchoolDetails?.name || 'Gayaza High School'
+  )
+  const [selectedSecondarySchoolDetails, setSelectedSecondarySchoolDetails] = useState<SecondarySchool | null>(
+    existing?.secondarySchoolDetails || SECONDARY_SCHOOLS[0]
+  )
+  const [isCustomSecondary, setIsCustomSecondary] = useState(false)
+  const [customSecondaryName, setCustomSecondaryName] = useState('')
+
+  const activeSecondarySystem = useMemo(() => {
+    const cc = selectedSecondarySchoolDetails?.countryCode || geoCountry || 'UG'
+    return getRegionalSecondarySystem(cc)
+  }, [selectedSecondarySchoolDetails, geoCountry])
+
+  const [secondaryTrack, setSecondaryTrack] = useState<string>(
+    existing?.streamOrCombination || 'PCM (Physics, Chemistry, Math)'
+  )
+  const [secondaryLevel, setSecondaryLevel] = useState<string>(
+    existing?.academicYear || 'Senior 4 (S.4 - UCE Candidate)'
+  )
 
   const [degreeProgram, setDegreeProgram] = useState<string>(
     existing?.degreeProgram || activePersona.defaultDegrees[0]
@@ -136,6 +173,19 @@ export default function OnboardingWizard({
   const [aiConfig, setAiConfig] = useState<AiGatewayInfo | null>(null)
   const [addModelOpen, setAddModelOpen] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(true)
+  const [geoCountry, setGeoCountry] = useState<string>('')
+
+  // Silent Edge Geo-Intelligence: retrieve detected country for university prioritization without user badge
+  useEffect(() => {
+    fetch('/api/geo/context')
+      .then((r) => r.json())
+      .then((d: any) => {
+        if (d?.success && d.geo?.country) {
+          setGeoCountry(d.geo.country)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Entrance animation
   useEffect(() => {
@@ -179,16 +229,20 @@ export default function OnboardingWizard({
     )
   }
 
-  // Close university dropdown on click outside or Escape
+  // Close dropdowns on click outside or Escape
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false)
       }
+      if (secondaryDropdownRef.current && !secondaryDropdownRef.current.contains(event.target as Node)) {
+        setIsSecondaryDropdownOpen(false)
+      }
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsDropdownOpen(false)
+        setIsSecondaryDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -201,14 +255,18 @@ export default function OnboardingWizard({
 
   // Filtered universities matching character search across full registry
   const filteredUniversities = useMemo(() => {
+    const pool = getFullUniversities(geoCountry)
     const q = universitySearch.toLowerCase().trim()
-    if (!q) return []
+    if (!q) {
+      // When empty, show the top regional and prominent universities (includes IUEA, Makerere, UoN, etc.)
+      return pool.slice(0, 80)
+    }
 
     const cleanQ = q.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
     const tokens = cleanQ.split(/\s+/).filter(Boolean)
     const compactQ = q.replace(/[^a-z0-9]/g, '')
 
-    return UNIVERSITIES.filter((u) => {
+    return pool.filter((u) => {
       const nameLower = u.name.toLowerCase()
       const codeLower = u.code.toLowerCase()
       const countryLower = u.country.toLowerCase()
@@ -216,7 +274,7 @@ export default function OnboardingWizard({
       const acronymsLower = (u.acronyms || []).map((a) => a.toLowerCase())
       const domainsLower = (u.domains || []).map((d) => d.toLowerCase())
 
-      // 1. Exact or compact acronym/code match (e.g. "uon", "dekut", "tuk", "ku", "mku")
+      // 1. Exact or compact acronym/code match (e.g. "iuea", "uon", "dekut", "tuk", "ku", "mku")
       if (compactQ) {
         if (acronymsLower.some((a) => a.replace(/[^a-z0-9]/g, '').includes(compactQ))) return true
         if (codeLower.replace(/[^a-z0-9]/g, '').includes(compactQ)) return true
@@ -267,6 +325,12 @@ export default function OnboardingWizard({
       if (aAcrMatch && !bAcrMatch) return -1
       if (!aAcrMatch && bAcrMatch) return 1
 
+      // Exact name match
+      const aExact = a.name.toLowerCase() === q
+      const bExact = b.name.toLowerCase() === q
+      if (aExact && !bExact) return -1
+      if (!aExact && bExact) return 1
+
       // Prefix name match ranked next
       const aStarts = a.name.toLowerCase().startsWith(q)
       const bStarts = b.name.toLowerCase().startsWith(q)
@@ -275,7 +339,22 @@ export default function OnboardingWizard({
 
       return 0
     })
-  }, [universitySearch])
+  }, [universitySearch, geoCountry])
+
+  // Filtered secondary schools matching search across regional catalog
+  const filteredSecondarySchools = useMemo(() => {
+    const pool = getSecondarySchools(geoCountry)
+    const q = secondarySearch.toLowerCase().trim()
+    if (!q) return pool.slice(0, 50)
+    return pool.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.code.toLowerCase().includes(q) ||
+        s.city.toLowerCase().includes(q) ||
+        s.curriculum.toLowerCase().includes(q) ||
+        s.country.toLowerCase().includes(q)
+    )
+  }, [secondarySearch, geoCountry])
 
   // Current academic level years list
   const activeLevelYears = useMemo(() => {
@@ -362,9 +441,10 @@ export default function OnboardingWizard({
   }
 
   // ── Finish & Provision ────────────────────────────────────────────────────
-  const finalUniversity = isCustomUniversity
-    ? customUniversityName.trim() || 'My University'
-    : selectedUniversity
+  const isSecondary = institutionSector === 'secondary'
+  const finalUniversity = isSecondary
+    ? (isCustomSecondary ? customSecondaryName.trim() || 'My Secondary School' : selectedSecondarySchool)
+    : (isCustomUniversity ? customUniversityName.trim() || 'My University' : selectedUniversity)
 
   const activeEnrolledCourses = enrolledCourses.filter((c) => c.selected)
 
@@ -374,16 +454,22 @@ export default function OnboardingWizard({
       // 1. Save student profile — localStorage for instant client reads, DO for agent injection
       const trimmedName = displayName.trim()
       const studentName = trimmedName || currentUser?.name || ''
+      const finalProgram = isSecondary ? secondaryTrack : degreeProgram
+      const finalLevel = isSecondary ? 'Secondary / High School' : academicLevel
+      const finalYear = isSecondary ? secondaryLevel : academicYear
 
       saveStudentProfile({
         name: studentName,
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
+        institutionSector,
         university: finalUniversity,
-        universityDetails: isCustomUniversity ? null : selectedUniversityDetails,
-        degreeProgram,
-        academicLevel,
-        academicYear,
+        universityDetails: !isSecondary && !isCustomUniversity ? selectedUniversityDetails : null,
+        secondarySchoolDetails: isSecondary && !isCustomSecondary ? selectedSecondarySchoolDetails : null,
+        degreeProgram: finalProgram,
+        streamOrCombination: isSecondary ? secondaryTrack : undefined,
+        academicLevel: finalLevel,
+        academicYear: finalYear,
         semester,
         citationStyle,
         courses: activeEnrolledCourses,
@@ -395,9 +481,9 @@ export default function OnboardingWizard({
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
         university: finalUniversity,
-        degreeProgram,
-        academicLevel,
-        academicYear,
+        degreeProgram: finalProgram,
+        academicLevel: finalLevel,
+        academicYear: finalYear,
         semester,
         citationStyle,
         courses: activeEnrolledCourses.map(c => ({ code: c.code, name: c.name })),
@@ -597,241 +683,513 @@ export default function OnboardingWizard({
               {/* ══════════════════════════════════════════════════════════════
                   STEP 1: CAMPUS & DEGREE STANDING
               ══════════════════════════════════════════════════════════════ */}
+              {/* ══════════════════════════════════════════════════════════════
+                  STEP 1: CAMPUS & DEGREE / SCHOOL STANDING
+              ══════════════════════════════════════════════════════════════ */}
               {step === 1 && (
-                <div className="space-y-5">
-                  {/* University / Campus Picker */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-kumo-default">
-                        University or College Campus
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setIsCustomUniversity(!isCustomUniversity)}
-                        className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
-                      >
-                        {isCustomUniversity ? 'Select from registry' : 'Enter custom campus'}
-                      </button>
-                    </div>
+                <div className="space-y-4">
+                  {/* Institution Sector Segmented Switch */}
+                  <div className="p-1 rounded-xl bg-kumo-base border border-kumo-line flex items-center gap-1.5 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setInstitutionSector('higher_ed')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                        institutionSector === 'higher_ed'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint'
+                      }`}
+                    >
+                      <GraduationCap size={15} weight="bold" />
+                      University &amp; College
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInstitutionSector('secondary')
+                        if (!secondaryTrack) setSecondaryTrack(activeSecondarySystem.defaultTracks[0])
+                        if (!secondaryLevel) setSecondaryLevel(activeSecondarySystem.levels[0].label)
+                      }}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                        institutionSector === 'secondary'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint'
+                      }`}
+                    >
+                      <BookOpen size={15} weight="bold" />
+                      Secondary &amp; High School
+                    </button>
+                  </div>
 
-                    {isCustomUniversity ? (
-                      <input
-                        type="text"
-                        value={customUniversityName}
-                        onChange={(e) => setCustomUniversityName(e.target.value)}
-                        placeholder="e.g. University of Cape Coast, Dedan Kimathi University..."
-                        className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
-                      />
-                    ) : (
-                      <div className="relative" ref={dropdownRef}>
-                        {/* Search Bar */}
-                        <div className="relative">
-                          <MagnifyingGlass
-                            size={14}
-                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-kumo-inactive pointer-events-none"
-                          />
-                          <input
-                            type="text"
-                            value={universitySearch}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              setUniversitySearch(val)
-                              setIsDropdownOpen(val.trim().length > 0)
-                            }}
-                            onFocus={() => {
-                              if (universitySearch.trim().length > 0) {
-                                setIsDropdownOpen(true)
-                              }
-                            }}
-                            placeholder="Type to search university (e.g. UoN, JKUAT, DeKUT, Harvard, Oxford)..."
-                            className="w-full pl-9 pr-8 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500 transition-colors shadow-sm"
-                          />
-                          {universitySearch && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setUniversitySearch('')
-                                setIsDropdownOpen(false)
-                              }}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded text-kumo-inactive hover:text-kumo-default text-xs transition-colors"
-                              aria-label="Clear search"
-                            >
-                              <X size={12} weight="bold" />
-                            </button>
-                          )}
+                  {institutionSector === 'higher_ed' ? (
+                    <>
+                      {/* University / Campus Picker */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-kumo-default">
+                            University or College Campus
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setIsCustomUniversity(!isCustomUniversity)}
+                            className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
+                          >
+                            {isCustomUniversity ? 'Select from registry' : 'Enter custom campus'}
+                          </button>
                         </div>
 
-                        {/* Current Selected Campus Badge (visible when closed) */}
-                        {selectedUniversity && !isDropdownOpen && (
-                          <div className="mt-2 flex items-center justify-between p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-xs">
-                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                              <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                                <GraduationCap size={16} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-semibold text-kumo-default truncate">{selectedUniversity}</p>
-                                {selectedUniversityDetails && (
-                                  <p className="text-[10px] text-kumo-subtle truncate">
-                                    {selectedUniversityDetails.city}, {selectedUniversityDetails.country} · {selectedUniversityDetails.code}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-medium px-2 py-0.5 rounded-full shrink-0">
-                              Selected
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Dropdown Menu - only opens once user starts typing */}
-                        {isDropdownOpen && universitySearch.trim().length > 0 && (
-                          <div className="mt-1.5 border border-kumo-line rounded-xl bg-kumo-base shadow-xl overflow-hidden z-20">
-                            <div className="px-3 py-1.5 bg-kumo-tint/50 border-b border-kumo-line flex items-center justify-between text-[11px] text-kumo-subtle">
-                              <span>
-                                Matching universities ({filteredUniversities.length})
-                              </span>
-                              <span className="text-[10px]">Select your campus</span>
-                            </div>
-
-                            <div className="max-h-52 overflow-y-auto p-1.5 space-y-1">
-                              {filteredUniversities.slice(0, 50).map((u) => {
-                                const isChosen = selectedUniversity === u.name
-                                return (
-                                  <div
-                                    key={u.id}
-                                    onClick={() => {
-                                      setSelectedUniversity(u.name)
-                                      setSelectedUniversityDetails(u)
-                                      setIsDropdownOpen(false)
-                                      setUniversitySearch('')
-                                    }}
-                                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
-                                      isChosen
-                                        ? 'bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30'
-                                        : 'hover:bg-kumo-tint text-kumo-default'
-                                    }`}
-                                  >
-                                    <div className="min-w-0 pr-2">
-                                      <p className="truncate font-medium">{u.name}</p>
-                                      <p className="text-[10px] text-kumo-subtle">
-                                        {u.city}, {u.country} · {u.code}
-                                        {u.acronyms && u.acronyms.length > 0 && (
-                                          <span className="ml-1 text-indigo-400/80">({u.acronyms.join(', ')})</span>
-                                        )}
-                                      </p>
-                                    </div>
-                                    {isChosen && (
-                                      <CheckCircle
-                                        size={14}
-                                        weight="fill"
-                                        className="text-indigo-400 shrink-0"
-                                      />
-                                    )}
-                                  </div>
-                                )
-                              })}
-
-                              {filteredUniversities.length === 0 && (
-                                <div className="py-4 px-3 text-center">
-                                  <p className="text-xs text-kumo-subtle">
-                                    No universities matching &ldquo;{universitySearch}&rdquo;
-                                  </p>
+                        {isCustomUniversity ? (
+                          <input
+                            type="text"
+                            value={customUniversityName}
+                            onChange={(e) => setCustomUniversityName(e.target.value)}
+                            placeholder="e.g. University of Cape Coast, Dedan Kimathi University..."
+                            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                          />
+                        ) : (
+                          <div className="relative" ref={dropdownRef}>
+                            {/* Search Bar */}
+                            <div className="relative">
+                              <MagnifyingGlass
+                                size={14}
+                                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-kumo-inactive pointer-events-none"
+                              />
+                              <input
+                                type="text"
+                                value={universitySearch}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setUniversitySearch(val)
+                                  setIsDropdownOpen(true)
+                                }}
+                                onFocus={() => setIsDropdownOpen(true)}
+                                onClick={() => setIsDropdownOpen(true)}
+                                placeholder="Type to search university (e.g. IUEA, Makerere, UoN, Harvard)..."
+                                className="w-full pl-9 pr-14 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500 transition-colors shadow-sm"
+                              />
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                {universitySearch && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setIsCustomUniversity(true)
-                                      setCustomUniversityName(universitySearch)
-                                      setIsDropdownOpen(false)
+                                    onClick={(e) => {
+                                      e.stopPropagation()
                                       setUniversitySearch('')
                                     }}
-                                    className="mt-2 inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium"
+                                    className="p-0.5 rounded text-kumo-inactive hover:text-kumo-default text-xs transition-colors"
+                                    aria-label="Clear search"
                                   >
-                                    <Plus size={12} /> Use &ldquo;{universitySearch}&rdquo; as custom campus
+                                    <X size={12} weight="bold" />
                                   </button>
-                                </div>
-                              )}
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setIsDropdownOpen(!isDropdownOpen)
+                                  }}
+                                  className="p-0.5 rounded text-kumo-inactive hover:text-kumo-default text-xs transition-colors"
+                                  aria-label="Toggle university list"
+                                >
+                                  <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                              </div>
                             </div>
+
+                            {/* Current Selected Campus Badge (visible when closed) */}
+                            {selectedUniversity && !isDropdownOpen && (
+                              <div className="mt-2 flex items-center justify-between p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-xs">
+                                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                  <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                    <GraduationCap size={16} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-kumo-default truncate">{selectedUniversity}</p>
+                                    {selectedUniversityDetails && (
+                                      <p className="text-[10px] text-kumo-subtle truncate">
+                                        {selectedUniversityDetails.city}, {selectedUniversityDetails.country} · {selectedUniversityDetails.code}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-medium px-2 py-0.5 rounded-full shrink-0">
+                                  Selected
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Dropdown Menu */}
+                            {isDropdownOpen && (
+                              <div className="mt-1.5 border border-kumo-line rounded-xl bg-kumo-base shadow-xl overflow-hidden z-20">
+                                <div className="px-3 py-1.5 bg-kumo-tint/50 border-b border-kumo-line flex items-center justify-between text-[11px] text-kumo-subtle">
+                                  <span>
+                                    {universitySearch.trim().length > 0
+                                      ? `Matching universities (${filteredUniversities.length})`
+                                      : `All Universities & Campuses (${filteredUniversities.length})`}
+                                  </span>
+                                  <span className="text-[10px]">Select your campus</span>
+                                </div>
+
+                                <div className="max-h-52 overflow-y-auto p-1.5 space-y-1">
+                                  {filteredUniversities.slice(0, 50).map((u) => {
+                                    const isChosen = selectedUniversity === u.name
+                                    return (
+                                      <div
+                                        key={u.id}
+                                        onClick={() => {
+                                          setSelectedUniversity(u.name)
+                                          setSelectedUniversityDetails(u)
+                                          setIsDropdownOpen(false)
+                                          setUniversitySearch('')
+                                        }}
+                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
+                                          isChosen
+                                            ? 'bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30'
+                                            : 'hover:bg-kumo-tint text-kumo-default'
+                                        }`}
+                                      >
+                                        <div className="min-w-0 pr-2">
+                                          <p className="truncate font-medium">{u.name}</p>
+                                          <p className="text-[10px] text-kumo-subtle">
+                                            {u.city}, {u.country} · {u.code}
+                                            {u.acronyms && u.acronyms.length > 0 && (
+                                              <span className="ml-1 text-indigo-400/80">({u.acronyms.join(', ')})</span>
+                                            )}
+                                          </p>
+                                        </div>
+                                        {isChosen && (
+                                          <CheckCircle
+                                            size={14}
+                                            weight="fill"
+                                            className="text-indigo-400 shrink-0"
+                                          />
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+
+                                  {filteredUniversities.length === 0 && (
+                                    <div className="py-4 px-3 text-center">
+                                      <p className="text-xs text-kumo-subtle">
+                                        No universities matching &ldquo;{universitySearch}&rdquo;
+                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setIsCustomUniversity(true)
+                                          setCustomUniversityName(universitySearch)
+                                          setIsDropdownOpen(false)
+                                          setUniversitySearch('')
+                                        }}
+                                        className="mt-2 inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium"
+                                      >
+                                        <Plus size={12} /> Use &ldquo;{universitySearch}&rdquo; as custom campus
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Degree Program & Level */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div>
-                      <label className="block text-xs font-semibold text-kumo-default mb-1.5">
-                        Degree Program
-                      </label>
-                      <input
-                        type="text"
-                        value={degreeProgram}
-                        onChange={(e) => setDegreeProgram(e.target.value)}
-                        placeholder="e.g. B.Sc. Computer Science"
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
-                      />
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {activePersona.defaultDegrees.slice(0, 3).map((d) => (
-                          <button
-                            key={d}
-                            type="button"
-                            onClick={() => setDegreeProgram(d)}
-                            className="text-[10px] text-kumo-subtle hover:text-indigo-400 truncate max-w-full"
+                      {/* Degree Program & Level */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-xs font-semibold text-kumo-default mb-1.5">
+                            Degree Program
+                          </label>
+                          <input
+                            type="text"
+                            value={degreeProgram}
+                            onChange={(e) => setDegreeProgram(e.target.value)}
+                            placeholder="e.g. B.Sc. Computer Science"
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                          />
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {activePersona.defaultDegrees.slice(0, 3).map((d) => (
+                              <button
+                                key={d}
+                                type="button"
+                                onClick={() => setDegreeProgram(d)}
+                                className="text-[10px] text-kumo-subtle hover:text-indigo-400 truncate max-w-full"
+                              >
+                                • {d}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-kumo-default mb-1.5">
+                            Academic Standing / Year
+                          </label>
+                          <select
+                            value={academicYear}
+                            onChange={(e) => setAcademicYear(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default focus:outline-none focus:border-indigo-500 cursor-pointer"
                           >
-                            • {d}
+                            {activeLevelYears.map((y) => (
+                              <option key={y} value={y}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="mt-2 flex items-center gap-2">
+                            <select
+                              value={academicLevel}
+                              onChange={(e) => {
+                                setAcademicLevel(e.target.value)
+                                const found = ACADEMIC_LEVELS.find((l) => l.id === e.target.value)
+                                if (found && found.years.length > 0) {
+                                  setAcademicYear(found.years[0])
+                                }
+                              }}
+                              className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-kumo-line bg-kumo-tint text-kumo-subtle focus:outline-none"
+                            >
+                              {ACADEMIC_LEVELS.map((l) => (
+                                <option key={l.id} value={l.id}>
+                                  {l.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={semester}
+                              onChange={(e) => setSemester(e.target.value)}
+                              className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-kumo-line bg-kumo-tint text-kumo-subtle focus:outline-none"
+                            >
+                              {SEMESTERS.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Secondary School / High School Picker */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-kumo-default">
+                            Secondary School / High School
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setIsCustomSecondary(!isCustomSecondary)}
+                            className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
+                          >
+                            {isCustomSecondary ? 'Select from regional registry' : 'Enter custom school'}
                           </button>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-kumo-default mb-1.5">
-                        Academic Standing / Year
-                      </label>
-                      <select
-                        value={academicYear}
-                        onChange={(e) => setAcademicYear(e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default focus:outline-none focus:border-indigo-500 cursor-pointer"
-                      >
-                        {activeLevelYears.map((y) => (
-                          <option key={y} value={y}>
-                            {y}
-                          </option>
-                        ))}
-                      </select>
+                        {isCustomSecondary ? (
+                          <input
+                            type="text"
+                            value={customSecondaryName}
+                            onChange={(e) => setCustomSecondaryName(e.target.value)}
+                            placeholder="e.g. St. Henry's College Kitovu, Nairobi School..."
+                            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                          />
+                        ) : (
+                          <div className="relative" ref={secondaryDropdownRef}>
+                            <div className="relative">
+                              <MagnifyingGlass
+                                size={14}
+                                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-kumo-inactive pointer-events-none"
+                              />
+                              <input
+                                type="text"
+                                value={secondarySearch}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setSecondarySearch(val)
+                                  setIsSecondaryDropdownOpen(true)
+                                }}
+                                onFocus={() => setIsSecondaryDropdownOpen(true)}
+                                onClick={() => setIsSecondaryDropdownOpen(true)}
+                                placeholder="Search secondary school (e.g. Kibuli, Alliance, Budo, PRESEC, Exeter)..."
+                                className="w-full pl-9 pr-14 py-2.5 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500 transition-colors shadow-sm"
+                              />
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                {secondarySearch && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setSecondarySearch('')
+                                    }}
+                                    className="p-0.5 rounded text-kumo-inactive hover:text-kumo-default text-xs transition-colors"
+                                    aria-label="Clear search"
+                                  >
+                                    <X size={12} weight="bold" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setIsSecondaryDropdownOpen(!isSecondaryDropdownOpen)
+                                  }}
+                                  className="p-0.5 rounded text-kumo-inactive hover:text-kumo-default text-xs transition-colors"
+                                  aria-label="Toggle secondary school list"
+                                >
+                                  <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${isSecondaryDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                              </div>
+                            </div>
 
-                      <div className="mt-2 flex items-center gap-2">
-                        <select
-                          value={academicLevel}
-                          onChange={(e) => {
-                            setAcademicLevel(e.target.value)
-                            const found = ACADEMIC_LEVELS.find((l) => l.id === e.target.value)
-                            if (found && found.years.length > 0) {
-                              setAcademicYear(found.years[0])
-                            }
-                          }}
-                          className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-kumo-line bg-kumo-tint text-kumo-subtle focus:outline-none"
-                        >
-                          {ACADEMIC_LEVELS.map((l) => (
-                            <option key={l.id} value={l.id}>
-                              {l.label}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={semester}
-                          onChange={(e) => setSemester(e.target.value)}
-                          className="flex-1 px-2 py-1 text-[11px] rounded-lg border border-kumo-line bg-kumo-tint text-kumo-subtle focus:outline-none"
-                        >
-                          {SEMESTERS.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
+                            {/* Current Selected Secondary School Badge */}
+                            {selectedSecondarySchool && !isSecondaryDropdownOpen && (
+                              <div className="mt-2 flex items-center justify-between p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-xs">
+                                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                  <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                                    <BookOpen size={16} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-kumo-default truncate">{selectedSecondarySchool}</p>
+                                    {selectedSecondarySchoolDetails && (
+                                      <p className="text-[10px] text-kumo-subtle truncate">
+                                        {selectedSecondarySchoolDetails.city}, {selectedSecondarySchoolDetails.country} · {selectedSecondarySchoolDetails.curriculum}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-medium px-2 py-0.5 rounded-full shrink-0">
+                                  Selected
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Dropdown Menu */}
+                            {isSecondaryDropdownOpen && (
+                              <div className="mt-1.5 border border-kumo-line rounded-xl bg-kumo-base shadow-xl overflow-hidden z-20">
+                                <div className="px-3 py-1.5 bg-kumo-tint/50 border-b border-kumo-line flex items-center justify-between text-[11px] text-kumo-subtle">
+                                  <span>
+                                    {secondarySearch.trim().length > 0
+                                      ? `Matching schools (${filteredSecondarySchools.length})`
+                                      : `Regional Secondary Schools (${filteredSecondarySchools.length})`}
+                                  </span>
+                                  <span className="text-[10px]">Select your school</span>
+                                </div>
+
+                                <div className="max-h-52 overflow-y-auto p-1.5 space-y-1">
+                                  {filteredSecondarySchools.map((s) => {
+                                    const isChosen = selectedSecondarySchool === s.name
+                                    return (
+                                      <div
+                                        key={s.id}
+                                        onClick={() => {
+                                          setSelectedSecondarySchool(s.name)
+                                          setSelectedSecondarySchoolDetails(s)
+                                          setIsSecondaryDropdownOpen(false)
+                                          setSecondarySearch('')
+                                          const sys = getRegionalSecondarySystem(s.countryCode)
+                                          if (sys.defaultTracks.length > 0) setSecondaryTrack(sys.defaultTracks[0])
+                                          if (sys.levels.length > 0) setSecondaryLevel(sys.levels[0].label)
+                                        }}
+                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
+                                          isChosen
+                                            ? 'bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30'
+                                            : 'hover:bg-kumo-tint text-kumo-default'
+                                        }`}
+                                      >
+                                        <div className="min-w-0 pr-2">
+                                          <p className="truncate font-medium">{s.name}</p>
+                                          <p className="text-[10px] text-kumo-subtle">
+                                            {s.city}, {s.country} · {s.curriculum}
+                                          </p>
+                                        </div>
+                                        {isChosen && (
+                                          <CheckCircle
+                                            size={14}
+                                            weight="fill"
+                                            className="text-indigo-400 shrink-0"
+                                          />
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+
+                                  {filteredSecondarySchools.length === 0 && (
+                                    <div className="py-4 px-3 text-center">
+                                      <p className="text-xs text-kumo-subtle">
+                                        No secondary schools matching &ldquo;{secondarySearch}&rdquo;
+                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setIsCustomSecondary(true)
+                                          setCustomSecondaryName(secondarySearch)
+                                          setIsSecondaryDropdownOpen(false)
+                                          setSecondarySearch('')
+                                        }}
+                                        className="mt-2 inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium"
+                                      >
+                                        <Plus size={12} /> Use &ldquo;{secondarySearch}&rdquo; as custom school
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
+
+                      {/* Combination / Track & Class Standing */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-xs font-semibold text-kumo-default mb-1.5">
+                            Combination / Stream / Track
+                          </label>
+                          <input
+                            type="text"
+                            value={secondaryTrack}
+                            onChange={(e) => setSecondaryTrack(e.target.value)}
+                            placeholder="e.g. PCM (Physics, Chemistry, Math) or Sciences"
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default placeholder:text-kumo-inactive focus:outline-none focus:border-indigo-500"
+                          />
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {activeSecondarySystem.defaultTracks.slice(0, 3).map((trk) => (
+                              <button
+                                key={trk}
+                                type="button"
+                                onClick={() => setSecondaryTrack(trk)}
+                                className="text-[10px] text-kumo-subtle hover:text-indigo-400 truncate max-w-full"
+                              >
+                                • {trk}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-kumo-default mb-1.5">
+                            Class Standing / Form ({activeSecondarySystem.systemName})
+                          </label>
+                          <select
+                            value={secondaryLevel}
+                            onChange={(e) => setSecondaryLevel(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-kumo-line bg-kumo-base text-kumo-default focus:outline-none focus:border-indigo-500 cursor-pointer"
+                          >
+                            {activeSecondarySystem.levels.map((lvl) => (
+                              <option key={lvl.id} value={lvl.label}>
+                                {lvl.label} ({lvl.stage})
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="mt-2 p-2 rounded-lg bg-kumo-tint border border-kumo-line flex items-center justify-between text-[11px] text-kumo-subtle">
+                            <span>Exam Board: <strong className="text-kumo-default">{activeSecondarySystem.systemName}</strong></span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-medium">National Prep Mode</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1164,21 +1522,27 @@ export default function OnboardingWizard({
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2 border-t border-kumo-line/60">
                       <div className="p-2.5 rounded-xl bg-kumo-tint">
-                        <p className="text-[10px] text-kumo-subtle">Degree Program</p>
+                        <p className="text-[10px] text-kumo-subtle">
+                          {isSecondary ? 'Track / Combination' : 'Degree Program'}
+                        </p>
                         <p className="text-xs font-semibold text-kumo-default truncate mt-0.5">
-                          {degreeProgram}
+                          {isSecondary ? secondaryTrack : degreeProgram}
                         </p>
                       </div>
                       <div className="p-2.5 rounded-xl bg-kumo-tint">
-                        <p className="text-[10px] text-kumo-subtle">Standing &amp; Term</p>
+                        <p className="text-[10px] text-kumo-subtle">
+                          {isSecondary ? 'Class / Form' : 'Standing & Term'}
+                        </p>
                         <p className="text-xs font-semibold text-kumo-default truncate mt-0.5">
-                          {academicYear}
+                          {isSecondary ? secondaryLevel : academicYear}
                         </p>
                       </div>
                       <div className="p-2.5 rounded-xl bg-kumo-tint">
-                        <p className="text-[10px] text-kumo-subtle">Citation Standard</p>
+                        <p className="text-[10px] text-kumo-subtle">
+                          {isSecondary ? 'Curriculum' : 'Citation Standard'}
+                        </p>
                         <p className="text-xs font-semibold text-indigo-400 truncate mt-0.5">
-                          {citationStyle} Standard
+                          {isSecondary ? activeSecondarySystem.systemName : `${citationStyle} Standard`}
                         </p>
                       </div>
                     </div>

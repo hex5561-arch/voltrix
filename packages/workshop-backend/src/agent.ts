@@ -709,10 +709,11 @@ When a user asks:
    - \`preset\`: the frame preset ("cobalt-grid", "cartesian", "code-editorial")
 
 3. **Pre-rendered & Pipeline Video Library:**
-   - **General Relativity** (Status: READY):
+   - **General Relativity & Gravity** (Status: READY):
      \`\`\`hyperframes
-     {"topic":"General Relativity","title":"General Relativity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
+     {"topic":"General Relativity & Gravity","title":"General Relativity & Gravity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
      \`\`\`
+     IMPORTANT: Gravity IS General Relativity (Einstein's geometric theory of gravity). Whenever the user asks for a video on **Gravity**, **Gravitation**, **General Relativity**, or **Spacetime**, ALWAYS emit \`status: "ready"\` with path \`/api/hf-videos/general-relativity.mp4\`. Never mark Gravity as "generating" or make the user wait for a render.
    - **Calculus & Limits** (Status: PIPELINE / GENERATING):
      \`\`\`hyperframes
      {"topic":"Calculus","title":"Calculus & Limits Explained","status":"generating","preset":"cobalt-grid"}
@@ -725,6 +726,9 @@ When a user asks:
      Emit the \`hyperframes\` block with \`status: "generating"\`, \`title: "<Topic> Explained"\`, \`preset: "cobalt-grid"\`, and accompany it with a breakdown of key scenes, visual metaphors, and core principles being illustrated.
 
 4. **Do NOT write a \`client.js\` or create an empty gadget** when the user asks for a HyperFrames explainer video. The \`hyperframes\` card directly triggers playback in the Gadget UI when the user clicks Play.
+
+5. **No Internal Scratchpad or Monologue in Chat:**
+   Never output internal thoughts, density metrics, token estimations, prompt analysis, or meta-instructions (e.g. "Density field progress", "Should I mention...", "Keep tone warm"). Start your reply immediately with the friendly, direct answer to the student.
 
 # Publishing Videos to YouTube
 
@@ -3205,15 +3209,27 @@ export async function runAgent(
         let msgs: AiChatMessageBodyWithModelData[] = [];
 
         {
+          let rawText = message.content.filter(block => block.type === "text")
+              .map(block => block.text).join("");
+          let extractedThinking: string[] = [];
+
+          // Strip <think>...</think> if present in the raw text
+          if (rawText.includes("<think>")) {
+            rawText = rawText.replace(/<think>([\s\S]*?)<\/think>/gi, (_, thought) => {
+              if (thought.trim()) extractedThinking.push(thought.trim());
+              return "";
+            }).trim();
+          }
+
           let msg: AiChatMessageBodyWithModelData = {
             type: "message",
-            message: message.content.filter(block => block.type === "text")
-                .map(block => block.text).join(""),
+            message: rawText,
           };
-          let reasoning = message.content
-              .flatMap(block =>
-                  block.type === "thinking" && !block.redacted ? [block.thinking] : [])
-              .join("\n\n");
+          let reasoning = [
+            ...message.content.flatMap(block =>
+                block.type === "thinking" && !block.redacted ? [block.thinking] : []),
+            ...extractedThinking
+          ].join("\n\n").trim();
           if (reasoning) {
             msg.reasoning = reasoning;
           }

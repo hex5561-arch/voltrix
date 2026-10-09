@@ -44,79 +44,16 @@ async function devAutoLogin(stub: RpcStub<PublicApi>): Promise<void> {
   }
 }
 
-// WebSocket RPC connection management.
-//
-// React's useEffect / useState machinery is kind of obnoxious in that, in dev mode, it runs
-// everything twice (runs once, immediately cleans up, then runs again). This isn't so good for
-// our WebSocket as it means we are creating redundant connections to the server and throwing
-// them away instantly. It gets even worse when we start trying to handle disconnects gracefully:
-// we can end up with two connections that are fighting to replace each other.
-//
-// Or maybe I (Kenton) was just holding it wrong, idk.
-//
-// Anyway, I pulled the connection management out into these globals instead.
-let lastConnectTime: number = 0;
-let backoff: number = 1000;
+import {
+  currentStub,
+  isConnectionLost,
+  notifyCurrentStubUpdated,
+  markConnectionRestored,
+} from './connectionManager'
 
-function getBackendHost(): string {
-  // Only the Vite dev server is hosted separately from the backend. Built assets are served from
-  // the same origin in both production and run-local mode.
-  if (import.meta.env.DEV) {
-    return import.meta.env.VITE_BACKEND_HOST?.trim() || 'localhost:8787';
-  }
-  return window.location.host;
-}
+export { markConnectionRestored }
 
-function startConnection(): RpcStub<PublicApi> {
-  lastConnectTime = Date.now();
-  const apiHost = getBackendHost();
-  const wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + apiHost + '/api';
-  return newWebSocketRpcSession<PublicApi>(wsUrl);
-}
-
-async function handleBroken(error: any) {
-  console.warn('RPC connection lost:', error);
-
-  isConnectionLost = true;
-  for (let cb of notifyCurrentStubUpdated) { cb(); }
-
-  let timeSinceConnect = Date.now() - lastConnectTime;
-  if (timeSinceConnect < backoff) {
-    let waitTime = backoff - timeSinceConnect;
-    console.warn(`Will try again in ${Math.round(waitTime / 1000)} seconds...`)
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-    console.warn(`Retrying connection...`);
-    backoff = Math.min(backoff * 2, 10000);
-  } else {
-    backoff = 1000;
-  }
-
-  currentStub = startConnection();
-  currentStub.onRpcBroken(handleBroken);
-
-  // Don't clear isConnectionLost here — the new connection hasn't proven
-  // it works yet. It gets cleared by markConnectionRestored() once the
-  // app successfully communicates with the backend.
-  for (let cb of notifyCurrentStubUpdated) {
-    cb();
-  }
-}
-
-// Callbacks to call whenever `currentStub` or connection state is updated.
-let notifyCurrentStubUpdated: Set<() => void> = new Set();
-let isConnectionLost = false;
-
-/** Called externally (e.g., by auth) to indicate the connection is alive. */
-export function markConnectionRestored() {
-  if (!isConnectionLost) return;
-  isConnectionLost = false;
-  for (let cb of notifyCurrentStubUpdated) { cb(); }
-}
-
-// Current stub. handleBroken() will replace this on disconnect.
 installWorkshopErrorReporting()
-let currentStub = startConnection();
-currentStub.onRpcBroken(handleBroken);
 
 const router = createRouter()
 applyStoredThemeMode()

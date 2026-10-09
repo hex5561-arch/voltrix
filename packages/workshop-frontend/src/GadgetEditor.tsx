@@ -12,6 +12,7 @@ import {
   ArrowsOutSimple,
   Pulse,
   Sparkle,
+  FilmSlate,
   type Icon,
 } from '@phosphor-icons/react'
 import { RpcStub, RpcTarget } from 'capnweb'
@@ -841,9 +842,10 @@ export default function GadgetEditor() {
     && visibleGadgets.length <= 1
   const hasAnyApps = allGadgets.length > 0
   const showingActivity = workspaceView?.mode === 'activity'
-  const showFullEditor = layoutModeReady && (
+  const isPlayingVideo = Boolean(activeGadgetVideo || activeHyperFramesVideo)
+  const showFullEditor = isPlayingVideo || (layoutModeReady && (
     showingActivity || (hasAnyApps && (workspaceView === null ? !simpleMode : workspaceView.mode === 'app'))
-  )
+  ))
   const showOutputRail = layoutModeReady && hasAnyApps && !showFullEditor
   const paneShowsActivity = showingActivity || activityClosing
   useEffect(() => {
@@ -1635,19 +1637,29 @@ export default function GadgetEditor() {
             <div className="flex min-w-0 flex-1 items-center overflow-hidden">
               {paneShowsActivity ? (
                 <PaneLabel icon={Pulse} title="Activity" />
+              ) : isPlayingVideo && !selectedGadgetSummary ? (
+                <PaneLabel
+                  icon={FilmSlate}
+                  title={activeGadgetVideo?.title || activeHyperFramesVideo?.title || "Video"}
+                />
               ) : visibleGadgets.length > 1 ? (
                 <PaneWorkpieceTabs
                   gadgets={visibleGadgets}
                   activeId={selectedGadgetId}
                   onSelect={handleSelectWorkpiece}
                 />
-              ) : selectedGadgetSummary && (
+              ) : selectedGadgetSummary ? (
                 <PaneLabel
                   output={selectedGadgetSummary.output}
                   title={selectedGadgetSummary.title}
                   badge={selectedGadgetSummary.chatId !== undefined ? 'Draft' : undefined}
                 />
-              )}
+              ) : isPlayingVideo ? (
+                <PaneLabel
+                  icon={FilmSlate}
+                  title={activeGadgetVideo?.title || activeHyperFramesVideo?.title || "Video"}
+                />
+              ) : null}
             </div>
 
             <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -1662,17 +1674,26 @@ export default function GadgetEditor() {
                       onClick={() => setActivityView(tab.value)}
                     />
                   ))
+                  : isPlayingVideo && !selectedGadgetSummary
+                  ? [{ value: 'app' as const, label: 'Video' }].map(tab => (
+                    <PaneTab
+                      key={tab.value}
+                      active={activeTab === tab.value}
+                      label={tab.label}
+                      onClick={() => handleTabSelect(tab.value)}
+                    />
+                  ))
                   : rightTabs(selectedGadgetSummary?.output).map(tab => (
                     <PaneTab
                       key={tab.value}
                       active={activeTab === tab.value}
-                      label={tab.value === 'app' && (activeGadgetVideo ?? activeHyperFramesVideo) ? 'Video' : tab.label}
+                      label={tab.value === 'app' && isPlayingVideo ? 'Video' : tab.label}
                       onClick={() => handleTabSelect(tab.value)}
                     />
                   ))}
               </div>
 
-              {!paneShowsActivity && (
+              {!paneShowsActivity && selectedGadgetSummary && (
                 <GadgetExportMenu
                   gadget={selectedGadgetStub}
                   gadgetTitle={selectedGadgetSummary?.title ?? 'Gadget'}
@@ -1697,13 +1718,9 @@ export default function GadgetEditor() {
                 aria-label={paneShowsActivity ? 'Close activity' : 'Close gadget pane'}
                 title="Close"
                 onClick={() => {
-                  if (activeGadgetVideo) {
-                    setActiveGadgetVideo(null)
-                  } else if (activeHyperFramesVideo) {
-                    setActiveHyperFramesVideo(null)
-                  } else {
-                    closeWorkspacePane()
-                  }
+                  if (activeGadgetVideo) setActiveGadgetVideo(null)
+                  if (activeHyperFramesVideo) setActiveHyperFramesVideo(null)
+                  closeWorkspacePane()
                 }}
               >
                 <X size={16} />

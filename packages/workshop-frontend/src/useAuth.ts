@@ -58,13 +58,60 @@ export function useAuth(publicApi: RpcStub<PublicApi>) {
   useEffect(() => {
     if (CF_ACCESS_MODE) {
       authenticateWithCfAccess()
-    } else {
-      const storedToken = localStorage.getItem('authToken')
-      if (storedToken) {
-        authenticateWithToken(storedToken)
-      } else {
-        setAuthState(prev => ({ ...prev, isLoading: false }))
+      return
+    }
+
+    // Intercept OAuth code redirect callback if query params contain `code`
+    const search = window.location.search
+    if (search.includes('code=')) {
+      const params = new URLSearchParams(search)
+      const code = params.get('code')
+      const state = params.get('state')
+
+      if (code && (state === 'google' || state === 'github' || search.includes('code='))) {
+        const provider = state === 'github' ? 'github' : 'google'
+        const redirectUri = window.location.origin
+        setAuthState(prev => ({ ...prev, isLoading: true, error: null }))
+
+        fetch('/api/auth/oauth/social', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, code, redirectUri }),
+        })
+          .then((r) => r.json())
+          .then((data: any) => {
+            if (data.success && data.token) {
+              localStorage.setItem('authToken', data.token)
+              window.history.replaceState({}, document.title, window.location.pathname)
+              authenticateWithToken(data.token)
+            } else {
+              window.history.replaceState({}, document.title, window.location.pathname)
+              setAuthState({
+                token: null,
+                authenticatedApi: null,
+                isLoading: false,
+                error: data.error || 'Social sign-in failed. Please try again.',
+              })
+            }
+          })
+          .catch((err) => {
+            window.history.replaceState({}, document.title, window.location.pathname)
+            setAuthState({
+              token: null,
+              authenticatedApi: null,
+              isLoading: false,
+              error: err instanceof Error ? err.message : 'Social sign-in network error',
+            })
+          })
+        return
       }
+    }
+
+    const storedToken = localStorage.getItem('authToken')
+    if (storedToken) {
+      authenticateWithToken(storedToken)
+    } else {
+      setAuthState(prev => ({ ...prev, isLoading: false }))
     }
     return () => {
       // The authenticateWithXxx functions also dispose the old stub via their setAuthState

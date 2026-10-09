@@ -641,23 +641,77 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     workspacesCount: number;
     sessionsCount: number;
     lastActive?: string;
+    workspaces: Array<{
+      id: string;
+      title: string;
+      created?: string;
+      lastActive?: string;
+    }>;
+    outputs: Array<{
+      workpieceId: string;
+      workspaceId: string;
+      title: string;
+      noun?: string;
+    }>;
+    dailyLlmCount: { day: string; count: number } | null;
+    connectedAccountsCount: number;
+    recentSessions: Array<{
+      created: string;
+    }>;
   }> {
     const profile = this.storage.profile.get();
     const studentProf = await this.getStudentProfile();
     let count = 0;
     let latestActive: string | undefined = undefined;
+    const workspaces: Array<{ id: string; title: string; created?: string; lastActive?: string }> = [];
+
     for (const g of this.storage.gadgets.list()) {
       count++;
-      if (g.lastActive) {
-        const iso = new Date(g.lastActive).toISOString();
-        if (!latestActive || iso > latestActive) {
-          latestActive = iso;
-        }
+      const createdIso = g.created ? new Date(g.created).toISOString() : undefined;
+      const lastActiveIso = g.lastActive ? new Date(g.lastActive).toISOString() : undefined;
+      if (lastActiveIso && (!latestActive || lastActiveIso > latestActive)) {
+        latestActive = lastActiveIso;
       }
+      workspaces.push({
+        id: g.id,
+        title: g.title || "Untitled Workspace",
+        created: createdIso,
+        lastActive: lastActiveIso,
+      });
     }
-    let sessionCount = 0;
-    for (const _ of this.storage.sessions.list()) {
-      sessionCount++;
+
+    // Sort workspaces by most recently active
+    workspaces.sort((a, b) => {
+      const tA = a.lastActive || a.created || "";
+      const tB = b.lastActive || b.created || "";
+      return tB.localeCompare(tA);
+    });
+
+    const outputs: Array<{
+      workpieceId: string;
+      workspaceId: string;
+      title: string;
+      noun?: string;
+    }> = [];
+    for (const out of this.storage.outputs.list({ limit: 50 })) {
+      outputs.push({
+        workpieceId: String(out.workpieceId),
+        workspaceId: out.workspaceId,
+        title: out.title || "Untitled Output",
+        noun: out.output?.noun,
+      });
+    }
+
+    const sessions: Array<{ created: string }> = [];
+    for (const s of this.storage.sessions.list()) {
+      sessions.push({
+        created: s.created ? new Date(s.created).toISOString() : new Date().toISOString(),
+      });
+    }
+
+    let connectedAccountsCount = 0;
+    for (const _ of this.storage.connectedAccounts.list()) {
+      connectedAccountsCount++;
     }
 
     return {
@@ -668,8 +722,13 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       onboardingCompleted: this.storage.onboardingCompleted.get(),
       studentProfile: studentProf,
       workspacesCount: count,
-      sessionsCount: sessionCount,
+      sessionsCount: sessions.length,
       lastActive: latestActive,
+      workspaces: workspaces.slice(0, 20),
+      outputs: outputs.slice(0, 20),
+      dailyLlmCount: this.storage.dailyLlmCount.get(),
+      connectedAccountsCount,
+      recentSessions: sessions.slice(0, 10),
     };
   }
 

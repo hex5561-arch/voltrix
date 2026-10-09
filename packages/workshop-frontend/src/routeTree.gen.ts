@@ -21,6 +21,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as WorkspacesRouteImport } from './routes/workspaces'
+import { Route as AdminCommandCenterRouteImport } from './routes/admin_.command-center'
 import { Route as BlueprintIdRouteImport } from './routes/blueprint.$id'
 import { Route as GadgetIdRouteImport } from './routes/gadget.$id'
 import { Route as GatekeepersAppIdRouteImport } from './routes/gatekeepers_.$appId'
@@ -86,6 +87,11 @@ const WorkspacesRoute = WorkspacesRouteImport.update({
   path: '/workspaces',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminCommandCenterRoute = AdminCommandCenterRouteImport.update({
+  id: '/admin_/command-center',
+  path: '/admin/command-center',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BlueprintIdRoute = BlueprintIdRouteImport.update({
   id: '/blueprint/$id',
   path: '/blueprint/$id',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
   '/workspaces': typeof WorkspacesRoute
+  '/admin/command-center': typeof AdminCommandCenterRoute
   '/blueprint/$id': typeof BlueprintIdRoute
   '/gadget/$id': typeof GadgetIdRoute
   '/gatekeepers/$appId': typeof GatekeepersAppIdRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
   '/workspaces': typeof WorkspacesRoute
+  '/admin/command-center': typeof AdminCommandCenterRoute
   '/blueprint/$id': typeof BlueprintIdRoute
   '/gadget/$id': typeof GadgetIdRoute
   '/gatekeepers/$appId': typeof GatekeepersAppIdRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
   '/workspaces': typeof WorkspacesRoute
+  '/admin_/command-center': typeof AdminCommandCenterRoute
   '/blueprint/$id': typeof BlueprintIdRoute
   '/gadget/$id': typeof GadgetIdRoute
   '/gatekeepers_/$appId': typeof GatekeepersAppIdRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/providers'
     | '/signup'
     | '/workspaces'
+    | '/admin/command-center'
     | '/blueprint/$id'
     | '/gadget/$id'
     | '/gatekeepers/$appId'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/providers'
     | '/signup'
     | '/workspaces'
+    | '/admin/command-center'
     | '/blueprint/$id'
     | '/gadget/$id'
     | '/gatekeepers/$appId'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/providers'
     | '/signup'
     | '/workspaces'
+    | '/admin_/command-center'
     | '/blueprint/$id'
     | '/gadget/$id'
     | '/gatekeepers_/$appId'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   ProvidersRoute: typeof ProvidersRoute
   SignupRoute: typeof SignupRoute
   WorkspacesRoute: typeof WorkspacesRoute
+  AdminCommandCenterRoute: typeof AdminCommandCenterRoute
   BlueprintIdRoute: typeof BlueprintIdRoute
   GadgetIdRoute: typeof GadgetIdRoute
   GatekeepersAppIdRoute: typeof GatekeepersAppIdRoute
@@ -324,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspacesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/command-center': {
+      id: '/admin_/command-center'
+      path: '/admin/command-center'
+      fullPath: '/admin/command-center'
+      preLoaderRoute: typeof AdminCommandCenterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/blueprint/$id': {
       id: '/blueprint/$id'
       path: '/blueprint/$id'
@@ -368,6 +388,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProvidersRoute: ProvidersRoute,
   SignupRoute: SignupRoute,
   WorkspacesRoute: WorkspacesRoute,
+  AdminCommandCenterRoute: AdminCommandCenterRoute,
   BlueprintIdRoute: BlueprintIdRoute,
   GadgetIdRoute: GadgetIdRoute,
   GatekeepersAppIdRoute: GatekeepersAppIdRoute,

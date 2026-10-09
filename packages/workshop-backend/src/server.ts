@@ -1144,6 +1144,154 @@ const DEFAULT_PLAN_REASONS = [
   }
 ];
 
+async function sendReceiptEmail(env: Env, invoice: any) {
+  const uEmail = invoice?.userId?.toLowerCase()?.trim();
+  if (!uEmail || !uEmail.includes('@')) return;
+
+  const formattedAmount = `${invoice.currency} ${(invoice.amount || 0).toLocaleString()}`;
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"/></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0f19; color: #f1f5f9; padding: 24px; margin: 0;">
+  <div style="max-width: 560px; margin: 0 auto; background-color: #111827; border-radius: 16px; border: 1px solid #1f2937; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 20px; margin-bottom: 24px;">
+      <h2 style="margin: 0; color: #6366f1; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">Voltrix OS</h2>
+      <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 9999px; border: 1px solid rgba(16, 185, 129, 0.3);">PAID &bull; ACTIVE</span>
+    </div>
+
+    <h3 style="margin: 0 0 8px; font-size: 18px; color: #ffffff;">Payment Receipt & Subscription Confirmation</h3>
+    <p style="margin: 0 0 20px; font-size: 14px; color: #94a3b8; line-height: 1.5;">
+      Thank you for subscribing. Your account has been upgraded and your subscription to <strong>${invoice.planLabel}</strong> is now active.
+    </p>
+
+    <div style="background-color: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #334155;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Invoice Number</td>
+          <td style="padding: 6px 0; text-align: right; color: #e2e8f0; font-family: monospace; font-weight: 600;">${invoice.invoiceId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Billed To</td>
+          <td style="padding: 6px 0; text-align: right; color: #e2e8f0; font-weight: 500;">${invoice.userId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Plan</td>
+          <td style="padding: 6px 0; text-align: right; color: #818cf8; font-weight: 600;">${invoice.planLabel}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Duration</td>
+          <td style="padding: 6px 0; text-align: right; color: #e2e8f0; font-weight: 500;">${invoice.months || 1} month(s)</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Payment Method</td>
+          <td style="padding: 6px 0; text-align: right; color: #e2e8f0; font-weight: 500;">${invoice.paymentMethod || 'Credit / Debit Card'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Billing Model</td>
+          <td style="padding: 6px 0; text-align: right; color: #e2e8f0; font-weight: 500;">${invoice.autoRenew ? 'Automatic renewal' : 'Manual renewal'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8;">Date</td>
+          <td style="padding: 6px 0; text-align: right; color: #e2e8f0; font-weight: 500;">${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+        </tr>
+        <tr style="border-top: 1px solid #334155;">
+          <td style="padding: 14px 0 4px; font-weight: 700; color: #ffffff; font-size: 15px;">Total Paid</td>
+          <td style="padding: 14px 0 4px; text-align: right; font-weight: 800; color: #34d399; font-size: 18px;">${formattedAmount}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="margin: 0 0 24px; font-size: 13px; color: #94a3b8; line-height: 1.5;">
+      Your tax invoice has also been deposited into your in-app <strong>Voltrix Inbox</strong>, where you can review and print it at any time.
+    </p>
+
+    <div style="text-align: center;">
+      <a href="https://voltrix.stream" style="display: inline-block; background-color: #4f46e5; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 28px; border-radius: 8px;">
+        Open Voltrix Workspace
+      </a>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  // 1. Try sending via GATEKEEPER_EMAIL binding
+  try {
+    const emailGatekeeper = (env as any).GATEKEEPER_EMAIL;
+    if (emailGatekeeper && typeof emailGatekeeper.sendSystemEmail === 'function') {
+      const ok = await emailGatekeeper.sendSystemEmail(
+        uEmail,
+        `Payment Receipt: Voltrix ${invoice.planLabel} (${invoice.invoiceId})`,
+        html,
+        "Voltrix Billing <noreply@em.voltrix.stream>"
+      );
+      if (ok) {
+        logger.info("Receipt sent via GATEKEEPER_EMAIL", { event: "receipt_sent_gatekeeper" });
+        return;
+      }
+    }
+  } catch (e) {
+    logger.warn("GATEKEEPER_EMAIL sendSystemEmail threw error", { event: "gatekeeper_email_error" });
+  }
+
+  // 2. Direct Resend API fallback if key available
+  const resendKey = (env as any).RESEND_API_KEY;
+  if (resendKey) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "Voltrix Billing <noreply@em.voltrix.stream>",
+          to: [uEmail],
+          subject: `Payment Receipt: Voltrix ${invoice.planLabel} (${invoice.invoiceId})`,
+          html,
+        }),
+      });
+    } catch (e) {
+      logger.warn("Direct Resend fetch failed", { event: "resend_fetch_error" });
+    }
+  }
+}
+
+async function recordInvoiceAndInbox(env: Env, invoice: any) {
+  const uEmail = invoice.userId?.toLowerCase()?.trim();
+  if (!uEmail) return;
+
+  // 1. Save invoice by tracking ID
+  await env.BLUEPRINTS.put(`inv:${invoice.orderTrackingId}`, JSON.stringify(invoice));
+
+  // 2. Save invoice by invoice ID
+  if (invoice.invoiceId) {
+    await env.BLUEPRINTS.put(`inv:${invoice.invoiceId}`, JSON.stringify(invoice));
+  }
+
+  // 3. User invoices list
+  const userInvKey = `user_inv:${uEmail}`;
+  const existingInvoices = (await env.BLUEPRINTS.get(userInvKey, "json")) as any[] || [];
+  const updatedInvoices = [invoice, ...existingInvoices.filter((i: any) => i.invoiceId !== invoice.invoiceId)].slice(0, 50);
+  await env.BLUEPRINTS.put(userInvKey, JSON.stringify(updatedInvoices));
+
+  // 4. User inbox message
+  const userInboxKey = `inbox:${uEmail}`;
+  const existingInbox = (await env.BLUEPRINTS.get(userInboxKey, "json")) as any[] || [];
+  const inboxItem = {
+    id: `msg_inv_${invoice.orderTrackingId || Date.now()}`,
+    type: 'invoice',
+    title: `Receipt & Tax Invoice: ${invoice.planLabel} (${invoice.invoiceId})`,
+    sender: { name: 'Voltrix Billing System', role: 'system' },
+    recipient: uEmail,
+    content: `Your subscription to ${invoice.planLabel} for ${invoice.months || 1} month(s) was confirmed. Total paid: ${invoice.currency} ${(invoice.amount || 0).toLocaleString()}. Your workspace is fully unlocked.`,
+    invoice,
+    read: false,
+    createdAt: invoice.paidAt || new Date().toISOString()
+  };
+  const updatedInbox = [inboxItem, ...existingInbox.filter((m: any) => m.id !== inboxItem.id)].slice(0, 100);
+  await env.BLUEPRINTS.put(userInboxKey, JSON.stringify(updatedInbox));
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
@@ -1203,14 +1351,14 @@ export default {
 
     // ── HyperFrames Video Serving ──
     // GET /api/hf-videos/:name  — serves an MP4 stored in R2 under the key `hf-videos/<name>`
-    if (req.method === "GET" && url.pathname.startsWith("/api/hf-videos/")) {
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/api/hf-videos/")) {
       const name = url.pathname.slice("/api/hf-videos/".length);
       if (!name || name.includes("..") || !name.endsWith(".mp4")) {
         return new Response("Not Found", { status: 404 });
       }
       const obj = await env.BLUEPRINT_CONTENT.get(`hf-videos/${name}`);
       if (!obj) return new Response("Not Found", { status: 404 });
-      return new Response(obj.body, {
+      return new Response(req.method === "HEAD" ? null : obj.body, {
         headers: {
           "Content-Type": "video/mp4",
           "Cache-Control": "public, max-age=86400",
@@ -1732,7 +1880,7 @@ export default {
             await env.BLUEPRINTS.put(`u:${uEmail}`, JSON.stringify(uRecord));
           }
         } catch (e) {
-          logger.warn("Could not record geo migration", { error: e });
+          logger.warn("Could not record geo migration", { event: "geo_migration_error" });
         }
       }
       return Response.json({ success: true, geo });
@@ -2021,6 +2169,91 @@ export default {
         }
         return Response.json({ success: false, error: "Cohort not found" }, { status: 404 });
       }
+    }
+
+    // Cohorts: DELETE /api/cohorts/:id
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/cohorts/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const cohortId = parts[2];
+      if (!cohortId) {
+        return Response.json({ success: false, error: "Cohort ID required" }, { status: 400 });
+      }
+
+      const cohort = (await env.BLUEPRINTS.get(`coh:${cohortId}`, "json")) as any;
+      if (cohort?.joinCode) {
+        await env.BLUEPRINTS.delete(`coh_code:${cohort.joinCode}`);
+      }
+
+      await env.BLUEPRINTS.delete(`coh:${cohortId}`);
+      await env.BLUEPRINTS.delete(`coh:${cohortId}:members`);
+      await env.BLUEPRINTS.delete(`coh:${cohortId}:announcements`);
+      await env.BLUEPRINTS.delete(`coh:${cohortId}:rubrics`);
+
+      const allCohorts = (await env.BLUEPRINTS.get("sys:cohorts", "json")) as any[] || [];
+      const updatedAll = allCohorts.filter(c => c.id !== cohortId);
+      await env.BLUEPRINTS.put("sys:cohorts", JSON.stringify(updatedAll));
+
+      return Response.json({ success: true, deleted: cohortId });
+    }
+
+    // Cohorts: POST /api/cohorts/:id/members/add
+    if (req.method === "POST" && url.pathname.includes("/members/add")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const cohortId = parts[2];
+      const body = await req.json().catch(() => ({})) as any;
+      const email = (body.email || "").toLowerCase().trim();
+      const name = (body.name || email.split("@")[0] || "Scholar").trim();
+      const role = body.role || 'learner';
+
+      if (!cohortId || !email) {
+        return Response.json({ success: false, error: "cohortId and student email required" }, { status: 400 });
+      }
+
+      const members = (await env.BLUEPRINTS.get(`coh:${cohortId}:members`, "json")) as any[] || [];
+      const existing = members.find(m => m.email?.toLowerCase() === email);
+      if (existing) {
+        existing.role = role;
+        existing.name = name;
+      } else {
+        members.push({
+          email,
+          name,
+          role,
+          queriesUsed: 0,
+          lastActive: new Date().toISOString(),
+          struggleTopics: []
+        });
+      }
+      await env.BLUEPRINTS.put(`coh:${cohortId}:members`, JSON.stringify(members));
+
+      const cohort = (await env.BLUEPRINTS.get(`coh:${cohortId}`, "json")) as any;
+      if (cohort) {
+        cohort.currentSeats = members.length;
+        await env.BLUEPRINTS.put(`coh:${cohortId}`, JSON.stringify(cohort));
+      }
+
+      return Response.json({ success: true, count: members.length, members });
+    }
+
+    // Admin Users Plan Override: POST /api/admin/users/plan
+    if (req.method === "POST" && url.pathname === "/api/admin/users/plan") {
+      const body = await req.json().catch(() => ({})) as any;
+      const email = (body.email || body.userId || "").toLowerCase().trim();
+      const { plan, isPro, dailyQueryLimit, cohortId } = body;
+      if (!email) {
+        return Response.json({ success: false, error: "email or userId required" }, { status: 400 });
+      }
+
+      const uKey = `u:${email.toLowerCase().trim()}`;
+      const userRec = (await env.BLUEPRINTS.get(uKey, "json")) as any || { id: email };
+      if (plan !== undefined) userRec.plan = plan;
+      if (isPro !== undefined) userRec.isPro = !!isPro;
+      if (dailyQueryLimit !== undefined) userRec.dailyQueryLimit = Number(dailyQueryLimit);
+      if (cohortId !== undefined) userRec.cohortId = cohortId;
+      userRec.updatedAt = new Date().toISOString();
+
+      await env.BLUEPRINTS.put(uKey, JSON.stringify(userRec));
+      return Response.json({ success: true, user: userRec });
     }
 
     // Cohorts: POST /api/cohorts/:id/variables (Educator Levers)
@@ -2330,66 +2563,35 @@ export default {
     if (req.method === "POST" && url.pathname === "/api/payments/initiate") {
       try {
         const body = await req.json().catch(() => ({})) as any;
-        const { userId, tier, currency, amount, email, phone, firstName, lastName } = body;
+        const { userId, tier, currency, amount, email, phone, firstName, lastName, months, paymentMethod, cardDetails, autoRenew, planLabel } = body;
         const targetTier = tier === 'scholar' ? 'pro' : (tier || 'pro');
+        const durationMonths = Math.max(1, parseInt(months) || 1);
         const orderId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const trackingId = `trk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const userEmail = (email || userId || "").toLowerCase().trim();
+        const activeMethod = paymentMethod === 'mobile_money'
+          ? (currency === 'KES' ? 'M-Pesa' : 'MTN / Airtel Mobile Money')
+          : 'Credit / Debit Card';
+        const label = planLabel || (targetTier === 'campus' ? 'Campus Institutional' : targetTier === 'cohort' ? 'Study Cohort' : 'Scholar Pro');
+        const totalAmount = parseFloat(amount) || 9.99;
 
-        // Check if Pesapal credentials exist in env
-        const pesapalKey = (env as any).PESAPAL_CONSUMER_KEY;
-        const pesapalSecret = (env as any).PESAPAL_CONSUMER_SECRET;
-        let redirectUrl = `${url.origin}/pricing?success=1&order=${trackingId}&tier=${targetTier}`;
-
-        if (pesapalKey && pesapalSecret) {
-          try {
-            const isLive = (env as any).PESAPAL_ENV === 'live';
-            const pesapalBase = isLive ? 'https://pay.pesapal.com/v3' : 'https://cybqa.pesapal.com/pesapalv3';
-            const authRes = await fetch(`${pesapalBase}/api/Auth/RequestToken`, {
-              method: 'POST',
-              headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-              body: JSON.stringify({ consumer_key: pesapalKey, consumer_secret: pesapalSecret }),
-            });
-            const authData = await authRes.json() as any;
-            if (authData?.token) {
-              const ipnRes = await fetch(`${pesapalBase}/api/URLSetup/RegisterIPN`, {
-                method: 'POST',
-                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': `Bearer ${authData.token}` },
-                body: JSON.stringify({ url: `${url.origin}/api/payments/ipn`, ipn_notification_type: 'POST' }),
-              });
-              const ipnData = await ipnRes.json() as any;
-              const notificationId = ipnData?.ipn_id || ipnData?.notification_id;
-
-              const orderReq = await fetch(`${pesapalBase}/api/Transactions/SubmitOrderRequest`, {
-                method: 'POST',
-                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': `Bearer ${authData.token}` },
-                body: JSON.stringify({
-                  id: orderId,
-                  currency: currency || 'USD',
-                  amount: parseFloat(amount) || 9.99,
-                  description: `Voltrix OS ${targetTier.toUpperCase()} Plan`.slice(0, 100),
-                  callback_url: `${url.origin}/api/payments/callback`,
-                  cancellation_url: `${url.origin}/pricing?cancelled=1`,
-                  notification_id: notificationId,
-                  redirect_mode: 'TOP_WINDOW',
-                  billing_address: {
-                    email_address: userEmail,
-                    phone_number: phone || '',
-                    first_name: firstName || 'Scholar',
-                    last_name: lastName || '',
-                    country_code: body.countryCode || 'UG',
-                  },
-                }),
-              });
-              const orderData = await orderReq.json() as any;
-              if (orderData?.redirect_url) {
-                redirectUrl = orderData.redirect_url;
-              }
-            }
-          } catch (pErr) {
-            logger.warn("Pesapal gateway request failed, using instant edge confirmation", { error: pErr });
-          }
-        }
+        // Construct official Voltrix Invoice
+        const invoice = {
+          invoiceId: `INV-${orderId.slice(-6).toUpperCase()}`,
+          orderTrackingId: trackingId,
+          orderId,
+          userId: userEmail,
+          tier: targetTier,
+          planLabel: label,
+          amount: totalAmount,
+          currency: currency || 'USD',
+          months: durationMonths,
+          paymentMethod: activeMethod,
+          autoRenew: autoRenew !== false,
+          processor: 'Voltrix Secure Billing',
+          paidAt: new Date().toISOString(),
+          status: 'PAID'
+        };
 
         // Persist order in KV
         const orderRecord = {
@@ -2397,31 +2599,65 @@ export default {
           order_tracking_id: trackingId,
           userId: userEmail,
           tier: targetTier,
+          planLabel: label,
           currency: currency || 'USD',
-          amount: parseFloat(amount) || 0,
-          status: 'PENDING',
+          amount: totalAmount,
+          months: durationMonths,
+          paymentMethod: activeMethod,
+          autoRenew: autoRenew !== false,
+          status: 'PAID',
           createdAt: new Date().toISOString()
         };
         await env.BLUEPRINTS.put(`ord:${trackingId}`, JSON.stringify(orderRecord));
 
-        // Add to transactions ledger
+        // 1. Upgrade user tier in KV and DO immediately
+        if (userEmail) {
+          await env.BLUEPRINTS.put(`u:${userEmail}`, JSON.stringify({
+            id: userEmail,
+            plan: targetTier,
+            isPro: targetTier !== 'free',
+            upgradedAt: Date.now()
+          }));
+
+          try {
+            const userDoId = ctx.exports.UserDurableObject.idFromName(userEmail);
+            const userStub = ctx.exports.UserDurableObject.get(userDoId);
+            const prof = await userStub.getStudentProfile();
+            if (prof) {
+              await userStub.setStudentProfile({ ...prof, tier: targetTier, isPro: targetTier !== 'free' } as any);
+            }
+          } catch (e) {
+            logger.warn("Could not sync User DO profile on payment", { event: "user_sync_payment_error" });
+          }
+
+          // 2. Persist invoice & inbox notification
+          await recordInvoiceAndInbox(env, invoice);
+
+          // 3. Dispatch Resend receipt email to payer
+          ctx.waitUntil(sendReceiptEmail(env, invoice));
+        }
+
+        // 4. Add to transactions ledger
         const currentTx = (await env.BLUEPRINTS.get("sys:transactions", "json")) as any[] || [];
         const newTx = {
           id: `tx_${Date.now().toString().slice(-4)}`,
-          student: userEmail || 'guest@scholar.os',
-          plan: targetTier === 'campus' ? 'Campus Institutional' : 'Scholar Pro',
-          method: currency === 'UGX' ? 'Pesapal (MTN/Airtel Money)' : currency === 'KES' ? 'Pesapal (M-Pesa)' : 'Pesapal (Visa/Mastercard)',
+          student: userEmail || 'scholar@voltrix.stream',
+          plan: label,
+          amount: totalAmount,
+          currency: currency || 'USD',
+          method: activeMethod,
           status: 'verified',
-          processor: 'pesapal',
+          processor: 'Voltrix Secure Billing',
           timestamp: new Date().toISOString()
         };
         await env.BLUEPRINTS.put("sys:transactions", JSON.stringify([newTx, ...currentTx].slice(0, 100)));
 
         return Response.json({
           success: true,
-          redirect_url: redirectUrl,
+          completed: true,
           order_tracking_id: trackingId,
           order_id: orderId,
+          invoice
         });
       } catch (err: any) {
         return Response.json({ success: false, error: err?.message || "Payment initiation failed" }, { status: 500 });
@@ -2437,7 +2673,6 @@ export default {
       let invoice: any = null;
 
       if (ordData && ordData.userId) {
-        // Upgrade user tier in KV and DO
         const uEmail = ordData.userId;
         const tier = ordData.tier || 'pro';
         await env.BLUEPRINTS.put(`u:${uEmail}`, JSON.stringify({
@@ -2456,7 +2691,6 @@ export default {
           }
         } catch {}
 
-        // Persist official Pesapal receipt / invoice
         invoice = {
           invoiceId: `INV-${id.slice(-6).toUpperCase()}`,
           orderTrackingId: id,
@@ -2466,11 +2700,16 @@ export default {
           planLabel: ordData.planLabel || (tier === 'campus' ? 'Campus Institutional' : tier === 'cohort' ? 'Study Cohort' : 'Scholar Pro'),
           amount: ordData.amount,
           currency: ordData.currency,
-          processor: 'Pesapal Payment Gateway',
-          paidAt: new Date().toISOString(),
+          months: ordData.months || 1,
+          paymentMethod: ordData.paymentMethod || 'Credit / Debit Card',
+          autoRenew: ordData.autoRenew !== false,
+          processor: 'Voltrix Secure Billing',
+          paidAt: ordData.createdAt || new Date().toISOString(),
           status: 'PAID'
         };
-        await env.BLUEPRINTS.put(`inv:${id}`, JSON.stringify(invoice));
+
+        await recordInvoiceAndInbox(env, invoice);
+        ctx.waitUntil(sendReceiptEmail(env, invoice));
       }
 
       return Response.json({
@@ -2479,9 +2718,122 @@ export default {
         status_code: 1,
         tier: ordData?.tier || 'pro',
         order_tracking_id: id,
-        processor: 'pesapal',
+        processor: 'Voltrix Secure Billing',
         invoice
       });
+    }
+
+    // Inbox: GET /api/inbox — retrieve user notifications, receipts & announcements
+    if (req.method === "GET" && url.pathname === "/api/inbox") {
+      try {
+        const userParam = url.searchParams.get("user")?.toLowerCase()?.trim() || "";
+        const userInboxKey = userParam ? `inbox:${userParam}` : "";
+        const userMessages = userParam ? ((await env.BLUEPRINTS.get(userInboxKey, "json")) as any[] || []) : [];
+        const broadcastMessages = ((await env.BLUEPRINTS.get("inbox:broadcast", "json")) as any[] || []);
+
+        const combined = [...userMessages, ...broadcastMessages].sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+
+        const unreadCount = combined.filter((m: any) => !m.read).length;
+        return Response.json({ success: true, messages: combined, unreadCount });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to fetch inbox" }, { status: 500 });
+      }
+    }
+
+    // Inbox: POST /api/inbox/send — message / announcement dissemination
+    if (req.method === "POST" && url.pathname === "/api/inbox/send") {
+      try {
+        const body = await req.json().catch(() => ({})) as any;
+        const { recipient, title, content, type, senderName, senderRole, metadata } = body;
+        if (!title || !content) {
+          return Response.json({ success: false, error: "Title and content are required" }, { status: 400 });
+        }
+
+        const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const messageItem = {
+          id: msgId,
+          type: type || 'announcement',
+          title,
+          content,
+          sender: {
+            name: senderName || 'Voltrix Faculty / System',
+            role: senderRole || 'admin'
+          },
+          recipient: recipient || 'all',
+          metadata: metadata || null,
+          read: false,
+          createdAt: new Date().toISOString()
+        };
+
+        if (!recipient || recipient === 'all') {
+          const broadcasts = (await env.BLUEPRINTS.get("inbox:broadcast", "json")) as any[] || [];
+          await env.BLUEPRINTS.put("inbox:broadcast", JSON.stringify([messageItem, ...broadcasts].slice(0, 50)));
+        } else {
+          const recEmail = recipient.toLowerCase().trim();
+          const targetKey = `inbox:${recEmail}`;
+          const current = (await env.BLUEPRINTS.get(targetKey, "json")) as any[] || [];
+          await env.BLUEPRINTS.put(targetKey, JSON.stringify([messageItem, ...current].slice(0, 100)));
+        }
+
+        return Response.json({ success: true, messageId: msgId, message: messageItem });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to dispatch message" }, { status: 500 });
+      }
+    }
+
+    // Inbox: POST /api/inbox/read — mark read
+    if (req.method === "POST" && url.pathname === "/api/inbox/read") {
+      try {
+        const body = await req.json().catch(() => ({})) as any;
+        const { user, messageId, all } = body;
+        if (!user) return Response.json({ success: false, error: "User required" }, { status: 400 });
+
+        const targetKey = `inbox:${user.toLowerCase().trim()}`;
+        const current = (await env.BLUEPRINTS.get(targetKey, "json")) as any[] || [];
+        const updated = current.map((m: any) => {
+          if (all || m.id === messageId) return { ...m, read: true };
+          return m;
+        });
+        await env.BLUEPRINTS.put(targetKey, JSON.stringify(updated));
+
+        return Response.json({ success: true, readCount: updated.filter(m => m.read).length });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to mark read" }, { status: 500 });
+      }
+    }
+
+    // Billing: GET /api/billing/formula — dynamic month discount formula
+    if (req.method === "GET" && url.pathname === "/api/billing/formula") {
+      const stored = await env.BLUEPRINTS.get("sys:billing_discount_formula", "json");
+      const defaultFormula = {
+        tiers: [
+          { minMonths: 1, discountPct: 0, label: "1 Month" },
+          { minMonths: 2, discountPct: 5, label: "2 Months (5% off)" },
+          { minMonths: 3, discountPct: 10, label: "3 Months (10% off)" },
+          { minMonths: 6, discountPct: 20, label: "6 Months (20% off)" },
+          { minMonths: 12, discountPct: 33, label: "12 Months (33% off · 2 Mo Free)" },
+          { minMonths: 24, discountPct: 40, label: "24 Months (40% off)" }
+        ],
+        maxMonths: 36,
+        description: "Admin configured tiered discount formula based on subscription months."
+      };
+      return Response.json({ success: true, formula: stored || defaultFormula });
+    }
+
+    // Admin Billing Formula: POST /api/admin/billing/formula
+    if (req.method === "POST" && url.pathname === "/api/admin/billing/formula") {
+      try {
+        const body = await req.json().catch(() => ({})) as any;
+        if (!body || !Array.isArray(body.tiers)) {
+          return Response.json({ success: false, error: "Tiers array required" }, { status: 400 });
+        }
+        await env.BLUEPRINTS.put("sys:billing_discount_formula", JSON.stringify(body));
+        return Response.json({ success: true, formula: body });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to save formula" }, { status: 500 });
+      }
     }
 
     // Command Center: POST /api/admin/users/plan — superuser provision user plan
@@ -2517,7 +2869,7 @@ export default {
             } as any);
           }
         } catch (e) {
-          logger.warn("Could not update User DO studentProfile", { error: e });
+          logger.warn("Could not update User DO studentProfile", { event: "user_sync_plan_error" });
         }
 
         // 3. Append to transaction ledger

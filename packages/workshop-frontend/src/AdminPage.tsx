@@ -11,7 +11,13 @@ import {
   CheckCircle,
   Clock,
   BookOpen,
+  ChartLineUp,
+  Lightning,
+  Cpu,
+  ArrowSquareOut,
+  ShieldCheck,
 } from '@phosphor-icons/react'
+import CommandCenterView from './CommandCenterView'
 import { useAuthenticatedApi } from './AuthContext'
 import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR } from '@gadgets/workshop-shared/api'
 import { applyAccentColor, DEFAULT_ACCENT_COLOR } from './theme'
@@ -106,6 +112,23 @@ export default function AdminPage() {
     workspacesCount: number
     sessionsCount: number
     lastActive?: string
+    workspaces?: Array<{
+      id: string
+      title: string
+      created?: string
+      lastActive?: string
+    }>
+    outputs?: Array<{
+      workpieceId: string
+      workspaceId: string
+      title: string
+      noun?: string
+    }>
+    dailyLlmCount?: { day: string; count: number } | null
+    connectedAccountsCount?: number
+    recentSessions?: Array<{
+      created: string
+    }>
   }
   const [usersList, setUsersList] = useState<AdminUserRecord[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
@@ -436,11 +459,21 @@ export default function AdminPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1040px] px-4 sm:px-8 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-kumo-default">Admin</h1>
-        <p className="text-sm text-kumo-subtle mt-1">
-          Deployment-wide settings. Changes apply to all users on their next connection.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-kumo-default">Admin</h1>
+          <p className="text-sm text-kumo-subtle mt-1">
+            Deployment-wide settings. Changes apply to all users on their next connection.
+          </p>
+        </div>
+        <a
+          href="/admin/command-center"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-xs transition shadow-sm w-fit"
+        >
+          <ShieldCheck size={16} weight="duotone" />
+          <span>Launch Command Center</span>
+          <ArrowSquareOut size={12} />
+        </a>
       </div>
 
       <Tabs
@@ -450,11 +483,19 @@ export default function AdminPage() {
         tabs={[
           { value: 'general', label: 'General' },
           { value: 'users', label: 'App Users' },
+          { value: 'command-center', label: 'Command Center' },
           { value: 'gatekeepers', label: 'Gatekeepers' },
           { value: 'formats', label: 'Formats' },
           { value: 'access', label: 'Access' },
         ]}
       />
+
+      {/* Embedded Command Center view */}
+      {activeTab === 'command-center' && (
+        <div className="rounded-3xl border border-kumo-line overflow-hidden shadow-2xl">
+          <CommandCenterView />
+        </div>
+      )}
 
       {/* Standard output formats */}
       {activeTab === 'formats' && admin && (
@@ -559,13 +600,19 @@ export default function AdminPage() {
                       return (
                         <tr key={user.id} className="hover:bg-kumo-tint/30 transition-colors">
                           <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUser(user)}
+                              className="flex items-center gap-2.5 text-left group focus:outline-none"
+                            >
+                              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 group-hover:scale-105 transition-transform flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
                                 {user.displayName.charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-kumo-default truncate">{user.displayName}</span>
+                                  <span className="font-bold text-kumo-default group-hover:text-kumo-brand transition-colors truncate">
+                                    {user.displayName}
+                                  </span>
                                   {user.id === 'captain' && (
                                     <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
                                       Admin
@@ -574,7 +621,7 @@ export default function AdminPage() {
                                 </div>
                                 <p className="text-[11px] text-kumo-subtle truncate">@{user.id}</p>
                               </div>
-                            </div>
+                            </button>
                           </td>
                           <td className="py-3.5 px-4">
                             {prof ? (
@@ -636,18 +683,38 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* User Detail Inspect Drawer / Modal */}
+          {/* Full User Picture & Deep Activity Inspect Drawer / Modal */}
           {selectedUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <div className="w-full max-w-lg bg-kumo-elevated border border-kumo-line rounded-3xl p-6 shadow-2xl space-y-4">
-                <div className="flex items-center justify-between border-b border-kumo-line pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+              <div className="w-full max-w-2xl bg-kumo-elevated border border-kumo-line rounded-3xl p-6 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+                {/* Header Banner */}
+                <div className="flex items-start justify-between border-b border-kumo-line pb-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-600 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
                       {selectedUser.displayName.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-kumo-default">{selectedUser.displayName}</h3>
-                      <p className="text-xs text-kumo-subtle">Username: @{selectedUser.id}</p>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-kumo-default">{selectedUser.displayName}</h3>
+                        {selectedUser.id === 'captain' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            Super Admin
+                          </span>
+                        )}
+                        {selectedUser.created && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1">
+                            <CheckCircle size={10} weight="fill" /> Active DO
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-kumo-subtle mt-0.5">
+                        Username: <span className="font-mono text-kumo-default">@{selectedUser.id}</span>
+                        {selectedUser.lastActive && (
+                          <span className="ml-3 text-[11px] text-kumo-inactive">
+                            Last Active: {new Date(selectedUser.lastActive).toLocaleString()}
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)}>
@@ -655,56 +722,224 @@ export default function AdminPage() {
                   </Button>
                 </div>
 
+                {/* KPI Metrics Strip */}
+                <div className="grid grid-cols-4 gap-2.5 text-center">
+                  <div className="p-3 rounded-2xl bg-kumo-tint/40 border border-kumo-line">
+                    <div className="flex items-center justify-center gap-1 text-kumo-subtle text-[11px] mb-0.5">
+                      <BookOpen size={13} className="text-indigo-400" />
+                      <span>Workspaces</span>
+                    </div>
+                    <p className="text-lg font-bold text-kumo-default">{selectedUser.workspacesCount}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-kumo-tint/40 border border-kumo-line">
+                    <div className="flex items-center justify-center gap-1 text-kumo-subtle text-[11px] mb-0.5">
+                      <Cpu size={13} className="text-emerald-400" />
+                      <span>Outputs</span>
+                    </div>
+                    <p className="text-lg font-bold text-kumo-default">{selectedUser.outputs?.length ?? 0}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-kumo-tint/40 border border-kumo-line">
+                    <div className="flex items-center justify-center gap-1 text-kumo-subtle text-[11px] mb-0.5">
+                      <Clock size={13} className="text-amber-400" />
+                      <span>Sessions</span>
+                    </div>
+                    <p className="text-lg font-bold text-kumo-default">{selectedUser.sessionsCount}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-kumo-tint/40 border border-kumo-line">
+                    <div className="flex items-center justify-center gap-1 text-kumo-subtle text-[11px] mb-0.5">
+                      <Lightning size={13} className="text-purple-400" />
+                      <span>LLM Today</span>
+                    </div>
+                    <p className="text-lg font-bold text-kumo-default">
+                      {selectedUser.dailyLlmCount?.count ?? 0}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Section 1: Academic Profile & Context */}
                 {selectedUser.studentProfile ? (
-                  <div className="space-y-3 text-xs">
-                    <div className="p-3 rounded-2xl bg-kumo-tint/50 border border-kumo-line space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-kumo-subtle">University:</span>
-                        <span className="font-bold text-kumo-default">{selectedUser.studentProfile.university}</span>
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                      <GraduationCap size={15} className="text-indigo-500" /> Academic Dossier
+                    </h4>
+                    <div className="p-4 rounded-2xl bg-kumo-tint/50 border border-kumo-line text-xs space-y-2.5">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[11px] text-kumo-subtle block">University / Institute</span>
+                          <span className="font-bold text-kumo-default text-sm">
+                            {selectedUser.studentProfile.university}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-kumo-subtle block">Degree &amp; Program</span>
+                          <span className="font-bold text-kumo-default text-sm">
+                            {selectedUser.studentProfile.degreeProgram}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-kumo-subtle">Degree Program:</span>
-                        <span className="font-bold text-kumo-default">{selectedUser.studentProfile.degreeProgram}</span>
+                      <div className="grid grid-cols-3 gap-3 pt-1 border-t border-kumo-line/50">
+                        <div>
+                          <span className="text-[11px] text-kumo-subtle block">Discipline</span>
+                          <span className="font-semibold text-kumo-default">
+                            {selectedUser.studentProfile.disciplineTitle}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-kumo-subtle block">Level &amp; Year</span>
+                          <span className="font-semibold text-kumo-default">
+                            {selectedUser.studentProfile.academicYear} · {selectedUser.studentProfile.semester}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-kumo-subtle block">Citation Style</span>
+                          <span className="font-semibold text-kumo-default">
+                            {selectedUser.studentProfile.citationStyle}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-kumo-subtle">Discipline:</span>
-                        <span className="text-kumo-default">{selectedUser.studentProfile.disciplineTitle}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-kumo-subtle">Year &amp; Semester:</span>
-                        <span className="text-kumo-default">
-                          {selectedUser.studentProfile.academicYear} · {selectedUser.studentProfile.semester}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-kumo-subtle">Citation Style:</span>
-                        <span className="text-kumo-default">{selectedUser.studentProfile.citationStyle}</span>
-                      </div>
+
+                      {selectedUser.studentProfile.courses && selectedUser.studentProfile.courses.length > 0 && (
+                        <div className="pt-2 border-t border-kumo-line/50">
+                          <span className="text-[11px] text-kumo-subtle block mb-1">Enrolled Courses:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedUser.studentProfile.courses.map((c) => (
+                              <span
+                                key={c.code}
+                                className="px-2 py-0.5 rounded-lg bg-kumo-base border border-kumo-line text-[11px] font-medium text-kumo-default"
+                              >
+                                {c.code} · {c.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="p-3 rounded-2xl bg-kumo-tint/50 border border-kumo-line space-y-1.5">
-                      <p className="font-semibold text-kumo-subtle">Agent System Prompt Context:</p>
-                      <pre className="p-2 rounded-xl bg-kumo-base border border-kumo-line text-[11px] font-mono text-indigo-400 whitespace-pre-wrap">
-                        {`[Academic Context: Student: ${selectedUser.studentProfile.name || selectedUser.displayName} | ${selectedUser.studentProfile.university} | ${selectedUser.studentProfile.degreeProgram} (${selectedUser.studentProfile.academicYear}) | Discipline: ${selectedUser.studentProfile.disciplineTitle} | Citation Style: ${selectedUser.studentProfile.citationStyle}]`}
+                    {/* Agent Injected System Prompt Context */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-kumo-subtle block mb-1">
+                        Active Agent System Prompt Injection:
+                      </span>
+                      <pre className="p-3 rounded-2xl bg-kumo-base border border-kumo-line text-[11px] font-mono text-indigo-400 whitespace-pre-wrap leading-relaxed">
+                        {`[Academic Context: Student: ${selectedUser.studentProfile.name || selectedUser.displayName} | ${selectedUser.studentProfile.university} | ${selectedUser.studentProfile.degreeProgram} (${selectedUser.studentProfile.academicYear}) | Discipline: ${selectedUser.studentProfile.disciplineTitle} | Citation Style: ${selectedUser.studentProfile.citationStyle}${
+                          selectedUser.studentProfile.courses?.length
+                            ? ` | Enrolled: ${selectedUser.studentProfile.courses.map((c) => c.code).join(', ')}`
+                            : ''
+                        }]`}
                       </pre>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-center">
-                      <div className="p-2.5 rounded-xl bg-kumo-tint/40 border border-kumo-line">
-                        <span className="text-kumo-subtle text-[11px]">Workspaces</span>
-                        <p className="text-base font-bold text-kumo-default">{selectedUser.workspacesCount}</p>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-kumo-tint/40 border border-kumo-line">
-                        <span className="text-kumo-subtle text-[11px]">Active Sessions</span>
-                        <p className="text-base font-bold text-kumo-default">{selectedUser.sessionsCount}</p>
-                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="py-6 text-center text-kumo-subtle text-xs">
+                  <div className="p-4 rounded-2xl bg-kumo-tint/30 border border-kumo-line text-center text-kumo-subtle text-xs">
                     <p>No student profile registered for this account.</p>
                   </div>
                 )}
+
+                {/* Section 2: Research Workspaces Activity */}
+                <div className="space-y-2 pt-2 border-t border-kumo-line">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                      <BookOpen size={15} className="text-emerald-500" /> Research Workspaces &amp; Gadgets
+                    </h4>
+                    <span className="text-[11px] text-kumo-subtle">
+                      {selectedUser.workspaces?.length ?? 0} listed
+                    </span>
+                  </div>
+
+                  {selectedUser.workspaces && selectedUser.workspaces.length > 0 ? (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {selectedUser.workspaces.map((ws) => (
+                        <div
+                          key={ws.id}
+                          className="p-2.5 rounded-xl bg-kumo-tint/40 border border-kumo-line flex items-center justify-between text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-kumo-default truncate">{ws.title}</p>
+                            <p className="text-[10px] text-kumo-subtle font-mono truncate">DO: {ws.id}</p>
+                          </div>
+                          <div className="text-right shrink-0 ml-3">
+                            {ws.lastActive && (
+                              <span className="text-[10px] text-kumo-subtle block">
+                                Active {new Date(ws.lastActive).toLocaleDateString()}
+                              </span>
+                            )}
+                            <a
+                              href={`/workspace/${ws.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-kumo-brand hover:underline inline-flex items-center gap-0.5 font-semibold"
+                            >
+                              <span>Open</span>
+                              <ArrowSquareOut size={11} />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-kumo-inactive italic">No workspaces created yet.</p>
+                  )}
+                </div>
+
+                {/* Section 3: Generated Outputs & Artifacts */}
+                <div className="space-y-2 pt-2 border-t border-kumo-line">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                      <ChartLineUp size={15} className="text-purple-500" /> Generated Outputs &amp; Artifacts
+                    </h4>
+                    <span className="text-[11px] text-kumo-subtle">
+                      {selectedUser.outputs?.length ?? 0} recorded
+                    </span>
+                  </div>
+
+                  {selectedUser.outputs && selectedUser.outputs.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                      {selectedUser.outputs.map((out, idx) => (
+                        <div
+                          key={`${out.workspaceId}-${out.workpieceId}-${idx}`}
+                          className="p-2 rounded-xl bg-kumo-tint/40 border border-kumo-line text-xs"
+                        >
+                          <p className="font-semibold text-kumo-default truncate">{out.title}</p>
+                          <div className="flex items-center justify-between mt-1 text-[10px] text-kumo-subtle">
+                            <span className="capitalize">{out.noun || 'artifact'}</span>
+                            {out.workspaceId ? (
+                              <a
+                                href={`/workspace/${out.workspaceId}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-kumo-brand hover:underline inline-flex items-center gap-0.5 font-medium"
+                              >
+                                <span>#{out.workpieceId}</span>
+                                <ArrowSquareOut size={10} />
+                              </a>
+                            ) : (
+                              <span className="font-mono">#{out.workpieceId}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-kumo-inactive italic">No outputs exported yet.</p>
+                  )}
+                </div>
+
+                {/* Section 4: Security & Session Log */}
+                <div className="pt-2 border-t border-kumo-line flex items-center justify-between text-xs text-kumo-subtle">
+                  <div className="flex items-center gap-4">
+                    <span>
+                      Password login: <strong className="text-kumo-default">{selectedUser.hasPassword ? 'Enabled' : 'OAuth Only'}</strong>
+                    </span>
+                    <span>
+                      Connected gatekeepers: <strong className="text-kumo-default">{selectedUser.connectedAccountsCount ?? 0}</strong>
+                    </span>
+                  </div>
+                  {selectedUser.recentSessions && selectedUser.recentSessions.length > 0 && (
+                    <span className="text-[11px]">
+                      Latest session: {new Date(selectedUser.recentSessions[0].created).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -120,46 +120,12 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
   const connectionLost = useConnectionLost()
   useDocumentTitle(tab === 'signup' ? 'Create Account' : tab === 'demo' ? 'Demo Scholars' : 'Sign In')
 
-  // Auto-handle OAuth redirect callback if query params contain `code`
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const code = params.get('code')
-    const state = params.get('state')
-    if (code && (state === 'google' || state === 'github' || window.location.search.includes('code'))) {
-      const provider = state === 'github' ? 'github' : 'google'
-      const redirectUri = window.location.origin + window.location.pathname
-      setLoading(true)
-      setError(null)
-      fetch('/api/auth/oauth/social', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, code, redirectUri }),
-      })
-        .then((r) => r.json())
-        .then((data: any) => {
-          if (data.success && data.token) {
-            localStorage.setItem('authToken', data.token)
-            window.history.replaceState({}, document.title, window.location.pathname)
-            if (onLoginSuccess) onLoginSuccess()
-            else window.location.reload()
-          } else {
-            setError(data.error || 'Social sign-in failed. Please try again.')
-            setLoading(false)
-          }
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Social sign-in network error')
-          setLoading(false)
-        })
-    }
-  }, [onLoginSuccess])
-
   // Handle Social Login button click (Google or GitHub)
   const handleSocialClick = async (provider: 'google' | 'github') => {
     setError(null)
     setOauthLoading(provider)
     try {
-      const redirectUri = window.location.origin + window.location.pathname
+      const redirectUri = window.location.origin
       const endpoint =
         provider === 'google'
           ? `/api/auth/oauth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`
@@ -320,6 +286,15 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
         <p className="text-sm text-kumo-subtle text-center">
           {connectionLost ? "Can't reach the server. Retrying…" : 'Loading…'}
         </p>
+      </div>
+    )
+  }
+
+  if (typeof window !== 'undefined' && window.location.search.includes('code=')) {
+    return (
+      <div className="min-h-screen flex items-center justify-center flex-col gap-4 bg-kumo-base">
+        <div className="w-8 h-8 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-kumo-subtle">Completing secure sign-in...</p>
       </div>
     )
   }

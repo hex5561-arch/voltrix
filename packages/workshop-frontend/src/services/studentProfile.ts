@@ -4,6 +4,8 @@ import {
   ACADEMIC_LEVELS,
   SEMESTERS,
   University,
+  SecondarySchool,
+  InstitutionSector,
 } from '../data/academicData'
 
 export interface EnrolledCourse {
@@ -17,12 +19,23 @@ export interface EnrolledCourse {
   selected?: boolean
 }
 
+export interface CohortVariables {
+  socraticMode?: boolean;
+  examLock?: boolean;
+  dailyQueryLimit?: number;
+  curriculumFocus?: string;
+  allowSharedUploads?: boolean;
+}
+
 export interface StudentProfile {
   name?: string
   discipline: string
   disciplineTitle: string
+  institutionSector?: InstitutionSector
   university: string
   universityDetails?: University | null
+  secondarySchoolDetails?: SecondarySchool | null
+  streamOrCombination?: string
   degreeProgram: string
   academicLevel: string
   academicYear: string
@@ -30,6 +43,17 @@ export interface StudentProfile {
   citationStyle: string
   courses: EnrolledCourse[]
   firstGoal?: string
+  cohortId?: string
+  cohortName?: string
+  cohortInstitution?: string
+  cohortVariables?: CohortVariables
+  subscriptionTier?: 'free' | 'scholar' | 'cohort' | 'campus'
+  subscriptionStatus?: 'active' | 'trial' | 'expired'
+  subscriptionRenewalDate?: string
+  subscriptionInvoiceId?: string
+  dailyQueriesLimit?: number
+  dailyQueriesUsed?: number
+  lastQueryDate?: string
   updatedAt: number
 }
 
@@ -113,5 +137,83 @@ export function formatStudentContextPrompt(profile?: StudentProfile | null): str
   if (!p) return ''
   const namePart = p.name ? `Student: ${p.name} | ` : ''
   const courseList = p.courses.map(c => c.code).join(', ')
-  return `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''}]`
+  const baseCtx = `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''}]`
+
+  const parts = [baseCtx];
+
+  if (p.cohortVariables?.socraticMode) {
+    parts.push(`[ACADEMIC INTEGRITY DIRECTIVE - INSTRUCTOR SOCRATIC MODE ACTIVE:
+The user is enrolled in an official cohort (${p.cohortName || 'Class Cohort'} at ${p.cohortInstitution || p.university}).
+PEDAGOGICAL CONTRACT:
+1. NEVER provide direct, complete homework solutions, fully-written essay paragraphs, or copy-pasteable answers.
+2. Guide the learner through diagnostic questions, intermediate hints, and concept verification.
+3. If the user asks for a final answer or proof, prompt them for their first step or work so far, and confirm whether they have applied the fundamental theorem/formula.]`);
+  }
+
+  if (p.cohortVariables?.curriculumFocus) {
+    parts.push(`[CURRICULUM SPECIFICATION: Focus on ${p.cohortVariables.curriculumFocus}. Ensure terminology, marking scheme principles, and notation strictly match this syllabus.]`);
+  }
+
+  return parts.join('\n\n');
 }
+
+export function isExamLocked(profile?: StudentProfile | null): boolean {
+  const p = profile ?? getStudentProfile();
+  return !!(p?.cohortVariables?.examLock);
+}
+
+export function isSocraticMode(profile?: StudentProfile | null): boolean {
+  const p = profile ?? getStudentProfile();
+  return !!(p?.cohortVariables?.socraticMode);
+}
+
+export function canSubmitQuery(profile?: StudentProfile | null): { allowed: boolean; reason?: string } {
+  const p = profile ?? getStudentProfile();
+  if (!p) return { allowed: true };
+
+  if (p.cohortVariables?.examLock) {
+    return {
+      allowed: false,
+      reason: `Exam Mode Active: AI querying is temporarily restricted during test hours by your instructor for ${p.cohortName || 'your cohort'}.`
+    };
+  }
+
+  const limit = p.cohortVariables?.dailyQueryLimit ?? 50;
+  const today = new Date().toISOString().slice(0, 10);
+  const used = p.lastQueryDate === today ? (p.dailyQueriesUsed ?? 0) : 0;
+
+  if (used >= limit) {
+    return {
+      allowed: false,
+      reason: `Daily query allowance reached (${used}/${limit} queries). Limit resets tomorrow.`
+    };
+  }
+
+  return { allowed: true };
+}
+
+export function recordQueryUsage(): void {
+  const p = getStudentProfile();
+  if (!p) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const currentUsed = p.lastQueryDate === today ? (p.dailyQueriesUsed ?? 0) : 0;
+  saveStudentProfile({
+    dailyQueriesUsed: currentUsed + 1,
+    lastQueryDate: today,
+  });
+}
+
+export function bindCohortToProfile(cohortData: {
+  cohortId: string;
+  cohortName: string;
+  institution: string;
+  variables: CohortVariables;
+}): void {
+  saveStudentProfile({
+    cohortId: cohortData.cohortId,
+    cohortName: cohortData.cohortName,
+    cohortInstitution: cohortData.institution,
+    cohortVariables: cohortData.variables,
+  });
+}
+
