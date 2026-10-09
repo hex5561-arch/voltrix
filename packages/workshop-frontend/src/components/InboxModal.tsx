@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   X, Tray, FileText, CheckCircle, Bell, PaperPlaneRight,
-  Printer, ArrowLeft, EnvelopeSimple, Sparkle, Tag
+  Printer, ArrowLeft
 } from '@phosphor-icons/react'
 import { useOptionalAuthenticatedApi } from '../AuthContext'
 

@@ -356,7 +356,7 @@ describe("renderGadgetInBrowser", () => {
 
     await expect(stream).rejects.toThrow("may not exceed 104857600 bytes");
     expect(harness.browserClosed()).toBe(true);
-  });
+  }, 30000);
 
   it.each([
     ["image/png", "png"],

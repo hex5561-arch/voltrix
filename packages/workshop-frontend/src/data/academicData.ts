@@ -1576,8 +1576,6 @@ export const UNIVERSITIES: University[] = [
 // Lazy loader and parser for the full 16,314+ university global dataset
 import rawCatalog from './universitiesCatalog.json';
 
-let _fullUniversitiesCache: University[] | null = null;
-
 export interface SecondarySchool {
   id: string;
   name: string;

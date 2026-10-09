@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import {
   X,
   GraduationCap,
-  BookOpen,
   CheckCircle,
   WarningCircle,
   Lightbulb,

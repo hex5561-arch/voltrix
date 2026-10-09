@@ -4,10 +4,10 @@ import { useDocumentTitle } from './useDocumentTitle'
 import { useOptionalAuthenticatedApi } from './AuthContext'
 import { getStudentProfile } from './services/studentProfile'
 import {
-  BookOpen, Brain, FileText, Lightning, CheckCircle, ArrowRight, ArrowLeft,
-  X, Hexagon, CurrencyDollar, Sparkle, GraduationCap, ShieldCheck,
-  Users, Key, Coins, ChartBar, Lock, User, Buildings, Phone, Check,
-  CreditCard, DeviceMobile, Tray, Printer, CalendarBlank
+  BookOpen, FileText, CheckCircle, ArrowRight, ArrowLeft,
+  X, Hexagon, GraduationCap, ShieldCheck,
+  Key, Lock, Check,
+  CreditCard, DeviceMobile, Tray, CalendarBlank
 } from '@phosphor-icons/react'
 import InboxModal from './components/InboxModal'
 
@@ -421,7 +421,7 @@ export default function PricingPage() {
   const [name, setName] = useState(() => studentProfile?.name || currentUser?.name || '')
   const [institution, setInstitution] = useState(() => studentProfile?.university || '')
   const [phone, setPhone] = useState('')
-  const [iframeUrl, setIframeUrl] = useState('')
+  const [, setIframeUrl] = useState('')
   const [trackId, setTrackId] = useState('')
   const [checkoutError, setCheckoutError] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -437,7 +437,7 @@ export default function PricingPage() {
   const [postalCode, setPostalCode] = useState('')
   const [momoProvider, setMomoProvider] = useState<'mtn' | 'airtel' | 'mpesa'>('mtn')
   const [inboxOpen, setInboxOpen] = useState(false)
-  const [formulaTiers, setFormulaTiers] = useState<Array<{ minMonths: number, discountPct: number, label: string }>>([
+  const [formulaTiers] = useState<Array<{ minMonths: number, discountPct: number, label: string }>>([
     { minMonths: 1, discountPct: 0, label: "1 Month" },
     { minMonths: 2, discountPct: 5, label: "2 Months (5% off)" },
     { minMonths: 3, discountPct: 10, label: "3 Months (10% off)" },

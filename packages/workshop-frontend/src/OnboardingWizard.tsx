@@ -34,7 +34,6 @@ import {
   SecondarySchool,
   getSecondarySchools,
   InstitutionSector,
-  REGIONAL_SECONDARY_SYSTEMS,
   getRegionalSecondarySystem,
   PERSONAS,
   ACADEMIC_LEVELS,
@@ -114,6 +113,7 @@ export default function OnboardingWizard({
   )
   const [isCustomSecondary, setIsCustomSecondary] = useState(false)
   const [customSecondaryName, setCustomSecondaryName] = useState('')
+  const [geoCountry, setGeoCountry] = useState<string>('')
 
   const activeSecondarySystem = useMemo(() => {
     const cc = selectedSecondarySchoolDetails?.countryCode || geoCountry || 'UG'
@@ -173,7 +173,6 @@ export default function OnboardingWizard({
   const [aiConfig, setAiConfig] = useState<AiGatewayInfo | null>(null)
   const [addModelOpen, setAddModelOpen] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(true)
-  const [geoCountry, setGeoCountry] = useState<string>('')
 
   // Silent Edge Geo-Intelligence: retrieve detected country for university prioritization without user badge
   useEffect(() => {

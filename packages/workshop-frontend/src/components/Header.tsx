@@ -33,9 +33,10 @@ export default function Header() {
 
   // Poll unread messages
   useEffect(() => {
-    if (!auth?.currentUser?.id) return
+    const currentUserId = auth?.currentUser?.id;
+    if (!currentUserId) return;
     const fetchUnread = () => {
-      fetch(`/api/inbox?user=${encodeURIComponent(auth.currentUser.id)}`)
+      fetch(`/api/inbox?user=${encodeURIComponent(currentUserId)}`)
         .then(r => r.json())
         .then((d: any) => {
           if (typeof d?.unreadCount === 'number') {

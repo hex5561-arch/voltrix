@@ -1,13 +1,9 @@
 import React, { useState } from 'react';
 import {
   Lightning,
-  Sparkle,
-  CheckCircle,
   Receipt,
   Users,
-  ShieldCheck,
   ArrowRight,
-  Clock,
   Coins,
 } from '@phosphor-icons/react';
 import { useNavigate } from '@tanstack/react-router';
@@ -25,7 +21,7 @@ export const AcademicSubscriptionCard: React.FC<AcademicSubscriptionCardProps> =
   onOpenCohort,
 }) => {
   const navigate = useNavigate();
-  const profile: StudentProfile = getStudentProfile();
+  const profile: StudentProfile | null = getStudentProfile();
   const [inboxOpen, setInboxOpen] = useState(false);
   const [cohortOpen, setCohortOpen] = useState(false);
 
@@ -72,7 +68,7 @@ export const AcademicSubscriptionCard: React.FC<AcademicSubscriptionCardProps> =
                 {tier === 'scholar'
                   ? 'Scholar Pro Plan'
                   : tier === 'cohort'
-                  ? `Study Cohort Member (${profile.cohortName || 'Enrolled'})`
+                  ? `Study Cohort Member (${profile?.cohortName || 'Enrolled'})`
                   : tier === 'campus'
                   ? 'Campus Institutional License'
                   : 'Starter Academic Free Tier'}

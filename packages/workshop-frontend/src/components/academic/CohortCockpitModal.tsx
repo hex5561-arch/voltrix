@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Users,
-  GraduationCap,
   Key,
   Plus,
   CheckCircle,
@@ -10,12 +9,8 @@ import {
   Sparkle,
   SlidersHorizontal,
   Megaphone,
-  Lock,
   ArrowRight,
   ShieldCheck,
-  BookOpen,
-  Warning,
-  Coins,
   ArrowsClockwise,
 } from '@phosphor-icons/react';
 import {
@@ -65,7 +60,7 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
 }) => {
   const { authenticatedApi } = useAuthenticatedApi();
   const toasts = useKumoToastManager();
-  const [profile, setProfile] = useState<StudentProfile>(getStudentProfile());
+  const [profile, setProfile] = useState<StudentProfile | null>(getStudentProfile());
   const [activeTab, setActiveTab] = useState<'join' | 'manage' | 'status'>(
     profile?.cohortId ? 'status' : initialTab
   );
@@ -78,9 +73,9 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
 
   // Active Cohort State
   const [cohort, setCohort] = useState<CohortDetail | null>(null);
-  const [loadingCohort, setLoadingCohort] = useState(false);
+  const [, setLoadingCohort] = useState(false);
   const [members, setMembers] = useState<CohortMember[]>([]);
-  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [, setLoadingMembers] = useState(false);
   const [copiedPin, setCopiedPin] = useState(false);
 
   // Educator Levers State
@@ -107,8 +102,8 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
   useEffect(() => {
     authenticatedApi.whoami().then((u) => {
       if (u) {
-        setUserEmail(u.email || '');
-        setUserName(u.name || '');
+        setUserEmail((u as any).email || '');
+        setUserName((u as any).name || '');
       }
     }).catch(() => {});
   }, [authenticatedApi]);
@@ -171,8 +166,8 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
-          studentEmail: userEmail || profile.name || 'student@voltrix.stream',
-          studentName: userName || profile.name || 'Scholar Member',
+          studentEmail: userEmail || profile?.name || 'student@voltrix.stream',
+          studentName: userName || profile?.name || 'Scholar Member',
         }),
       });
       const data = await res.json();
@@ -217,10 +212,10 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
         body: JSON.stringify({
           name: newCohortName.trim(),
           sector: newCohortSector,
-          institution: newCohortInstitution.trim() || profile.university,
-          departmentOrGrade: profile.degreeProgram || 'Academic Department',
+          institution: newCohortInstitution.trim() || profile?.university || 'Academic Institution',
+          departmentOrGrade: profile?.degreeProgram || 'Academic Department',
           educatorEmail: userEmail || 'instructor@voltrix.stream',
-          educatorName: userName || profile.name || 'Faculty Lead',
+          educatorName: userName || profile?.name || 'Faculty Lead',
           plan: 'cohort',
           maxSeats: Number(newCohortSeats) || 25,
           variables: {
@@ -298,7 +293,7 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
         body: JSON.stringify({
           title: annTitle.trim(),
           content: annBody.trim(),
-          author: userName || profile.name || 'Cohort Lead',
+          author: userName || profile?.name || 'Cohort Lead',
         }),
       });
       const data = await res.json();
@@ -315,7 +310,7 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
   };
 
   const handleCopyCode = () => {
-    const code = cohort?.joinCode || profile.cohortId;
+    const code = cohort?.joinCode || profile?.cohortId;
     if (code) {
       navigator.clipboard.writeText(code);
       setCopiedPin(true);
@@ -426,14 +421,14 @@ export const CohortCockpitModal: React.FC<CohortCockpitModalProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold text-white">
-                        {cohort?.name || profile.cohortName || 'Academic Study Cohort'}
+                        {cohort?.name || profile?.cohortName || 'Academic Study Cohort'}
                       </h3>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
                         Active Membership
                       </span>
                     </div>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      {cohort?.institution || profile.cohortInstitution || profile.university} · {cohort?.sector === 'secondary' ? 'Secondary School Track' : 'Higher Education Department'}
+                      {cohort?.institution || profile?.cohortInstitution || profile?.university} · {cohort?.sector === 'secondary' ? 'Secondary School Track' : 'Higher Education Department'}
                     </p>
                   </div>
 

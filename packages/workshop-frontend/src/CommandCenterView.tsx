@@ -579,7 +579,6 @@ export default function CommandCenterView() {
       if (res.ok) {
         setPlans(updatedPlans)
         showToast('Subscription plans updated & propagated live!')
-        setEditingPlan(null)
       }
     } catch {
       showToast('Failed to save plans.')

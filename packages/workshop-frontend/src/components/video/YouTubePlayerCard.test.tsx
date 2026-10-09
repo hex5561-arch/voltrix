@@ -113,27 +113,26 @@ describe("YouTube Engine and YouTubePlayerCard", () => {
   });
 
   describe("MarkdownMessage integration", () => {
-    it("renders interactive YouTubePlayerCard from ```youtube code block", async () => {
+    it("renders interactive YouTubeChatCard from ```youtube code block", async () => {
       const markdown = "Here is a great lecture:\n\n```youtube\nhttps://www.youtube.com/watch?v=fNk_zzaMoSs\n```";
       await render(createElement(MarkdownMessage, { message: markdown }));
 
-      const iframe = container.querySelector("iframe");
-      expect(iframe).not.toBeNull();
-      expect(iframe?.getAttribute("src")).toContain(
-        "https://www.youtube-nocookie.com/embed/fNk_zzaMoSs",
-      );
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img?.getAttribute("src")).toContain("fNk_zzaMoSs");
+      expect(container.textContent).toContain("Vectors, what even are they?");
+      expect(container.textContent).toContain("Watch");
     });
 
-    it("renders interactive YouTubePlayerCard from markdown link", async () => {
+    it("renders interactive YouTubeChatCard from markdown link", async () => {
       const markdown = "Check out [🎬 Linear Combinations](https://www.youtube.com/watch?v=k7RM-ot2NWY)";
       await render(createElement(MarkdownMessage, { message: markdown }));
 
-      const iframe = container.querySelector("iframe");
-      expect(iframe).not.toBeNull();
-      expect(iframe?.getAttribute("src")).toContain(
-        "https://www.youtube-nocookie.com/embed/k7RM-ot2NWY",
-      );
-      expect(iframe?.getAttribute("title")).toContain("Linear Combinations");
+      const img = container.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img?.getAttribute("src")).toContain("k7RM-ot2NWY");
+      expect(container.textContent).toContain("Linear Combinations");
+      expect(container.textContent).toContain("Watch");
     });
   });
 });
