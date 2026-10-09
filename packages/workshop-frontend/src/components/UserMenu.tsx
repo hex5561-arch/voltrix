@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { DropdownMenu } from '@cloudflare/kumo'
-import { Lightning, GraduationCap, Tray, Users } from '@phosphor-icons/react'
+import { Lightning, GraduationCap, Tray, Users, Calendar, FileCode, BookOpen } from '@phosphor-icons/react'
 import { useAuthenticatedApi } from '../AuthContext'
 import { useAvatar } from '../useAvatar'
 import { MENU_CONTENT, MENU_ITEM, MENU_ITEM_DANGER, MENU_POSITIONER_STYLE } from './menuStyles'
 import UpgradeModal from './UpgradeModal'
 import InboxModal from './InboxModal'
 import { CohortCockpitModal } from './academic/CohortCockpitModal'
+import { InteractiveExamGadget } from './academic/InteractiveExamGadget'
+import { TimetableVelocityWidget } from './academic/TimetableVelocityWidget'
+import { CourseworkPortfolioModal } from './academic/CourseworkPortfolioModal'
 
 export default function UserMenu() {
   const { authenticatedApi, logout, currentUser, isAdmin } = useAuthenticatedApi()
@@ -15,6 +18,9 @@ export default function UserMenu() {
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
   const [cohortOpen, setCohortOpen] = useState(false)
+  const [examOpen, setExamOpen] = useState(false)
+  const [timetableOpen, setTimetableOpen] = useState(false)
+  const [portfolioOpen, setPortfolioOpen] = useState(false)
 
   const avatarUrl = useAvatar(authenticatedApi, currentUser?.id)
 
@@ -53,6 +59,27 @@ export default function UserMenu() {
             className={MENU_ITEM}
           >
             Providers
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            onClick={() => setExamOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-kumo-default hover:bg-kumo-tint rounded-md cursor-pointer transition-colors w-full"
+          >
+            <BookOpen size={14} className="text-emerald-400" />
+            Interactive Exam Gadget
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            onClick={() => setTimetableOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-kumo-default hover:bg-kumo-tint rounded-md cursor-pointer transition-colors w-full"
+          >
+            <Calendar size={14} className="text-amber-400" />
+            Timetable &amp; Velocity
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            onClick={() => setPortfolioOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-kumo-default hover:bg-kumo-tint rounded-md cursor-pointer transition-colors w-full"
+          >
+            <FileCode size={14} className="text-cyan-400" />
+            Coursework Portfolio
           </DropdownMenu.Item>
           <DropdownMenu.Item
             onClick={() => setCohortOpen(true)}
@@ -99,6 +126,9 @@ export default function UserMenu() {
       <UpgradeModal isOpen={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
       <InboxModal isOpen={inboxOpen} onClose={() => setInboxOpen(false)} />
       <CohortCockpitModal isOpen={cohortOpen} onClose={() => setCohortOpen(false)} />
+      <InteractiveExamGadget isOpen={examOpen} onClose={() => setExamOpen(false)} />
+      <TimetableVelocityWidget isOpen={timetableOpen} onClose={() => setTimetableOpen(false)} onOpenExamGadget={() => { setTimetableOpen(false); setExamOpen(true); }} onOpenPortfolio={() => { setTimetableOpen(false); setPortfolioOpen(true); }} />
+      <CourseworkPortfolioModal isOpen={portfolioOpen} onClose={() => setPortfolioOpen(false)} />
     </>
   )
 }

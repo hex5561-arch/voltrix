@@ -17,12 +17,14 @@ interface PastPaperModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectQuestion: (question: PastPaperQuestion, paper: PastPaper, mode: 'solve' | 'hint') => void;
+  onOpenInteractiveExam?: (paperId: string, questionId: string) => void;
 }
 
 export const PastPaperModal: React.FC<PastPaperModalProps> = ({
   isOpen,
   onClose,
-  onSelectQuestion
+  onSelectQuestion,
+  onOpenInteractiveExam,
 }) => {
   const [selectedBody, setSelectedBody] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
@@ -263,6 +265,19 @@ export const PastPaperModal: React.FC<PastPaperModalProps> = ({
 
                 {/* Actions Footer */}
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-800">
+                  {onOpenInteractiveExam && (
+                    <button
+                      onClick={() => {
+                        onOpenInteractiveExam(activePaper.id, activeQuestion.id);
+                        onClose();
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition cursor-pointer"
+                    >
+                      <GraduationCap size={15} weight="fill" />
+                      Take in Interactive Exam Gadget
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       onSelectQuestion(activeQuestion, activePaper, 'hint');

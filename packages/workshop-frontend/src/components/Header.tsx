@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Hexagon, List, X, Sparkle, Tray } from '@phosphor-icons/react'
+import { Hexagon, List, X, Sparkle, Tray, Calendar, GraduationCap } from '@phosphor-icons/react'
 import { useOptionalAuthenticatedApi } from '../AuthContext'
 import { useGatekeeperApps } from '../useGatekeeperApps'
 import { useSiteName } from '../ServerConfigContext'
@@ -8,6 +8,8 @@ import UserMenu from './UserMenu'
 import TopBarNotice from '../TopBarNotice'
 import SiteLogo from './SiteLogo'
 import InboxModal from './InboxModal'
+import { InteractiveExamGadget } from './academic/InteractiveExamGadget'
+import { TimetableVelocityWidget } from './academic/TimetableVelocityWidget'
 
 export default function Header() {
   const auth = useOptionalAuthenticatedApi()
@@ -15,6 +17,8 @@ export default function Header() {
   const siteName = useSiteName()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
+  const [examOpen, setExamOpen] = useState(false)
+  const [timetableOpen, setTimetableOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
 
   const headerRef = useRef<HTMLElement>(null)
@@ -118,6 +122,30 @@ export default function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          {auth && (
+            <button
+              type="button"
+              onClick={() => setTimetableOpen(true)}
+              className="p-1.5 rounded-full text-kumo-subtle hover:text-amber-400 hover:bg-kumo-tint transition cursor-pointer"
+              title="Timetable & Velocity"
+              aria-label="Timetable & Velocity"
+            >
+              <Calendar size={17} />
+            </button>
+          )}
+
+          {auth && (
+            <button
+              type="button"
+              onClick={() => setExamOpen(true)}
+              className="p-1.5 rounded-full text-kumo-subtle hover:text-emerald-400 hover:bg-kumo-tint transition cursor-pointer"
+              title="Interactive Exam Gadget"
+              aria-label="Interactive Exam Gadget"
+            >
+              <GraduationCap size={17} />
+            </button>
+          )}
+
           {auth && (
             <button
               type="button"
@@ -248,6 +276,8 @@ export default function Header() {
       )}
     </header>
     <InboxModal isOpen={inboxOpen} onClose={() => setInboxOpen(false)} />
+    <InteractiveExamGadget isOpen={examOpen} onClose={() => setExamOpen(false)} />
+    <TimetableVelocityWidget isOpen={timetableOpen} onClose={() => setTimetableOpen(false)} onOpenExamGadget={() => { setTimetableOpen(false); setExamOpen(true); }} />
     </>
   )
 }

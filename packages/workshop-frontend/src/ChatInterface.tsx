@@ -53,6 +53,8 @@ import {
   Question,
   ArrowUpRight,
   Blueprint,
+  Microphone,
+  MicrophoneSlash,
 } from "@phosphor-icons/react";
 import { RpcStub, RpcTarget } from "capnweb";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -142,6 +144,9 @@ import {
   type StudentProfile,
 } from "./services/studentProfile";
 import { PastPaperModal } from "./components/academic/PastPaperModal";
+import { InteractiveExamGadget } from "./components/academic/InteractiveExamGadget";
+import { TimetableVelocityWidget } from "./components/academic/TimetableVelocityWidget";
+import { CourseworkPortfolioModal } from "./components/academic/CourseworkPortfolioModal";
 import type { PastPaperQuestion, PastPaper } from "./data/pastPapersData";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
 const HyperFramesChatCard = lazy(() =>
@@ -2030,6 +2035,45 @@ export const ChatInput = ({
   const skipDraftWriteRef = useRef(false);
   const draftRestoreGenerationRef = useRef(0);
 
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const voiceRecoRef = useRef<any>(null);
+
+  const toggleVoiceRecording = () => {
+    const SpeechReco = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechReco) {
+      toasts.add({ title: "Speech recognition not supported in this browser", variant: "warning" });
+      return;
+    }
+    if (isVoiceRecording) {
+      if (voiceRecoRef.current) {
+        try { voiceRecoRef.current.stop(); } catch {}
+      }
+      setIsVoiceRecording(false);
+    } else {
+      try {
+        const reco = new SpeechReco();
+        reco.continuous = false;
+        reco.interimResults = true;
+        reco.lang = 'en-US';
+        reco.onresult = (e: any) => {
+          let transcript = '';
+          for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+          if (transcript) {
+            const nextVal = inputValueRef.current ? `${inputValueRef.current} ${transcript}` : transcript;
+            handleInputChange(nextVal, nextVal.length);
+          }
+        };
+        reco.onend = () => setIsVoiceRecording(false);
+        reco.onerror = () => setIsVoiceRecording(false);
+        reco.start();
+        voiceRecoRef.current = reco;
+        setIsVoiceRecording(true);
+      } catch {
+        setIsVoiceRecording(false);
+      }
+    }
+  };
+
   const placeRestoredCaretAtEnd = (
     text: string,
     key: string | undefined,
@@ -3270,7 +3314,7 @@ export const ChatInput = ({
     // captured-log floating chip with z-10, the textarea/mirror with z-[1])
     // so they can't paint on top of body-level portaled popovers like the
     // model picker dropdown opening above the composer.
-    <div className={`px-4 py-4 relative isolate ${styles.chatInputRoot}`}>
+    <div className={`px-2.5 sm:px-4 pt-2 pb-3 sm:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] relative isolate ${styles.chatInputRoot}`}>
       <input
         ref={attachmentInputRef}
         type="file"
@@ -3321,6 +3365,58 @@ export const ChatInput = ({
           </div>
         </div>
       )}
+
+      {/* Academic Quick Action Chips */}
+      <div className="flex items-center gap-1.5 px-0.5 py-1 overflow-x-auto text-[11px] no-scrollbar scroll-smooth mb-1.5 touch-pan-x">
+        <button
+          type="button"
+          onClick={() => {
+            handleInputChange("/timetable", 10);
+            composerTextareaRef.current?.focus();
+          }}
+          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-kumo-base hover:bg-kumo-tint text-kumo-subtle hover:text-kumo-default border border-kumo-line transition-all active:scale-95 cursor-pointer whitespace-nowrap touch-manipulation"
+        >
+          <span>📅 /timetable</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            handleInputChange("/velocity", 9);
+            composerTextareaRef.current?.focus();
+          }}
+          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-kumo-base hover:bg-kumo-tint text-kumo-subtle hover:text-kumo-default border border-kumo-line transition-all active:scale-95 cursor-pointer whitespace-nowrap touch-manipulation"
+        >
+          <span>⚡ /velocity</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('voltrix-open-exam-gadget'));
+          }}
+          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all active:scale-95 cursor-pointer whitespace-nowrap font-medium touch-manipulation"
+        >
+          <span>🎓 Live Exam Gadget</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('voltrix-open-portfolio'));
+          }}
+          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 transition-all active:scale-95 cursor-pointer whitespace-nowrap font-medium touch-manipulation"
+        >
+          <span>📁 Portfolio Auditor</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            handleInputChange("/video ", 7);
+            composerTextareaRef.current?.focus();
+          }}
+          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-kumo-base hover:bg-kumo-tint text-kumo-subtle hover:text-kumo-default border border-kumo-line transition-all active:scale-95 cursor-pointer whitespace-nowrap touch-manipulation"
+        >
+          <span>🎬 /video Explainer</span>
+        </button>
+      </div>
 
       {/* Prompt card. Brighter than the page surface (kumo-control vs kumo-base) and gently lifted
           with a soft neutral shadow so the composer reads as a distinct surface instead of blending
@@ -3673,6 +3769,20 @@ export const ChatInput = ({
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu>
+              <button
+                type="button"
+                onClick={toggleVoiceRecording}
+                className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-colors ${
+                  isVoiceRecording
+                    ? "bg-red-500/20 text-red-400 animate-pulse"
+                    : "text-kumo-inactive hover:bg-kumo-tint hover:text-kumo-subtle"
+                }`}
+                title={isVoiceRecording ? "Stop voice dictation" : "Voice dictation (Speech-to-Text)"}
+                aria-label={isVoiceRecording ? "Stop voice dictation" : "Voice dictation (Speech-to-Text)"}
+              >
+                {isVoiceRecording ? <MicrophoneSlash size={16} /> : <Microphone size={16} />}
+              </button>
+
               {isAgentActive && onStop ? (
                 <WorkshopIconButton
                   onClick={onStop}
@@ -4595,6 +4705,32 @@ function ChatInterface({
   // Academic Cohort & National Syllabus state
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(() => getStudentProfile());
   const [isPastPaperOpen, setIsPastPaperOpen] = useState(false);
+  const [isExamGadgetOpen, setIsExamGadgetOpen] = useState(false);
+  const [examPaperId, setExamPaperId] = useState<string | undefined>(undefined);
+  const [examQuestionId, setExamQuestionId] = useState<string | undefined>(undefined);
+  const [isTimetableOpen, setIsTimetableOpen] = useState(false);
+  const [isPortfolioOpen, setIsPortfolioOpen] = useState(false);
+
+  useEffect(() => {
+    const onOpenExam = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.paperId) setExamPaperId(detail.paperId);
+      if (detail?.questionId) setExamQuestionId(detail.questionId);
+      setIsExamGadgetOpen(true);
+    };
+    const onOpenTt = () => setIsTimetableOpen(true);
+    const onOpenPort = () => setIsPortfolioOpen(true);
+
+    window.addEventListener('voltrix-open-exam-gadget', onOpenExam);
+    window.addEventListener('voltrix-open-timetable', onOpenTt);
+    window.addEventListener('voltrix-open-portfolio', onOpenPort);
+
+    return () => {
+      window.removeEventListener('voltrix-open-exam-gadget', onOpenExam);
+      window.removeEventListener('voltrix-open-timetable', onOpenTt);
+      window.removeEventListener('voltrix-open-portfolio', onOpenPort);
+    };
+  }, []);
   const [cohortAnnouncements, setCohortAnnouncements] = useState<any[]>([]);
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<Set<string>>(new Set());
 
@@ -8167,6 +8303,41 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
         isOpen={isPastPaperOpen}
         onClose={() => setIsPastPaperOpen(false)}
         onSelectQuestion={handleSelectPastPaperQuestion}
+        onOpenInteractiveExam={(paperId, questionId) => {
+          setExamPaperId(paperId);
+          setExamQuestionId(questionId);
+          setIsExamGadgetOpen(true);
+        }}
+      />
+      <InteractiveExamGadget
+        isOpen={isExamGadgetOpen}
+        onClose={() => setIsExamGadgetOpen(false)}
+        initialPaperId={examPaperId}
+        initialQuestionId={examQuestionId}
+      />
+      <TimetableVelocityWidget
+        isOpen={isTimetableOpen}
+        onClose={() => setIsTimetableOpen(false)}
+        onOpenExamGadget={(paperId) => {
+          setIsTimetableOpen(false);
+          setExamPaperId(paperId);
+          setIsExamGadgetOpen(true);
+        }}
+        onOpenPortfolio={() => {
+          setIsTimetableOpen(false);
+          setIsPortfolioOpen(true);
+        }}
+        onAskCopilot={(prompt) => {
+          setIsTimetableOpen(false);
+          void handleSend(prompt);
+        }}
+      />
+      <CourseworkPortfolioModal
+        isOpen={isPortfolioOpen}
+        onClose={() => setIsPortfolioOpen(false)}
+        onSendToChat={(prompt) => {
+          void handleSend(prompt);
+        }}
       />
     </div>
   );

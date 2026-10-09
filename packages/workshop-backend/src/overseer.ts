@@ -3507,10 +3507,55 @@ class OverseerImpl implements AgentHooks {
       // A built-in command is handled by the Workshop, not a Gatekeeper: there is nothing to invoke
       // here. Committing the event is what makes the turn a compaction turn (see isCompactionTurn).
       // The name is typed but arrives over RPC, and one we don't implement would commit an event and
-      // then start a turn with no prompt for the model to answer, so reject it here.
       if (message.id.builtin === true) {
-        if (message.id.commandId !== "compact" && message.id.commandId !== "youtube" && message.id.commandId !== "video" && message.id.commandId !== "publish") {
+        const allowedCommands = ["compact", "youtube", "video", "publish", "exam", "timetable", "velocity", "portfolio"];
+        if (!allowedCommands.includes(message.id.commandId)) {
           throw new Error("Unknown built-in slash command.");
+        }
+        if (message.id.commandId === "exam") {
+          let paperOrTopic = ((message as any).argument || message.args || "").trim();
+          let prompt = `Launch the Interactive Exam Gadget for the student (Topic/Paper: "${paperOrTopic || "High-Yield Multi-Disciplinary Past Paper"}").
+The interactive exam gadget supports question pagination, oral viva voce audio recording, and automated rubric scoring.
+Instruct the student to use the interactive exam workspace to test their knowledge, and provide an encouraging brief with key tips for today's revision session.`;
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "exam",
+          };
+        }
+        if (message.id.commandId === "timetable") {
+          let prompt = `Present today's full academic timetable, lecture halls, and lab checklists.
+Current Academic Status:
+- Next session starting soon.
+- Provide pre-lecture preparation checklist items, key formulas to review, and room locations.`;
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "timetable",
+          };
+        }
+        if (message.id.commandId === "velocity") {
+          let prompt = `Calculate and display the student's semester temporal velocity burn-down metrics:
+- Week 7 of 14 (Fall Semester 2026)
+- 42 Days remaining until final exams
+- 62% Syllabus Mastery vs 50% Calendar Elapsed
+- Velocity Ratio: 1.24 (Accelerated / On Track)
+Evaluate their revision trajectory against their graduation GPA target, provide reassurance as a source of trust, and recommend 2-3 specific focus areas for today.`;
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "velocity",
+          };
+        }
+        if (message.id.commandId === "portfolio") {
+          let prompt = `Prompt the student to upload their coursework draft, lab report, or code implementation for the Coursework & Project Portfolio Auditor.
+- Milestone Alert: Week 7 Engineering and Science Checkpoint
+- Let them know that Voltrix will automatically audit rubric compliance, algorithmic complexity, error margins, and IEEE/APA citations to project their grade potential (e.g. First Class Honours).`;
+          return {
+            slashCommand: message,
+            message: prompt,
+            skillName: "portfolio",
+          };
         }
         if (message.id.commandId === "youtube") {
           let query = ((message as any).argument || message.args || "").trim();
@@ -5109,6 +5154,26 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
       selection: {builtin: true, commandId: "youtube"},
       name: "youtube",
       description: "Search and embed verified academic video lectures with interactive chapters.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "exam"},
+      name: "exam",
+      description: "Launch the Interactive Exam Gadget with oral viva voce and rubric marking.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "timetable"},
+      name: "timetable",
+      description: "Display today's class schedule, lab checklists, and next session countdown.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "velocity"},
+      name: "velocity",
+      description: "Track semester burn-down, syllabus velocity vs calendar, and days to finals.",
+      providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
+    }, {
+      selection: {builtin: true, commandId: "portfolio"},
+      name: "portfolio",
+      description: "Audit coursework drafts, lab code, and reports for academic rubric compliance.",
       providerLabel: resolveSiteName((await readAdminConfig(this.env)).siteName),
     }, {
       selection: {builtin: true, commandId: "video"},

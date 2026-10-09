@@ -1383,6 +1383,39 @@ export default {
       });
     }
 
+    // ── TEMP: Admin endpoint to force Google reconnect with full scopes ──
+    // GET /api/admin/reconnect-google?username=<username>
+    // Authorization: Bearer <admin-username>
+    // Returns a URL the user must visit to re-authorize with youtube.upload scope.
+    if (req.method === "GET" && url.pathname === "/api/admin/reconnect-google") {
+      const admins: string[] = typeof env.ADMINS === "string"
+          ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
+      const auth = req.headers.get("Authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (!admins.includes(token)) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { "Content-Type": "application/json" },
+        });
+      }
+      const username = url.searchParams.get("username") ?? token;
+      try {
+        const users = ctx.exports.UserDurableObject as DurableObjectNamespace<UserDurableObject>;
+        const userStub = users.get(users.idFromName(username));
+        // connectAccount triggers ensureResources internally — passing the YouTube
+        // resource pattern forces a re-auth that includes youtube.upload scope
+        const result = await userStub.connectAccount("google", [
+          "https://www.youtube.com/channel/:channelId/*",
+        ]);
+        return new Response(JSON.stringify({ url: result.url }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: String(err) }), {
+          status: 500, headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // ── Social OAuth Endpoints (Google & GitHub) ported from CourseHero ──
     if (req.method === "GET" && url.pathname === "/api/auth/oauth/google/url") {
       const clientId = (env.GOOGLE_CLIENT_ID || "").trim();
