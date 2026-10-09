@@ -13,6 +13,11 @@ import {
   Pulse,
   Sparkle,
   FilmSlate,
+  CaretLeft,
+  ChatCircleText,
+  Lightning,
+  Code,
+  DotsThreeVertical,
   type Icon,
 } from '@phosphor-icons/react'
 import { RpcStub, RpcTarget } from 'capnweb'
@@ -489,6 +494,12 @@ export default function GadgetEditor() {
   const isUseOnly = metadata?.role === 'use'
 
   // ── layout ───────────────────────────────────────────────────────────────────
+  type MobileViewTab = 'chat' | 'app' | 'code' | 'activity'
+  const [mobileView, setMobileView] = useState<MobileViewTab>('chat')
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  )
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false)
   const [chatWidth, setChatWidth] = useState(getInitialChatWidth)
   const chatWidthRef = useRef(chatWidth)
   const [isResizing, setIsResizing] = useState(false)
@@ -846,7 +857,7 @@ export default function GadgetEditor() {
   const showFullEditor = isPlayingVideo || (layoutModeReady && (
     showingActivity || (hasAnyApps && (workspaceView === null ? !simpleMode : workspaceView.mode === 'app'))
   ))
-  const showOutputRail = layoutModeReady && hasAnyApps && !showFullEditor
+  const showOutputRail = !isMobile && layoutModeReady && hasAnyApps && !showFullEditor
   const paneShowsActivity = showingActivity || activityClosing
   useEffect(() => {
     if (!activityClosing) return
@@ -934,6 +945,7 @@ export default function GadgetEditor() {
   }, [workspaceView])
 
   const closeWorkspacePane = useCallback(() => {
+    setMobileView('chat')
     if (workspaceView?.mode !== 'activity') {
       setWorkspaceVisibility('closed')
       return
@@ -977,6 +989,7 @@ export default function GadgetEditor() {
   useEffect(() => {
     const handleResize = () => {
       setChatWidth(width => clampChatWidth(width))
+      setIsMobile(window.innerWidth < 768)
     }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
@@ -1225,6 +1238,7 @@ export default function GadgetEditor() {
     if (isAgentActive) userPickedWorkpieceThisTurnRef.current = true
     // Picking a gadget is a deliberate move to its view, so the turn must not pull the tab back.
     handleTabSelect('app')
+    setMobileView('app')
     setWorkspaceVisibility('open', workpieceId)
     const pendingChatId = workpieces.get(workpieceId)?.chatId
     navigate({
@@ -1318,7 +1332,7 @@ export default function GadgetEditor() {
   // ── shared height tokens ──────────────────────────────────────────────────────
   const TOPBAR_H = 56   // h-14 (matches home page Header)
   const TABBAR_H = 48   // h-12
-  const RIGHT_CONTENT_H = `calc(100vh - ${TOPBAR_H}px - ${TABBAR_H}px)`
+  const RIGHT_CONTENT_H = isMobile ? '100%' : `calc(100vh - ${TOPBAR_H}px - ${TABBAR_H}px)`
 
   // ── error / loading states ────────────────────────────────────────────────────
   if (error?.kind === 'open') {
@@ -1469,17 +1483,19 @@ export default function GadgetEditor() {
 
         {/* Right: presence, cost, workspace, share, blueprints */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          <GadgetPresence
-            overseer={overseer.stub}
-            authenticatedApi={authenticatedApi}
-            currentUserId={userInfo?.id ?? null}
-          />
+          <div className="hidden sm:inline-flex items-center gap-1">
+            <GadgetPresence
+              overseer={overseer.stub}
+              authenticatedApi={authenticatedApi}
+              currentUserId={userInfo?.id ?? null}
+            />
 
-          {metadata.totalCost != null && (
-            <span className="ml-3 mr-2 text-[12px] leading-4 font-normal tracking-[-0.2px] text-kumo-subtle">
-              {formatHeaderCost(metadata.totalCost)}
-            </span>
-          )}
+            {metadata.totalCost != null && (
+              <span className="ml-3 mr-2 text-[12px] leading-4 font-normal tracking-[-0.2px] text-kumo-subtle">
+                {formatHeaderCost(metadata.totalCost)}
+              </span>
+            )}
+          </div>
 
           <ActivityNotifications
             overseer={overseer.stub}
@@ -1489,49 +1505,171 @@ export default function GadgetEditor() {
 
           {connectionLost && <ReconnectingChip />}
 
-          <WorkshopIconButton
-            onClick={() => setShareModalOpen(true)}
-            title="Share workspace"
-            aria-label="Share workspace"
-          >
-            <ShareNetwork size={15} />
-          </WorkshopIconButton>
-
-          <WorkshopIconButton
-            onClick={() => setBlueprintModalOpen(true)}
-            disabled={!selectedGadgetStub}
-            title="Blueprints"
-            aria-label="Blueprints"
-          >
-            <Blueprint size={16} />
-          </WorkshopIconButton>
-
-          {!metadata.owner && (
+          <div className="hidden sm:inline-flex items-center gap-1">
             <WorkshopIconButton
-              danger
-              onClick={() => setDeleteDialogOpen(true)}
-              title="Delete workspace"
-              aria-label="Delete workspace"
+              onClick={() => setShareModalOpen(true)}
+              title="Share workspace"
+              aria-label="Share workspace"
             >
-              <Trash size={16} />
+              <ShareNetwork size={15} />
             </WorkshopIconButton>
-          )}
 
-          {/* Upgrade button */}
-          <Link
-            to="/pricing"
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
-          >
-            <Sparkle size={13} weight="fill" />
-            Upgrade
-          </Link>
+            <WorkshopIconButton
+              onClick={() => setBlueprintModalOpen(true)}
+              disabled={!selectedGadgetStub}
+              title="Blueprints"
+              aria-label="Blueprints"
+            >
+              <Blueprint size={16} />
+            </WorkshopIconButton>
+
+            {!metadata.owner && (
+              <WorkshopIconButton
+                danger
+                onClick={() => setDeleteDialogOpen(true)}
+                title="Delete workspace"
+                aria-label="Delete workspace"
+              >
+                <Trash size={16} />
+              </WorkshopIconButton>
+            )}
+
+            {/* Upgrade button */}
+            <Link
+              to="/pricing"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+            >
+              <Sparkle size={13} weight="fill" />
+              Upgrade
+            </Link>
+          </div>
+
+          {/* Mobile Actions Dropdown */}
+          <div className="inline-flex sm:hidden relative">
+            <WorkshopIconButton
+              onClick={() => setMobileActionsOpen(o => !o)}
+              title="Workspace actions"
+              aria-label="Workspace actions"
+            >
+              <DotsThreeVertical size={16} weight="bold" />
+            </WorkshopIconButton>
+            {mobileActionsOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/20"
+                  onClick={() => setMobileActionsOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-48 rounded-xl border border-kumo-line bg-kumo-base p-1.5 shadow-xl">
+                  <button
+                    type="button"
+                    onClick={() => { setShareModalOpen(true); setMobileActionsOpen(false) }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-kumo-default hover:bg-kumo-fill text-left cursor-pointer"
+                  >
+                    <ShareNetwork size={16} />
+                    <span>Share workspace</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedGadgetStub}
+                    onClick={() => { setBlueprintModalOpen(true); setMobileActionsOpen(false) }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-kumo-default hover:bg-kumo-fill text-left disabled:opacity-40 cursor-pointer"
+                  >
+                    <Blueprint size={16} />
+                    <span>Blueprints</span>
+                  </button>
+                  <Link
+                    to="/pricing"
+                    onClick={() => setMobileActionsOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-indigo-600 font-medium hover:bg-kumo-fill text-left"
+                  >
+                    <Sparkle size={16} weight="fill" />
+                    <span>Upgrade to Pro</span>
+                  </Link>
+                  {!metadata.owner && (
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteDialogOpen(true); setMobileActionsOpen(false) }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-left cursor-pointer"
+                    >
+                      <Trash size={16} />
+                      <span>Delete workspace</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
 
           {/* User menu */}
-          <div className="ml-2">
+          <div className="ml-1 sm:ml-2">
             <UserMenu />
           </div>
         </div>
       </div>
+
+      {/* ═══ MOBILE SEGMENTED VIEW SWITCHER ═══════════════════════════════ */}
+      {isMobile && (
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-kumo-line bg-kumo-base flex-shrink-0 z-10">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-kumo-fill/60 border border-kumo-line w-full">
+            <button
+              type="button"
+              onClick={() => setMobileView('chat')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-[13px] font-medium transition-all cursor-pointer ${
+                mobileView === 'chat'
+                  ? 'bg-kumo-base text-kumo-default shadow-sm'
+                  : 'text-kumo-subtle hover:text-kumo-default'
+              }`}
+            >
+              <ChatCircleText size={15} weight={mobileView === 'chat' ? 'bold' : 'regular'} />
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileView('app')
+                handleTabSelect('app')
+                if (!showFullEditor && selectedGadgetId) {
+                  setWorkspaceVisibility('open', selectedGadgetId)
+                }
+              }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-[13px] font-medium transition-all relative cursor-pointer ${
+                mobileView === 'app'
+                  ? 'bg-kumo-base text-kumo-default shadow-sm'
+                  : 'text-kumo-subtle hover:text-kumo-default'
+              }`}
+            >
+              <Lightning size={15} weight={mobileView === 'app' ? 'fill' : 'regular'} className="text-amber-500" />
+              <span>Gadget UI</span>
+              {hasAnyApps && (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+              )}
+            </button>
+            {hasCodeRelatedState && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileView('code')
+                  handleTabSelect('code')
+                  if (!showFullEditor && selectedGadgetId) {
+                    setWorkspaceVisibility('open', selectedGadgetId)
+                  }
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-[13px] font-medium transition-all cursor-pointer ${
+                  mobileView === 'code'
+                    ? 'bg-kumo-base text-kumo-default shadow-sm'
+                    : 'text-kumo-subtle hover:text-kumo-default'
+                }`}
+              >
+                <Code size={15} weight={mobileView === 'code' ? 'bold' : 'regular'} />
+                <span>Code</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ═══ BODY ═════════════════════════════════════════════════════════════ */}
       <div className="flex flex-1 min-h-0 relative overflow-hidden">
@@ -1549,11 +1687,12 @@ export default function GadgetEditor() {
 
         {/* ── LEFT: Chat pane ──────────────────────────────────────────────────── */}
         <div
-          className={`flex flex-col flex-shrink-0 ${workspaceTransitionClass} ${showFullEditor ? 'border-r border-kumo-line' : ''}`}
+          className={`flex flex-col flex-shrink-0 ${workspaceTransitionClass} ${showFullEditor && !isMobile ? 'border-r border-kumo-line' : ''}`}
           style={{
-            width: showFullEditor
-              ? chatWidth
-              : `calc(100% - ${outputRailWidth}px)`,
+            width: isMobile
+              ? (mobileView === 'chat' ? '100%' : '0px')
+              : (showFullEditor ? chatWidth : `calc(100% - ${outputRailWidth}px)`),
+            display: isMobile && mobileView !== 'chat' ? 'none' : undefined,
           }}
         >
           {overseer ? (
@@ -1612,7 +1751,7 @@ export default function GadgetEditor() {
         {/* ── Resize handle ───────────────────────────────────────────────────── */}
         <div
           className={`flex-shrink-0 overflow-visible bg-kumo-line cursor-col-resize relative touch-none ${workspaceTransitionClass}`}
-          style={{ width: showFullEditor ? 1 : 0 }}
+          style={{ width: !isMobile && showFullEditor ? 1 : 0 }}
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}
           onPointerUp={handleResizePointerUp}
@@ -1625,8 +1764,11 @@ export default function GadgetEditor() {
         <div
           className={`flex flex-shrink-0 min-w-0 overflow-hidden bg-kumo-base ${workspaceTransitionClass}`}
           style={{
-            width: showFullEditor ? `calc(100% - ${chatWidth}px - 1px)` : 0,
-            opacity: showFullEditor ? 1 : 0,
+            width: isMobile
+              ? (mobileView !== 'chat' ? '100%' : '0px')
+              : (showFullEditor ? `calc(100% - ${chatWidth}px - 1px)` : 0),
+            opacity: isMobile ? (mobileView !== 'chat' ? 1 : 0) : (showFullEditor ? 1 : 0),
+            display: isMobile && mobileView === 'chat' ? 'none' : undefined,
           }}
         >
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -1634,6 +1776,17 @@ export default function GadgetEditor() {
             className="flex items-center gap-2 border-b border-kumo-line px-3 flex-shrink-0"
             style={{ height: TABBAR_H }}
           >
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setMobileView('chat')}
+                className="flex items-center gap-1 text-[13px] text-kumo-subtle hover:text-kumo-default font-medium py-1 px-2 rounded-lg hover:bg-kumo-fill mr-1 flex-shrink-0 cursor-pointer"
+                aria-label="Back to chat"
+              >
+                <CaretLeft size={16} weight="bold" />
+                <span>Chat</span>
+              </button>
+            )}
             <div className="flex min-w-0 flex-1 items-center overflow-hidden">
               {paneShowsActivity ? (
                 <PaneLabel icon={Pulse} title="Activity" />

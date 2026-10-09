@@ -67,17 +67,49 @@ const mockAuthenticatedApi = {
   ],
   listOwnBlueprints: async () => [],
   listLibraryBlueprints: async () => [],
-  openGadget: (id) => ({
-    subscribeWorkpieces: () => ({ [Symbol.dispose]: () => {} }),
-    subscribeToWorkpieces: () => ({ [Symbol.dispose]: () => {} }),
-    subscribeConsoleLogs: () => ({ [Symbol.dispose]: () => {} }),
-    subscribeToConsoleLogs: () => ({ [Symbol.dispose]: () => {} }),
-    subscribeActions: () => ({ [Symbol.dispose]: () => {} }),
-    subscribeToActions: () => ({ [Symbol.dispose]: () => {} }),
-    subscribeToMetadata: () => ({ [Symbol.dispose]: () => {} }),
-    load: async () => ({ id, title: "Academic Gadget", lastActive: new Date() }),
-    [Symbol.dispose]: () => {},
-  }),
+  listOutputFormats: async () => [],
+  openGadget: (id) => {
+    const dummyGadget = {
+      getUiBundle: async () => ({
+        jsCode: `
+          const div = document.createElement('div');
+          div.style.cssText = 'padding: 24px; font-family: -apple-system, sans-serif; text-align: center; color: #0f172a;';
+          div.innerHTML = '<h2 style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">Consensus Simulator</h2><p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Interactive Raft/Paxos Visualizer running on mobile viewport (390px)</p><button style="background: #2563eb; color: #fff; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(37,99,235,0.3);">Run Consensus Round</button>';
+          document.body.appendChild(div);
+        `,
+      }),
+      connectToGadget: async () => ({ [Symbol.dispose]: () => {} }),
+      [Symbol.dispose]: () => {},
+    };
+    return {
+      subscribeWorkpieces: () => ({ [Symbol.dispose]: () => {} }),
+      subscribeToWorkpieces: (subscriber) => {
+        try {
+          subscriber.ready?.();
+          subscriber.add?.(0, { id: 0, title: "Distributed Consensus Simulator", output: { type: "app" } });
+        } catch {}
+        return { [Symbol.dispose]: () => {} };
+      },
+      subscribeConsoleLogs: () => ({ [Symbol.dispose]: () => {} }),
+      subscribeToConsoleLogs: () => ({ [Symbol.dispose]: () => {} }),
+      subscribeActions: () => ({ [Symbol.dispose]: () => {} }),
+      subscribeToActions: () => ({ [Symbol.dispose]: () => {} }),
+      subscribeToPresence: () => ({ [Symbol.dispose]: () => {} }),
+      subscribeToMetadata: (cb) => {
+        try {
+          cb({ id, title: "Distributed Consensus Workspace", lastActive: new Date() });
+        } catch {}
+        return { [Symbol.dispose]: () => {} };
+      },
+      getGadget: () => dummyGadget,
+      getChatList: async () => [],
+      listChats: async () => [],
+      listModels: async () => [],
+      subscribeToChatList: () => ({ [Symbol.dispose]: () => {} }),
+      load: async () => ({ id, title: "Distributed Consensus Workspace", lastActive: new Date() }),
+      [Symbol.dispose]: () => {},
+    };
+  },
   subscribeConnectedAccounts: () => ({
     [Symbol.dispose]: () => {},
   }),
@@ -477,6 +509,49 @@ await pageCdp.send("Runtime.evaluate", {
 });
 await new Promise((r) => setTimeout(r, 800));
 await captureScreenshot("11-mobile-coursework-portfolio.png");
+
+// Close Portfolio Modal
+await pageCdp.send("Runtime.evaluate", {
+  expression: `
+    const closeBtn = document.querySelector('[aria-label="Close dialog"], button:has(svg)');
+    if (closeBtn) closeBtn.click();
+  `,
+});
+await new Promise((r) => setTimeout(r, 400));
+
+// 12. Workspace in Mobile Chat Mode (Segmented Pill Bar)
+console.log("Capturing 12-mobile-workspace-chat.png...");
+await navigateTo("/workspace/ws-algo");
+await waitForSelector("textarea, button", 4000);
+await new Promise((r) => setTimeout(r, 1200));
+await captureScreenshot("12-mobile-workspace-chat.png");
+
+// 13. Workspace in Mobile Gadget UI Mode (Full-width sandboxed app)
+console.log("Capturing 13-mobile-workspace-gadget-ui.png...");
+await pageCdp.send("Runtime.evaluate", {
+  expression: `
+    (() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const gadgetBtn = buttons.find(b => b.textContent?.includes('Gadget UI'));
+      if (gadgetBtn) gadgetBtn.click();
+    })()
+  `,
+});
+await new Promise((r) => setTimeout(r, 1500));
+await captureScreenshot("13-mobile-workspace-gadget-ui.png");
+
+// 14. Workspace Mobile Action Menu (Overflow ...)
+console.log("Capturing 14-mobile-workspace-actions-menu.png...");
+await pageCdp.send("Runtime.evaluate", {
+  expression: `
+    (() => {
+      const btn = document.querySelector('[aria-label="Workspace actions"]');
+      if (btn) btn.click();
+    })()
+  `,
+});
+await new Promise((r) => setTimeout(r, 600));
+await captureScreenshot("14-mobile-workspace-actions-menu.png");
 
 console.log("\n--- Verification Summary ---");
 console.log(`Detected Errors/Exceptions during run: ${errorsDetected.length}`);
