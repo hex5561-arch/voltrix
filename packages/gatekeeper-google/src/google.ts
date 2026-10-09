@@ -48,6 +48,7 @@ import BIGQUERY_CONFIGURATOR_HTML from "./generated/bigquery-configurator-ui.txt
 import CALENDAR_CONFIGURATOR_HTML from "./generated/calendar-configurator-ui.txt";
 import GMAIL_CONFIGURATOR_HTML from "./generated/gmail-configurator-ui.txt";
 import GOOGLE_DOC_CONFIGURATOR_HTML from "./generated/google-doc-configurator-ui.txt";
+import YOUTUBE_CONFIGURATOR_HTML from "./generated/youtube-configurator-ui.txt";
 import GOOGLE_SHEETS_CONFIGURATOR_HTML from "./generated/google-sheets-configurator-ui.txt";
 import GOOGLE_LOGO_SVG from "./google-logo.svg";
 import { obsContext } from "./observability.js";
@@ -1037,13 +1038,8 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
     }
 
     if (resourceUrlPattern === YOUTUBE_CHANNEL_RESOURCE.urlPattern) {
-      // YouTube channel is account-level — no resource picker needed.
-      // Return a minimal iframe that auto-confirms.
       return {
-        iframeHtml: `<!DOCTYPE html><html><body><script>
-          window.parent?.postMessage({type:"resourceConfigurator",action:"confirm",
-            resourceUrl:"https://www.youtube.com/channel/mine/*"},"*");
-        </script></body></html>`,
+        iframeHtml: YOUTUBE_CONFIGURATOR_HTML,
         ui: new RpcStub(new YouTubeChannelConfiguratorUI()),
       };
     }
