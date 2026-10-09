@@ -98,6 +98,7 @@ export default defineConfig(({ mode }) => {
                 id.includes('/node_modules/react-dom/') ||
                 id.includes('/node_modules/@tanstack/') ||
                 id.includes('/node_modules/@phosphor-icons/') ||
+                id.includes('/node_modules/@cloudflare/kumo/') ||
                 id.includes('/node_modules/yjs/') ||
                 id.includes('/node_modules/lib0/') ||
                 id.includes('/node_modules/y-monaco/')) {

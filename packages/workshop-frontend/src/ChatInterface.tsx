@@ -4504,9 +4504,19 @@ function startOfDay(d: Date): Date {
   return out;
 }
 
-function getChatTimeBucket(date: Date, now: Date): ChatTimeBucket {
+function toSafeDate(d: unknown): Date {
+  if (d instanceof Date && !isNaN(d.getTime())) return d;
+  if (typeof d === "number" || typeof d === "string") {
+    const parsed = new Date(d);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(0);
+}
+
+function getChatTimeBucket(date: Date | unknown, now: Date): ChatTimeBucket {
+  const safeDate = toSafeDate(date);
   const diffDays = Math.round(
-    (startOfDay(now).getTime() - startOfDay(date).getTime()) / 86_400_000,
+    (startOfDay(now).getTime() - startOfDay(safeDate).getTime()) / 86_400_000,
   );
   if (diffDays <= 0) return "today";
   if (diffDays === 1) return "yesterday";
@@ -4517,17 +4527,18 @@ function getChatTimeBucket(date: Date, now: Date): ChatTimeBucket {
 // Format a chat's lastActive for display in a row, given its bucket. Buckets
 // own the "date" half of the label (via the section header), so rows only show
 // what the header doesn't.
-function formatChatRowTime(date: Date, bucket: ChatTimeBucket, now: Date): string {
-  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function formatChatRowTime(date: Date | unknown, bucket: ChatTimeBucket, now: Date): string {
+  const safeDate = toSafeDate(date);
+  const time = safeDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   if (bucket === "today" || bucket === "yesterday") {
     return time;
   }
   if (bucket === "thisWeek") {
-    const day = date.toLocaleDateString([], { weekday: "short" });
+    const day = safeDate.toLocaleDateString([], { weekday: "short" });
     return `${day} ${time}`;
   }
-  const sameYear = date.getFullYear() === now.getFullYear();
-  return date.toLocaleDateString(
+  const sameYear = safeDate.getFullYear() === now.getFullYear();
+  return safeDate.toLocaleDateString(
     [],
     sameYear
       ? { month: "short", day: "numeric" }
@@ -4950,7 +4961,7 @@ function ChatInterface({
   // Get sorted list of chats from cache
   const chatList = useMemo(
     () => Array.from(cacheRef.current.chats.values()).sort(
-      (a, b) => b.lastActive.getTime() - a.lastActive.getTime(),
+      (a, b) => toSafeDate(b?.lastActive).getTime() - toSafeDate(a?.lastActive).getTime(),
     ),
     [chatListVersion],
   );

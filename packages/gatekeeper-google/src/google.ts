@@ -439,6 +439,34 @@ export default {
           "Content-Type": "text/html; charset=utf-8"
         }
       });
+    } else if (relPath === "/admin/youtube-reconnect" && req.method === "GET") {
+      // Temp admin endpoint: generate a reconnect URL that adds youtube.upload scope.
+      // Usage: GET /gatekeeper/google/admin/youtube-reconnect?userObjectId=<64-char-hex>
+      const userObjectIdParam = url.searchParams.get("userObjectId") ?? "";
+      if (userObjectIdParam.length !== 64) {
+        return new Response(JSON.stringify({ error: "userObjectId required (64-char hex)" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      try {
+        const stub = ctx.exports.UserAccount.get(
+          ctx.exports.UserAccount.idFromString(userObjectIdParam)
+        );
+        // Request union of existing scopes + YouTube scopes
+        const existing = await stub.getGrantedResourceUrlPatterns();
+        const allPatterns = [...new Set([...existing, "https://www.youtube.com/channel/:channelId/*"])];
+        const scopes = resourceUrlPatternsToOAuthScopes(allPatterns);
+        const initiationNonce = generateNonce();
+        await stub.prepareReconnect(initiationNonce, scopes);
+        const reconnectUrl = `${getBaseUrl(env)}/${userObjectIdParam}/${initiationNonce}`;
+        return new Response(JSON.stringify({ url: reconnectUrl, scopes, patterns: allPatterns }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: String(err) }), {
+          status: 500, headers: { "Content-Type": "application/json" },
+        });
+      }
     } else {
       return new Response("Not Found", {status: 404});
     }

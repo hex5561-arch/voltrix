@@ -130,8 +130,11 @@ export function SidebarWorkspacesProvider({ children }: { children: ReactNode })
       if (g.pinned) favs.push(g)
       else rest.push(g)
     }
-    const byActive = (a: GadgetMetadataWithTimestamps, b: GadgetMetadataWithTimestamps) =>
-      b.lastActive.getTime() - a.lastActive.getTime()
+    const byActive = (a: GadgetMetadataWithTimestamps, b: GadgetMetadataWithTimestamps) => {
+      const timeA = a.lastActive instanceof Date ? a.lastActive.getTime() : new Date(a.lastActive ?? 0).getTime()
+      const timeB = b.lastActive instanceof Date ? b.lastActive.getTime() : new Date(b.lastActive ?? 0).getTime()
+      return timeB - timeA
+    }
     favs.sort(byActive)
     rest.sort(byActive)
     return { favorites: favs, recent: rest }

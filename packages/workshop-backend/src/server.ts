@@ -1386,7 +1386,6 @@ export default {
     // ── TEMP: Admin endpoint to force Google reconnect with full scopes ──
     // GET /api/admin/reconnect-google?username=<username>
     // Authorization: Bearer <admin-username>
-    // Returns a URL the user must visit to re-authorize with youtube.upload scope.
     if (req.method === "GET" && url.pathname === "/api/admin/reconnect-google") {
       const admins: string[] = typeof env.ADMINS === "string"
           ? JSON.parse(env.ADMINS) : (env.ADMINS ?? []);
@@ -1398,15 +1397,18 @@ export default {
         });
       }
       const username = url.searchParams.get("username") ?? token;
+      const doKey = username.includes("@") ? username.toLowerCase().trim() : normalizeUsername(username);
       try {
-        const users = ctx.exports.UserDurableObject as DurableObjectNamespace<UserDurableObject>;
-        const userStub = users.get(users.idFromName(username));
-        // connectAccount triggers ensureResources internally — passing the YouTube
-        // resource pattern forces a re-auth that includes youtube.upload scope
-        const result = await userStub.connectAccount("google", [
-          "https://www.youtube.com/channel/:channelId/*",
-        ]);
-        return new Response(JSON.stringify({ url: result.url }), {
+        const userStub = ctx.exports.UserDurableObject.get(
+          ctx.exports.UserDurableObject.idFromName(doKey)
+        );
+        const accountId = await userStub.getConnectedAccountIdForVendor("google");
+        if (accountId === null) {
+          return new Response(JSON.stringify({ error: "No Google account connected for this user" }), {
+            status: 404, headers: { "Content-Type": "application/json" },
+          });
+        }
+        const result = await userStub.reconnectAccount(accountId);        return new Response(JSON.stringify({ url: result.url }), {
           headers: { "Content-Type": "application/json" },
         });
       } catch (err) {

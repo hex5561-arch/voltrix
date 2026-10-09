@@ -357,14 +357,14 @@ Use this skill when students or developers need visual, intuitive, or deep-dive 
 
 ## Playing in Gadget UI
 When the user asks for a video or lecture:
-1. Mount it in the **Gadget UI** via `client.js` with a responsive 16:9 iframe embed (`https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1`).
+1. Mount it in the **Gadget UI** via \`client.js\` with a responsive 16:9 iframe embed (\`https://www.youtube-nocookie.com/embed/\${videoId}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1\`).
 2. Keep it clean like YouTube — strip off added custom controls (buttons, drawers, extra chrome), letting native YouTube controls provide play, seek, volume, and fullscreen.
 
 ## Recommending Lectures in Chat
 You can also share direct embeds or inline links:
-```youtube
+\`\`\`youtube
 https://www.youtube.com/watch?v=kCc8FmEb1nY
-```
+\`\`\`
 Or:
 [🎬 Let's build GPT: from scratch, in code, spelled out](https://www.youtube.com/watch?v=kCc8FmEb1nY)
 

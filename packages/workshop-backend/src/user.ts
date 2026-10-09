@@ -1678,6 +1678,14 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     return record.account.reconnect();
   }
 
+  /** Returns the first connected account ID for the given vendorId, or null if not found. */
+  async getConnectedAccountIdForVendor(vendorId: string): Promise<number | null> {
+    for (const record of this.#connectedAccountRecords()) {
+      if (record.vendorId === vendorId) return record.id;
+    }
+    return null;
+  }
+
   async startResourceConfigurator(
       accountId: number,
       resourceUrlPattern: string): Promise<ResourceConfiguratorFrame> {

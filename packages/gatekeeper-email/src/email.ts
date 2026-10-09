@@ -307,7 +307,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
   async sendSystemEmail(to: string, subject: string, html: string, from?: string): Promise<boolean> {
     const apiKey = this.env.RESEND_API_KEY;
     if (!apiKey) {
-      logger.warn("sendSystemEmail: RESEND_API_KEY missing");
+      logger.warn("sendSystemEmail: RESEND_API_KEY missing", { event: "email.send.missing_key" });
       return false;
     }
     const defaultFrom = this.env.DEFAULT_FROM || "Voltrix Billing <noreply@em.voltrix.stream>";
@@ -327,7 +327,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
       });
       return res.ok;
     } catch (e) {
-      logger.error("sendSystemEmail failed", { error: e });
+      logger.error("sendSystemEmail failed", { event: "email.send.failed", error: String(e) });
       return false;
     }
   }
@@ -587,8 +587,7 @@ class EmailSessionImpl extends RpcTarget implements EmailSession {
       const errorText = await res.text();
       logger.error("Failed to send email via Resend", {
         event: "email.send.failed",
-        status: res.status,
-        error: errorText,
+        error: `Status ${res.status}: ${errorText}`,
       });
       return {
         id: "",

@@ -69,9 +69,11 @@ export default function BlueprintsPage() {
   const q = search.trim().toLowerCase();
   const filtered = featuredBlueprints.filter((b) => {
     if (!q) return true;
+    const title = b?.metadata?.title ?? (b as any)?.title ?? "";
+    const desc = b?.metadata?.description ?? (b as any)?.description ?? "";
     return (
-      b.metadata.title.toLowerCase().includes(q) ||
-      (b.metadata.description ?? "").toLowerCase().includes(q)
+      title.toLowerCase().includes(q) ||
+      desc.toLowerCase().includes(q)
     );
   });
 
@@ -174,14 +176,17 @@ function FeaturedBlueprintCard({
   blueprint: BlueprintPublicInfo;
   vendorDescriptions: VendorMap;
 }) {
-  const badges = uniqueBindingBadges(blueprint.metadata.bindings).slice(0, 2);
+  const title = blueprint?.metadata?.title ?? (blueprint as any)?.title ?? "Untitled Blueprint";
+  const desc = blueprint?.metadata?.description ?? (blueprint as any)?.description ?? "";
+  const bindings = blueprint?.metadata?.bindings ?? (blueprint as any)?.bindings ?? [];
+  const badges = uniqueBindingBadges(bindings).slice(0, 2);
 
   return (
     <div className="themed-card-hover-shadow press group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-base text-left transition-[border-color,box-shadow] duration-150 ease-out hover:border-kumo-fill">
       <Link
         to="/blueprint/$id"
         params={{ id: blueprint.id }}
-        aria-label={`Open featured blueprint ${blueprint.metadata.title}`}
+        aria-label={`Open featured blueprint ${title}`}
         className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kumo-brand"
       />
 
@@ -193,14 +198,14 @@ function FeaturedBlueprintCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium leading-[18px] tracking-[-0.25px] text-kumo-default">
-            {blueprint.metadata.title}
+            {title}
           </p>
           <p
             className={`mt-0.5 line-clamp-1 text-[12px] leading-4 tracking-[-0.2px] ${
-              blueprint.metadata.description ? "text-kumo-subtle" : "italic text-kumo-inactive"
+              desc ? "text-kumo-subtle" : "italic text-kumo-inactive"
             }`}
           >
-            {blueprint.metadata.description || "No description"}
+            {desc || "No description"}
           </p>
           {badges.length > 0 && (
             <div className="relative z-20 mt-2 flex flex-wrap gap-1">
@@ -226,7 +231,10 @@ function FeaturedBlueprintRow({
   blueprint: BlueprintPublicInfo;
   vendorDescriptions: VendorMap;
 }) {
-  const badges = uniqueBindingBadges(blueprint.metadata.bindings).slice(0, 3);
+  const title = blueprint?.metadata?.title ?? (blueprint as any)?.title ?? "Untitled Blueprint";
+  const desc = blueprint?.metadata?.description ?? (blueprint as any)?.description ?? "";
+  const bindings = blueprint?.metadata?.bindings ?? (blueprint as any)?.bindings ?? [];
+  const badges = uniqueBindingBadges(bindings).slice(0, 3);
 
   return (
     <Link
@@ -239,14 +247,14 @@ function FeaturedBlueprintRow({
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium tracking-[-0.25px] text-kumo-default">
-          {blueprint.metadata.title}
+          {title}
         </p>
         <p
           className={`mt-0.5 line-clamp-1 text-[12px] leading-4 tracking-[-0.2px] ${
-            blueprint.metadata.description ? "text-kumo-subtle" : "italic text-kumo-inactive"
+            desc ? "text-kumo-subtle" : "italic text-kumo-inactive"
           }`}
         >
-          {blueprint.metadata.description || "No description"}
+          {desc || "No description"}
         </p>
       </div>
       {badges.length > 0 && (
