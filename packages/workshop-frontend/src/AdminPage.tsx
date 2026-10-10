@@ -20,7 +20,7 @@ import {
 } from '@phosphor-icons/react'
 import CommandCenterView from './CommandCenterView'
 import { useAuthenticatedApi } from './AuthContext'
-import { AdminApi, AdminFormat, AdminResourceVendor, AiChatAuthorInfo, AiGatewayInfo, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, MAX_CLEF_ROUTING_HINT_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR, SUGGESTED_MODELS } from '@gadgets/workshop-shared/api'
+import { AdminApi, AdminFormat, AdminResourceVendor, AiChatAuthorInfo, AiGatewayInfo, AmbientGatekeeperMode, LibraryItemView, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, MAX_CLEF_ROUTING_HINT_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR, SUGGESTED_MODELS } from '@gadgets/workshop-shared/api'
 import { applyAccentColor, DEFAULT_ACCENT_COLOR } from './theme'
 import { cacheBustSiteLogoUrl, prepareSiteLogo } from './siteLogoUtils'
 import SiteLogo from './components/SiteLogo'
@@ -108,6 +108,16 @@ export default function AdminPage() {
   const [aiConfig, setAiConfig] = useState<AiGatewayInfo | null>(null)
   const [addModelOpen, setAddModelOpen] = useState(false)
 
+  // Content library (AI Search) state
+  const [libraryItems, setLibraryItems] = useState<LibraryItemView[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [libraryIndexing, setLibraryIndexing] = useState(false)
+  const [libraryKey, setLibraryKey] = useState('')
+  const [libraryTitle, setLibraryTitle] = useState('')
+  const [libraryContent, setLibraryContent] = useState('')
+  const [librarySourceUrl, setLibrarySourceUrl] = useState('')
+  const [libraryDeletingId, setLibraryDeletingId] = useState<string | null>(null)
+
   // Gatekeeper resource config, and the set of resource keys ("vendorId\u0000urlPattern") busy toggling.
   const [resourceVendors, setResourceVendors] = useState<AdminResourceVendor[]>([])
   const [resourceBusy, setResourceBusy] = useState<Set<string>>(new Set())
@@ -171,6 +181,25 @@ export default function AdminPage() {
       fetchUsers()
     }
   }, [activeTab, isAdmin])
+
+  // Load library items when the Library tab is opened.
+  const fetchLibraryItems = async () => {
+    if (!admin) return
+    setLibraryLoading(true)
+    try {
+      setLibraryItems(await admin.api.listLibraryItems())
+    } catch (err) {
+      toasts.add({ title: 'Failed to load library items', variant: 'error' })
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'library' && admin) {
+      void fetchLibraryItems()
+    }
+  }, [activeTab, admin])
 
   const resourceKey = (vendorId: string, urlPattern: string) => `${vendorId}\u0000${urlPattern}`
 
@@ -485,6 +514,45 @@ export default function AdminPage() {
     }
   }
 
+  const handleIndexItem = async () => {
+    if (!admin || !libraryKey.trim() || !libraryTitle.trim() || !libraryContent.trim()) return
+    setLibraryIndexing(true)
+    try {
+      const item = await admin.api.indexLibraryItem(
+        libraryKey.trim(),
+        libraryContent,
+        libraryTitle.trim(),
+        librarySourceUrl.trim() || undefined,
+      )
+      setLibraryItems(prev => [item, ...prev.filter(i => i.key !== item.key)])
+      setLibraryKey('')
+      setLibraryTitle('')
+      setLibraryContent('')
+      setLibrarySourceUrl('')
+      toasts.add({ title: `"${item.title}" indexed (${item.status})`, variant: 'success' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Indexing failed'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setLibraryIndexing(false)
+    }
+  }
+
+  const handleDeleteItem = async (itemId: string, title: string) => {
+    if (!admin) return
+    setLibraryDeletingId(itemId)
+    try {
+      await admin.api.deleteLibraryItem(itemId)
+      setLibraryItems(prev => prev.filter(i => i.id !== itemId))
+      toasts.add({ title: `"${title}" removed`, variant: 'success' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delete failed'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setLibraryDeletingId(null)
+    }
+  }
+
   if (!isAdmin) {
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16 text-center">
@@ -542,6 +610,7 @@ export default function AdminPage() {
           { value: 'command-center', label: 'Command Center' },
           { value: 'gatekeepers', label: 'Gatekeepers' },
           { value: 'formats', label: 'Formats' },
+          { value: 'library', label: 'Library' },
           { value: 'access', label: 'Access' },
         ]}
       />
@@ -1692,6 +1761,114 @@ export default function AdminPage() {
                 )}
               </div>
             )})}
+          </div>
+        </div>
+      )}
+
+      {/* Content Library (AI Search) */}
+      {activeTab === 'library' && admin && (
+        <div className="space-y-6">
+          {/* Index new document */}
+          <div className="rounded-2xl border border-kumo-line p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-kumo-strong">Index a document</h2>
+              <p className="text-sm text-kumo-subtle mt-1">
+                Add text content to the library so the agent can search it semantically.
+                Paste the document text directly. Re-indexing with the same key overwrites the previous version.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="Key (filename)"
+                placeholder="kcse-bio-2024.md"
+                value={libraryKey}
+                onValueChange={setLibraryKey}
+              />
+              <Input
+                label="Title"
+                placeholder="KCSE Biology 2024"
+                value={libraryTitle}
+                onValueChange={setLibraryTitle}
+              />
+            </div>
+            <Input
+              label="Source URL (optional)"
+              placeholder="https://knec.ac.ke/..."
+              value={librarySourceUrl}
+              onValueChange={setLibrarySourceUrl}
+            />
+            <Textarea
+              label="Content"
+              placeholder="Paste the document text here…"
+              value={libraryContent}
+              onValueChange={setLibraryContent}
+              rows={8}
+            />
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleIndexItem}
+                loading={libraryIndexing}
+                disabled={!libraryKey.trim() || !libraryTitle.trim() || !libraryContent.trim()}
+              >
+                Index document
+              </Button>
+            </div>
+          </div>
+
+          {/* Indexed items list */}
+          <div className="rounded-2xl border border-kumo-line p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-kumo-strong">Indexed documents</h2>
+              <Button variant="secondary" size="sm" onClick={fetchLibraryItems} loading={libraryLoading}>
+                Refresh
+              </Button>
+            </div>
+            {libraryLoading ? (
+              <p className="text-sm text-kumo-subtle">Loading…</p>
+            ) : libraryItems.length === 0 ? (
+              <p className="text-sm text-kumo-subtle">No documents indexed yet. Add one above.</p>
+            ) : (
+              <div className="divide-y divide-kumo-line">
+                {libraryItems.map(item => (
+                  <div key={item.id} className="py-3 flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-kumo-strong truncate">{item.title}</p>
+                      <p className="text-xs text-kumo-subtle truncate">{item.key}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          item.status === 'completed' ? 'bg-green-100 text-green-700' :
+                          item.status === 'error' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {item.status}
+                        </span>
+                        {item.chunksCount != null && (
+                          <span className="text-xs text-kumo-subtle">{item.chunksCount} chunk{item.chunksCount !== 1 ? 's' : ''}</span>
+                        )}
+                        {item.fileSize != null && (
+                          <span className="text-xs text-kumo-subtle">{(item.fileSize / 1024).toFixed(1)} KB</span>
+                        )}
+                        {item.sourceUrl && (
+                          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 truncate max-w-[200px]">
+                            {item.sourceUrl}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => void handleDeleteItem(item.id, item.title)}
+                      loading={libraryDeletingId === item.id}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

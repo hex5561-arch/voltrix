@@ -1,4 +1,4 @@
-import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, MAX_ANNOUNCEMENT_LENGTH, MAX_CLEF_ROUTING_HINT_LENGTH as MAX_CLEF_HINT_API, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, SUGGESTED_MODELS, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
+import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, LibraryItemView, MAX_ANNOUNCEMENT_LENGTH, MAX_CLEF_ROUTING_HINT_LENGTH as MAX_CLEF_HINT_API, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, SUGGESTED_MODELS, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
 import { GatekeeperVendor } from '@gadgets/workshop-shared/gatekeeper';
 import { DurableObject } from 'cloudflare:workers';
 import { RpcTarget } from 'capnweb';
@@ -13,6 +13,7 @@ import { buildGatekeeperVendorMap } from './auth/auth-vendors.js';
 import { UserDurableObject } from './user.js';
 import { formatBlueprintsManifestVersion, installFormatBlueprints } from './format-blueprints.js';
 import { FORMAT_BLUEPRINTS } from './generated/format-blueprints.js';
+import { indexLibraryItem as indexLibraryItemImpl, listLibraryItems as listLibraryItemsImpl, deleteLibraryItem as deleteLibraryItemImpl, LibraryItem } from './ai-search.js';
 
 const logger = createWorkshopLogger("workshop.admin.settings");
 
@@ -433,6 +434,40 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
     await this.updateAdminConfig({ clefRoutingHint: hint.slice(0, MAX_CLEF_ROUTING_HINT_LENGTH) });
   }
 
+  // --- Content library (AI Search) ---
+
+  /** Index a document into the content library. Delegates to ai-search.ts; throws on failure. */
+  async indexLibraryItem(
+    key: string, content: string, title: string, sourceUrl?: string
+  ): Promise<LibraryItemView> {
+    const ai = (this.env as unknown as { AI_SEARCH?: AiSearchNamespace }).AI_SEARCH;
+    if (!ai) {
+      throw new Error("AI Search is not configured for this deployment.");
+    }
+    const item = await indexLibraryItemImpl(
+      { AI_SEARCH: ai },
+      key, content, { title, sourceUrl, indexedAt: new Date().toISOString() }
+    );
+    return toLibraryItemView(item);
+  }
+
+  /** List all items in the content library. Returns [] when not yet created. */
+  async listLibraryItems(): Promise<LibraryItemView[]> {
+    const ai = (this.env as unknown as { AI_SEARCH?: AiSearchNamespace }).AI_SEARCH;
+    if (!ai) return [];
+    const items = await listLibraryItemsImpl({ AI_SEARCH: ai });
+    return items.map(toLibraryItemView);
+  }
+
+  /** Delete one item by its AI Search item id. */
+  async deleteLibraryItem(itemId: string): Promise<void> {
+    const ai = (this.env as unknown as { AI_SEARCH?: AiSearchNamespace }).AI_SEARCH;
+    if (!ai) {
+      throw new Error("AI Search is not configured for this deployment.");
+    }
+    await deleteLibraryItemImpl({ AI_SEARCH: ai }, itemId);
+  }
+
   /** Enable/disable a single gatekeeper resource type atomically (read-modify-write within the DO). */
   async setResourceEnabled(vendorId: string, urlPattern: string, enabled: boolean): Promise<void> {
     vendorId = vendorId.toLowerCase();
@@ -572,6 +607,21 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
 // gatekeeper/resource can't be re-enabled via a crafted request, and the client never receives a
 // stub to the DO's internal methods. Covers branding, agent instructions, signups, and gatekeeper
 // connector/resource availability; authentication config stays env-var driven.
+
+/** Map the backend LibraryItem type to the shared API view type. */
+function toLibraryItemView(item: LibraryItem): LibraryItemView {
+  return {
+    id: item.id,
+    key: item.key,
+    status: item.status,
+    chunksCount: item.chunksCount,
+    fileSize: item.fileSize,
+    createdAt: item.createdAt,
+    title: item.metadata.title ?? item.key,
+    sourceUrl: item.metadata.sourceUrl,
+  };
+}
+
 @validateRpc()
 export class AdminApiImpl extends RpcTarget implements AdminApi {
   /**
@@ -681,5 +731,21 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
       throw new Error(`Clef routing hint too long (max ${MAX_CLEF_HINT_API} characters).`);
     }
     await this.admin.setClefRoutingHint(hint);
+  }
+
+  async indexLibraryItem(key: string, content: string, title: string, sourceUrl?: string): Promise<LibraryItemView> {
+    if (!key.trim()) throw new Error("Item key cannot be empty.");
+    if (!content.trim()) throw new Error("Item content cannot be empty.");
+    if (!title.trim()) throw new Error("Item title cannot be empty.");
+    return this.admin.indexLibraryItem(key.trim(), content, title.trim(), sourceUrl);
+  }
+
+  async listLibraryItems(): Promise<LibraryItemView[]> {
+    return this.admin.listLibraryItems();
+  }
+
+  async deleteLibraryItem(itemId: string): Promise<void> {
+    if (!itemId.trim()) throw new Error("Item id cannot be empty.");
+    return this.admin.deleteLibraryItem(itemId.trim());
   }
 }

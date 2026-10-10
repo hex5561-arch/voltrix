@@ -28,6 +28,7 @@ import { ambientGatekeeperMode } from "./provisioning-policy";
 import { listFeaturedBlueprintsFromKv, readBlueprintContent, readBlueprintKvRecord, sanitizeBlueprintOutput } from "./blueprint-archive";
 import { WebFetchEnv } from "./web-fetch";
 import { WebBrowseEnv } from "./web-browse";
+import { AiSearchEnv } from "./ai-search";
 import { UserDurableObject, UserAiModelRecord, type UserChatContext, type WorkspaceOutputEntry } from "./user";
 import { AgentSpawnerBinding } from "./agent-spawner-binding";
 import { recordAnalytics } from "./analytics";
@@ -3036,6 +3037,15 @@ class OverseerImpl implements AgentHooks {
     if (!browser) return null;
 
     return { browser };
+  }
+
+  // Provides searchLibrary with the AI Search namespace binding. Returns null when the binding
+  // is absent (self-hosted deployments that omit it) so the tool surfaces a clear error.
+  // Read-only from the agent's perspective: all writes go through AdminApiImpl.
+  getAiSearchEnv(): AiSearchEnv | null {
+    const ai = (this.env as unknown as { AI_SEARCH?: AiSearchNamespace }).AI_SEARCH;
+    if (!ai) return null;
+    return { AI_SEARCH: ai };
   }
 
   // Record an observation that originated from a built-in agent tool (not a gatekeeper).

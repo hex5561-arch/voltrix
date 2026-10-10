@@ -1076,7 +1076,52 @@ export interface AdminApi {
    * Pass "" to clear. Rejects over MAX_CLEF_ROUTING_HINT_LENGTH.
    */
   setClefRoutingHint(hint: string): Promise<void>;
+
+  // --- Content library (AI Search) ---
+
+  /**
+   * Index a text document into the deployment's content library (AI Search). `key` is the
+   * filename used to identify the item (e.g. "kcse-bio-2024.md"); `content` is the document
+   * text; `title` is a human-readable label shown in the admin UI; `sourceUrl` is optional and
+   * recorded when the content was fetched from a URL. Throws on indexing failure.
+   */
+  indexLibraryItem(key: string, content: string, title: string, sourceUrl?: string): Promise<LibraryItemView>;
+
+  /**
+   * List all items currently indexed in the content library.
+   * Returns an empty array when the library instance hasn't been created yet.
+   */
+  listLibraryItems(): Promise<LibraryItemView[]>;
+
+  /**
+   * Delete one item from the content library by its item id.
+   * Throws when the item doesn't exist.
+   */
+  deleteLibraryItem(itemId: string): Promise<void>;
 }
+
+/**
+ * Admin-facing view of one item in the deployment's content library (AI Search).
+ * Returned by AdminApi.listLibraryItems() and AdminApi.indexLibraryItem().
+ */
+export type LibraryItemView = {
+  /** AI Search item id (opaque, used to delete). */
+  id: string;
+  /** Filename/key used when the item was uploaded (e.g. "kcse-bio-2024.md"). */
+  key: string;
+  /** AI Search processing status. */
+  status: "completed" | "error" | "skipped" | "queued" | "running" | "outdated";
+  /** Number of indexed chunks, or null while still processing. */
+  chunksCount: number | null;
+  /** File size in bytes, or null if unknown. */
+  fileSize: number | null;
+  /** ISO timestamp string of when the item was created. */
+  createdAt: string | null;
+  /** Human-readable title supplied by the admin. */
+  title: string;
+  /** Original URL when the content was fetched from a URL. */
+  sourceUrl?: string;
+};
 
 /** A partial edit to one promoted format. Absent fields are left alone. */
 export type AdminFormatPatch = {
