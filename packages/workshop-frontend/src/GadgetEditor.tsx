@@ -14,8 +14,6 @@ import {
   Sparkle,
   FilmSlate,
   CaretLeft,
-  ChatCircleText,
-  Lightning,
   Code,
   DotsThreeVertical,
   type Icon,
@@ -584,6 +582,7 @@ export default function GadgetEditor() {
         })
         setWorkspaceVisibility('open')
         setActiveTab('app')
+        setMobileView('app')
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
     }
@@ -599,6 +598,7 @@ export default function GadgetEditor() {
         })
         setWorkspaceVisibility('open')
         setActiveTab('app')
+        setMobileView('app')
         setChatWidth(clampChatWidth(VIDEO_CHAT_WIDTH))
       }
     }
@@ -640,6 +640,7 @@ export default function GadgetEditor() {
     const t = setTimeout(() => setShowFullscreenHint(false), 4000)
     return () => clearTimeout(t)
   }, [showFullscreenHint])
+
 
   // Move focus into the overlay when entering fullscreen, and back to the prior element on exit.
   useEffect(() => {
@@ -854,7 +855,7 @@ export default function GadgetEditor() {
   const hasAnyApps = allGadgets.length > 0
   const showingActivity = workspaceView?.mode === 'activity'
   const isPlayingVideo = Boolean(activeGadgetVideo || activeHyperFramesVideo)
-  const showFullEditor = isPlayingVideo || (layoutModeReady && (
+  const showFullEditor = isPlayingVideo || activeTab === 'code' || (layoutModeReady && (
     showingActivity || (hasAnyApps && (workspaceView === null ? !simpleMode : workspaceView.mode === 'app'))
   ))
   const showOutputRail = !isMobile && layoutModeReady && hasAnyApps && !showFullEditor
@@ -1253,6 +1254,64 @@ export default function GadgetEditor() {
     })
   }, [id, navigate, isAgentActive, setWorkspaceVisibility, workpieces, handleTabSelect])
 
+  const handleOpenCode = useCallback((workpieceId?: WorkpieceId) => {
+    if (isAgentActive) userPickedWorkpieceThisTurnRef.current = true
+    handleTabSelect('code')
+    setMobileView('code')
+    if (workpieceId !== undefined) {
+      setWorkspaceVisibility('open', workpieceId)
+      const pendingChatId = workpieces.get(workpieceId)?.chatId
+      navigate({
+        to: '/workspace/$id',
+        params: { id: id! },
+        search: (prev: Record<string, unknown>) => ({
+          ...prev,
+          chat: pendingChatId ?? (typeof prev.chat === 'number' ? prev.chat : undefined),
+          w: workpieceId,
+        }),
+      })
+    } else {
+      setWorkspaceVisibility('open', selectedGadgetId ?? undefined)
+    }
+  }, [id, navigate, isAgentActive, setWorkspaceVisibility, workpieces, handleTabSelect, selectedGadgetId])
+
+  // ── Touch swipe navigation (mobile) ──────────────────────────────────────────
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!isMobile) return
+    if (e.touches.length === 1) {
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+  }, [isMobile])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!isMobile || !touchStartRef.current) return
+    const touchEnd = e.changedTouches[0]
+    if (!touchEnd) return
+
+    const deltaX = touchEnd.clientX - touchStartRef.current.x
+    const deltaY = touchEnd.clientY - touchStartRef.current.y
+    touchStartRef.current = null
+
+    // Require predominantly horizontal movement and at least 40px swipe distance
+    if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+      if (mobileView === 'chat') {
+        // Swipe to show Gadget UI
+        setMobileView('app')
+        handleTabSelect('app')
+        if (selectedGadgetId) {
+          setWorkspaceVisibility('open', selectedGadgetId)
+        } else {
+          setWorkspaceVisibility('open')
+        }
+      } else {
+        // Swipe to return to Chat
+        setMobileView('chat')
+      }
+    }
+  }, [isMobile, mobileView, handleTabSelect, selectedGadgetId, setWorkspaceVisibility])
+
   const handleRenameWorkpiece = useCallback(async (workpieceId: WorkpieceId, title: string) => {
     if (!overseer) return
     // The subscription delivers the updated summary, so no local state change is needed.
@@ -1607,72 +1666,12 @@ export default function GadgetEditor() {
         </div>
       </div>
 
-      {/* ═══ MOBILE SEGMENTED VIEW SWITCHER ═══════════════════════════════ */}
-      {isMobile && (
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-kumo-line bg-kumo-base flex-shrink-0 z-10">
-          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-kumo-fill/60 border border-kumo-line w-full">
-            <button
-              type="button"
-              onClick={() => setMobileView('chat')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-[13px] font-medium transition-all cursor-pointer ${
-                mobileView === 'chat'
-                  ? 'bg-kumo-base text-kumo-default shadow-sm'
-                  : 'text-kumo-subtle hover:text-kumo-default'
-              }`}
-            >
-              <ChatCircleText size={15} weight={mobileView === 'chat' ? 'bold' : 'regular'} />
-              <span>Chat</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileView('app')
-                handleTabSelect('app')
-                if (!showFullEditor && selectedGadgetId) {
-                  setWorkspaceVisibility('open', selectedGadgetId)
-                }
-              }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-[13px] font-medium transition-all relative cursor-pointer ${
-                mobileView === 'app'
-                  ? 'bg-kumo-base text-kumo-default shadow-sm'
-                  : 'text-kumo-subtle hover:text-kumo-default'
-              }`}
-            >
-              <Lightning size={15} weight={mobileView === 'app' ? 'fill' : 'regular'} className="text-amber-500" />
-              <span>Gadget UI</span>
-              {hasAnyApps && (
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                </span>
-              )}
-            </button>
-            {hasCodeRelatedState && (
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileView('code')
-                  handleTabSelect('code')
-                  if (!showFullEditor && selectedGadgetId) {
-                    setWorkspaceVisibility('open', selectedGadgetId)
-                  }
-                }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-[13px] font-medium transition-all cursor-pointer ${
-                  mobileView === 'code'
-                    ? 'bg-kumo-base text-kumo-default shadow-sm'
-                    : 'text-kumo-subtle hover:text-kumo-default'
-                }`}
-              >
-                <Code size={15} weight={mobileView === 'code' ? 'bold' : 'regular'} />
-                <span>Code</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ BODY ═════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-1 min-h-0 relative overflow-hidden">
+      {/* ═══ BODY (Supports mobile swipe gestures between Chat and Gadget UI) ═══ */}
+      <div
+        className="flex flex-1 min-h-0 relative overflow-hidden"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
 
         {isAgentActive && (
           <div
@@ -1728,6 +1727,7 @@ export default function GadgetEditor() {
                   onHasAnyCodeChange={setHasAnyProposedChanges}
                   onSelectedChatHasProposedChangesChange={setSelectedChatHasProposedChanges}
                   onOpenGadget={handleSelectWorkpiece}
+                  onOpenCode={handleOpenCode}
                   outputOfWorkpiece={outputOfWorkpiece}
                 />
               </div>
@@ -1790,6 +1790,8 @@ export default function GadgetEditor() {
             <div className="flex min-w-0 flex-1 items-center overflow-hidden">
               {paneShowsActivity ? (
                 <PaneLabel icon={Pulse} title="Activity" />
+              ) : activeTab === 'code' ? (
+                <PaneLabel icon={Code} title="Workspace Code" />
               ) : isPlayingVideo && !selectedGadgetSummary ? (
                 <PaneLabel
                   icon={FilmSlate}
@@ -1807,11 +1809,8 @@ export default function GadgetEditor() {
                   title={selectedGadgetSummary.title}
                   badge={selectedGadgetSummary.chatId !== undefined ? 'Draft' : undefined}
                 />
-              ) : isPlayingVideo ? (
-                <PaneLabel
-                  icon={FilmSlate}
-                  title={activeGadgetVideo?.title || activeHyperFramesVideo?.title || "Video"}
-                />
+              ) : isMobile ? (
+                <PaneLabel icon={Pulse} title="Gadget UI" />
               ) : null}
             </div>
 
@@ -1827,15 +1826,30 @@ export default function GadgetEditor() {
                       onClick={() => setActivityView(tab.value)}
                     />
                   ))
+                  : isMobile
+                  ? [
+                      { value: 'app' as const, label: isPlayingVideo ? 'Video' : 'Gadget' },
+                      { value: 'code' as const, label: 'Code' },
+                    ].map(tab => (
+                      <PaneTab
+                        key={tab.value}
+                        active={activeTab === tab.value}
+                        label={tab.label}
+                        onClick={() => handleTabSelect(tab.value)}
+                      />
+                    ))
                   : isPlayingVideo && !selectedGadgetSummary
-                  ? [{ value: 'app' as const, label: 'Video' }].map(tab => (
-                    <PaneTab
-                      key={tab.value}
-                      active={activeTab === tab.value}
-                      label={tab.label}
-                      onClick={() => handleTabSelect(tab.value)}
-                    />
-                  ))
+                  ? [
+                      { value: 'app' as const, label: 'Video' },
+                      { value: 'code' as const, label: 'Code' },
+                    ].map(tab => (
+                      <PaneTab
+                        key={tab.value}
+                        active={activeTab === tab.value}
+                        label={tab.label}
+                        onClick={() => handleTabSelect(tab.value)}
+                      />
+                    ))
                   : rightTabs(selectedGadgetSummary?.output).map(tab => (
                     <PaneTab
                       key={tab.value}
@@ -1958,10 +1972,10 @@ export default function GadgetEditor() {
             </div>
 
             <div className={activeTab === 'code' ? 'h-full' : 'hidden'}>
-              {overseer && selectedFilesRoot !== undefined ? (
+              {overseer ? (
                 <GadgetCodeInterface
                   overseer={overseer.stub}
-                  filesRoot={selectedFilesRoot}
+                  filesRoot={selectedFilesRoot ?? ''}
                   height={RIGHT_CONTENT_H}
                   onCodeChange={() => setUiReloadTrigger(t => t + 1)}
                   selectedChatId={effectiveSelectedChatId}

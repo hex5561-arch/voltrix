@@ -51,10 +51,12 @@ import {
   Globe,
   MagnifyingGlass,
   Question,
-  ArrowUpRight,
   Blueprint,
   Microphone,
   MicrophoneSlash,
+  GraduationCap,
+  CalendarBlank,
+  BookOpen,
 } from "@phosphor-icons/react";
 import { RpcStub, RpcTarget } from "capnweb";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -171,28 +173,30 @@ type CreatedGadgetCardInfo = {
 function CreatedGadgetChatCard({
   gadget,
   onOpen,
+  onOpenCode,
 }: {
   gadget: CreatedGadgetCardInfo;
   onOpen: () => void;
+  onOpenCode?: () => void;
 }) {
   return (
-    <div className="group/createdApp relative w-full max-w-[440px]">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="group flex w-full cursor-pointer items-stretch overflow-hidden rounded-2xl border border-kumo-line bg-kumo-base text-left shadow-[0_1px_2px_rgba(82,16,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-[0_10px_28px_rgba(82,16,0,0.10)]"
-      >
-        <span
-          className="relative grid w-[88px] flex-shrink-0 place-items-center overflow-hidden border-r border-kumo-line bg-kumo-tint/40"
-          aria-hidden="true"
+    <div className="group/createdApp relative w-full max-w-[460px]">
+      <div className="group flex w-full items-stretch overflow-hidden rounded-2xl border border-kumo-line bg-kumo-base text-left shadow-[0_1px_2px_rgba(82,16,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-[0_10px_28px_rgba(82,16,0,0.10)]">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="relative grid w-[88px] flex-shrink-0 place-items-center overflow-hidden border-r border-kumo-line bg-kumo-tint/40 cursor-pointer"
+          aria-label="Preview gadget"
         >
           <span className="absolute inset-0 bg-gradient-to-br from-kumo-brand/[0.08] via-transparent to-transparent" />
-          {/* Drawn from the shared format vocabulary, so this card depicts a Document as a page
-              rather than a generic window the moment formats exist. */}
           <FormatMiniature output={gadget.output} />
-        </span>
-        <span className="flex min-w-0 flex-1 items-center gap-2 px-3.5 py-3 pr-10">
-          <span className="min-w-0 flex-1">
+        </button>
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3.5 py-3">
+          <button
+            type="button"
+            onClick={onOpen}
+            className="min-w-0 flex-1 text-left cursor-pointer"
+          >
             <span className="block truncate text-[14px] font-medium tracking-[-0.2px] text-kumo-default">
               {gadget.title}
             </span>
@@ -204,16 +208,35 @@ function CreatedGadgetChatCard({
               )}
               <span>
                 {gadget.isPending
-                    ? `New ${formatOf(gadget.output).noun.toLowerCase()} · Click to preview`
-                    : `${formatOf(gadget.output).noun} · Click to open`}
+                    ? `New ${formatOf(gadget.output).noun.toLowerCase()}`
+                    : `${formatOf(gadget.output).noun}`}
               </span>
             </span>
-          </span>
-          <span className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full text-kumo-inactive transition-all duration-150 group-hover:bg-kumo-tint group-hover:text-kumo-default">
-            <ArrowUpRight size={15} weight="bold" />
-          </span>
-        </span>
-      </button>
+          </button>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onOpen}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-kumo-brand/10 hover:bg-kumo-brand/20 text-kumo-brand text-[12px] font-semibold transition cursor-pointer"
+              title="Open Gadget Preview"
+            >
+              <Lightning size={13} weight="fill" />
+              <span>Gadget</span>
+            </button>
+            {onOpenCode && (
+              <button
+                type="button"
+                onClick={onOpenCode}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-kumo-fill hover:bg-kumo-line text-kumo-default text-[12px] font-semibold transition cursor-pointer"
+                title="View Gadget Code"
+              >
+                <Code size={13} weight="bold" />
+                <span>Code</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2322,6 +2345,22 @@ export const ChatInput = ({
   };
 
   useEffect(() => {
+    const handleSetComposerText = (e: Event) => {
+      const custom = e as CustomEvent<{ text: string; cursor?: number }>;
+      if (typeof custom.detail?.text === "string") {
+        handleInputChange(custom.detail.text, custom.detail.cursor);
+        requestAnimationFrame(() => {
+          composerTextareaRef.current?.focus();
+        });
+      }
+    };
+    window.addEventListener("voltrix-set-composer-text", handleSetComposerText);
+    return () => {
+      window.removeEventListener("voltrix-set-composer-text", handleSetComposerText);
+    };
+  }, []);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -3365,58 +3404,6 @@ export const ChatInput = ({
           </div>
         </div>
       )}
-
-      {/* Academic Quick Action Chips */}
-      <div className="flex items-center gap-1.5 px-0.5 py-1 overflow-x-auto text-[11px] no-scrollbar scroll-smooth mb-1.5 touch-pan-x">
-        <button
-          type="button"
-          onClick={() => {
-            handleInputChange("/timetable", 10);
-            composerTextareaRef.current?.focus();
-          }}
-          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-kumo-base hover:bg-kumo-tint text-kumo-subtle hover:text-kumo-default border border-kumo-line transition-all active:scale-95 cursor-pointer whitespace-nowrap touch-manipulation"
-        >
-          <span>📅 /timetable</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            handleInputChange("/velocity", 9);
-            composerTextareaRef.current?.focus();
-          }}
-          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-kumo-base hover:bg-kumo-tint text-kumo-subtle hover:text-kumo-default border border-kumo-line transition-all active:scale-95 cursor-pointer whitespace-nowrap touch-manipulation"
-        >
-          <span>⚡ /velocity</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            window.dispatchEvent(new CustomEvent('voltrix-open-exam-gadget'));
-          }}
-          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all active:scale-95 cursor-pointer whitespace-nowrap font-medium touch-manipulation"
-        >
-          <span>🎓 Live Exam Gadget</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            window.dispatchEvent(new CustomEvent('voltrix-open-portfolio'));
-          }}
-          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 transition-all active:scale-95 cursor-pointer whitespace-nowrap font-medium touch-manipulation"
-        >
-          <span>📁 Portfolio Auditor</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            handleInputChange("/video ", 7);
-            composerTextareaRef.current?.focus();
-          }}
-          className="inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full bg-kumo-base hover:bg-kumo-tint text-kumo-subtle hover:text-kumo-default border border-kumo-line transition-all active:scale-95 cursor-pointer whitespace-nowrap touch-manipulation"
-        >
-          <span>🎬 /video Explainer</span>
-        </button>
-      </div>
 
       {/* Prompt card. Brighter than the page surface (kumo-control vs kumo-base) and gently lifted
           with a soft neutral shadow so the composer reads as a distinct surface instead of blending
@@ -4476,6 +4463,7 @@ interface ChatInterfaceProps {
   onSelectedChatHasProposedChangesChange?: (hasProposedChanges: boolean) => void;
   constrainChatWidth?: boolean;
   onOpenGadget: (gadgetId: WorkpieceId) => void;
+  onOpenCode?: (gadgetId?: WorkpieceId) => void;
 
   // The output format a workpiece was built as, so a created-app card can name and draw it as the
   // Document (or whatever) it is rather than a generic app.
@@ -4672,6 +4660,7 @@ function ChatInterface({
   onSelectedChatHasProposedChangesChange,
   constrainChatWidth,
   onOpenGadget,
+  onOpenCode,
   outputOfWorkpiece,
 }: ChatInterfaceProps) {
   // Persistent cache that survives reconnects
@@ -4731,15 +4720,18 @@ function ChatInterface({
     };
     const onOpenTt = () => setIsTimetableOpen(true);
     const onOpenPort = () => setIsPortfolioOpen(true);
+    const onOpenPastPapers = () => setIsPastPaperOpen(true);
 
     window.addEventListener('voltrix-open-exam-gadget', onOpenExam);
     window.addEventListener('voltrix-open-timetable', onOpenTt);
     window.addEventListener('voltrix-open-portfolio', onOpenPort);
+    window.addEventListener('voltrix-open-past-papers', onOpenPastPapers);
 
     return () => {
       window.removeEventListener('voltrix-open-exam-gadget', onOpenExam);
       window.removeEventListener('voltrix-open-timetable', onOpenTt);
       window.removeEventListener('voltrix-open-portfolio', onOpenPort);
+      window.removeEventListener('voltrix-open-past-papers', onOpenPastPapers);
     };
   }, []);
   const [cohortAnnouncements, setCohortAnnouncements] = useState<any[]>([]);
@@ -6495,72 +6487,93 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
   // Accepted creations remain in the transcript; reverted ones disappear.
   const createdGadgetsByTurnItemSeq = useMemo(() => {
     const out = new Map<number, CreatedGadgetCardInfo[]>();
-    let lastAgentMessageSeq: number | null = null;
-    let lastVisibleWorkSeq: number | null = null;
-    let creations: CreatedGadgetCardInfo[] = [];
-    let creationAnchorSeq: number | null = null;
+    let currentTurnAnchorSeq: number | null = null;
+    let turnCreations: CreatedGadgetCardInfo[] = [];
+    let lastAnchorSeqAttached: number | null = null;
 
-    const currentAnchorSeq = () => lastAgentMessageSeq ?? lastVisibleWorkSeq;
-
-    const attachCreations = () => {
-      if (creations.length === 0) return;
-      const anchorSeq = currentAnchorSeq();
-      if (anchorSeq === null) return;
-      if (creationAnchorSeq !== null && creationAnchorSeq !== anchorSeq) {
-        out.delete(creationAnchorSeq);
+    const commitCreations = (anchor: number | null) => {
+      if (turnCreations.length === 0 || anchor === null) return;
+      if (lastAnchorSeqAttached !== null && lastAnchorSeqAttached !== anchor) {
+        out.delete(lastAnchorSeqAttached);
       }
-      out.set(anchorSeq, creations);
-      creationAnchorSeq = anchorSeq;
+      out.set(anchor, [...turnCreations]);
+      lastAnchorSeqAttached = anchor;
     };
 
-    const resetTurn = () => {
-      lastAgentMessageSeq = null;
-      lastVisibleWorkSeq = null;
-      creations = [];
-      creationAnchorSeq = null;
+    const startNewTurn = (newAnchorSeq: number) => {
+      if (turnCreations.length > 0 && currentTurnAnchorSeq !== null) {
+        commitCreations(currentTurnAnchorSeq);
+      }
+      currentTurnAnchorSeq = newAnchorSeq;
+      turnCreations = [];
+      lastAnchorSeqAttached = null;
     };
 
     for (const m of currentMessages) {
-      if (m.type === "slashCommand" || m.type === "merge" || m.type === "revert") {
-        resetTurn();
+      if (m.type === "slashCommand") {
+        startNewTurn(m.sequence);
         continue;
       }
 
       if (m.type === "message") {
         if (m.author.type === "user") {
-          resetTurn();
+          startNewTurn(m.sequence);
         } else if (!isEmptyAssistantMessage(m)) {
-          lastAgentMessageSeq = m.sequence;
-          lastVisibleWorkSeq = m.sequence;
-          attachCreations();
+          currentTurnAnchorSeq = m.sequence;
+          commitCreations(m.sequence);
         }
         continue;
       }
 
       if (isObservationActionMessage(m) || m.type === "useGadget") {
-        lastVisibleWorkSeq = m.sequence;
-        attachCreations();
+        if (currentTurnAnchorSeq === null) {
+          currentTurnAnchorSeq = m.sequence;
+        }
+        commitCreations(currentTurnAnchorSeq);
+        continue;
+      }
+
+      if (m.type === "revert") {
+        turnCreations = [];
+        if (lastAnchorSeqAttached !== null) {
+          out.delete(lastAnchorSeqAttached);
+        }
+        continue;
+      }
+
+      if (m.type === "merge") {
+        if (currentTurnAnchorSeq !== null) {
+          commitCreations(currentTurnAnchorSeq);
+        }
         continue;
       }
 
       if (m.type !== "changes") continue;
-      if (m.author.type === "user") {
-        resetTurn();
-        continue;
-      }
 
       const status = messageStates.changeStatus.get(m.sequence) ?? "pending";
-      if (status === "reverted" || !m.createdGadgets) continue;
-      creations = [
-        ...creations,
-        ...m.createdGadgets.map(({ gadgetId, title }) => ({
-          gadgetId,
-          title,
-          isPending: status === "pending",
-          output: outputOfWorkpiece(gadgetId),
-        })),
-      ];
-      attachCreations();
+      if (status === "reverted" || !m.createdGadgets || m.createdGadgets.length === 0) continue;
+
+      const newCreations = m.createdGadgets.map(({ gadgetId, title }) => ({
+        gadgetId,
+        title,
+        isPending: status === "pending",
+        output: outputOfWorkpiece(gadgetId),
+      }));
+
+      const existingIds = new Set(turnCreations.map((c) => c.gadgetId));
+      for (const item of newCreations) {
+        if (!existingIds.has(item.gadgetId)) {
+          turnCreations.push(item);
+          existingIds.add(item.gadgetId);
+        }
+      }
+
+      const anchor = currentTurnAnchorSeq ?? m.sequence;
+      commitCreations(anchor);
+    }
+
+    if (turnCreations.length > 0 && currentTurnAnchorSeq !== null) {
+      commitCreations(currentTurnAnchorSeq);
     }
 
     return out;
@@ -6931,8 +6944,8 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
   // ─── sidebar list content (reused in both modes) ──────────────────────────
   const chatListPanel = (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Chat list header — title doubles as the scope switcher */}
-      <div className="flex h-12 flex-shrink-0 items-center border-b border-kumo-line px-4">
+      {/* Chat list header — title doubles as the scope switcher + Quick Tools dropdown */}
+      <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-kumo-line px-4">
         <DropdownMenu>
           <DropdownMenu.Trigger
             render={
@@ -6971,6 +6984,98 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                 </DropdownMenu.Item>
               );
             })}
+          </DropdownMenu.Content>
+        </DropdownMenu>
+
+        {/* Academic Tools menu */}
+        <DropdownMenu>
+          <DropdownMenu.Trigger
+            render={
+              <button
+                type="button"
+                className="flex h-8 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint/60 transition-colors cursor-pointer"
+                title="Academic & Learning Tools"
+                aria-label="Academic Tools"
+              >
+                <GraduationCap size={15} weight="bold" className="text-emerald-500" />
+                <span className="hidden sm:inline">Tools</span>
+                <CaretDown size={9} weight="bold" className="text-kumo-inactive" />
+              </button>
+            }
+          />
+          <DropdownMenu.Content className="themed-floating-shadow !z-[1100] !min-w-[220px] rounded-lg border border-kumo-line bg-kumo-base p-1.5 shadow-xl">
+            <DropdownMenu.Item
+              onClick={() => {
+                setIsPastPaperOpen(true);
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <BookOpen size={15} weight="fill" className="text-amber-400 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium text-amber-400">National Past Papers & Rubrics</span>
+                <span className="text-[10.5px] text-kumo-inactive">Browse past national papers & exams</span>
+              </div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('voltrix-open-exam-gadget'));
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <GraduationCap size={15} weight="fill" className="text-emerald-500 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium text-emerald-400">Live Exam Gadget</span>
+                <span className="text-[10.5px] text-kumo-inactive">Interactive exam simulator</span>
+              </div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('voltrix-open-portfolio'));
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <FileIcon size={15} weight="fill" className="text-purple-400 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium text-purple-400">Portfolio Auditor</span>
+                <span className="text-[10.5px] text-kumo-inactive">Audit assignments & grades</span>
+              </div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('voltrix-set-composer-text', { detail: { text: "/timetable", cursor: 10 } }));
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <CalendarBlank size={15} className="text-blue-400 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium">Timetable (/timetable)</span>
+                <span className="text-[10.5px] text-kumo-inactive">Generate study schedules</span>
+              </div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('voltrix-set-composer-text', { detail: { text: "/velocity", cursor: 9 } }));
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <Lightning size={15} weight="fill" className="text-amber-400 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium">Velocity Tracker (/velocity)</span>
+                <span className="text-[10.5px] text-kumo-inactive">Study speed & throughput</span>
+              </div>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('voltrix-set-composer-text', { detail: { text: "/video ", cursor: 7 } }));
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <Code size={15} className="text-indigo-400 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium">Video Explainer (/video)</span>
+                <span className="text-[10.5px] text-kumo-inactive">Synthesize animated videos</span>
+              </div>
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu>
       </div>
@@ -7294,15 +7399,95 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                     </>
                   )}
 
-                  <WorkshopIconButton
-                    onClick={() => handleDeleteChat()}
-                    danger
-                    className="!h-8 !w-8 flex-shrink-0 text-kumo-inactive"
-                    title="Delete chat"
-                    aria-label="Delete chat"
-                  >
-                    <Trash size={14} />
-                  </WorkshopIconButton>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenu.Trigger
+                        render={
+                          <button
+                            type="button"
+                            className="flex h-8 items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-kumo-subtle hover:text-kumo-default hover:bg-kumo-tint/60 transition-colors cursor-pointer"
+                            title="Academic & Learning Tools"
+                            aria-label="Academic Tools"
+                          >
+                            <GraduationCap size={15} weight="bold" className="text-emerald-500" />
+                            <CaretDown size={9} weight="bold" className="text-kumo-inactive" />
+                          </button>
+                        }
+                      />
+                      <DropdownMenu.Content className="themed-floating-shadow !z-[1100] !min-w-[220px] rounded-lg border border-kumo-line bg-kumo-base p-1.5 shadow-xl">
+                        <DropdownMenu.Item
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('voltrix-open-exam-gadget'));
+                          }}
+                          className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+                        >
+                          <GraduationCap size={15} weight="fill" className="text-emerald-500 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-medium text-emerald-400">Live Exam Gadget</span>
+                            <span className="text-[10.5px] text-kumo-inactive">Interactive exam simulator</span>
+                          </div>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('voltrix-open-portfolio'));
+                          }}
+                          className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+                        >
+                          <FileIcon size={15} weight="fill" className="text-purple-400 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-medium text-purple-400">Portfolio Auditor</span>
+                            <span className="text-[10.5px] text-kumo-inactive">Audit assignments & grades</span>
+                          </div>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('voltrix-set-composer-text', { detail: { text: "/timetable", cursor: 10 } }));
+                          }}
+                          className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+                        >
+                          <CalendarBlank size={15} className="text-blue-400 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-medium">Timetable (/timetable)</span>
+                            <span className="text-[10.5px] text-kumo-inactive">Generate study schedules</span>
+                          </div>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('voltrix-set-composer-text', { detail: { text: "/velocity", cursor: 9 } }));
+                          }}
+                          className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+                        >
+                          <Lightning size={15} weight="fill" className="text-amber-400 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-medium">Velocity Tracker (/velocity)</span>
+                            <span className="text-[10.5px] text-kumo-inactive">Study speed & throughput</span>
+                          </div>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('voltrix-set-composer-text', { detail: { text: "/video ", cursor: 7 } }));
+                          }}
+                          className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+                        >
+                          <Code size={15} className="text-indigo-400 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-medium">Video Explainer (/video)</span>
+                            <span className="text-[10.5px] text-kumo-inactive">Synthesize animated videos</span>
+                          </div>
+                        </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu>
+
+                    <WorkshopIconButton
+                      onClick={() => handleDeleteChat()}
+                      danger
+                      className="!h-8 !w-8 flex-shrink-0 text-kumo-inactive"
+                      title="Delete chat"
+                      aria-label="Delete chat"
+                    >
+                      <Trash size={14} />
+                    </WorkshopIconButton>
+                  </div>
                 </div>
               )}
 
@@ -7530,6 +7715,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                                 key={created.gadgetId}
                                 gadget={created}
                                 onOpen={() => onOpenGadget(created.gadgetId)}
+                                onOpenCode={() => onOpenCode?.(created.gadgetId)}
                               />
                             ))}
                           </div>
@@ -7567,6 +7753,14 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                                 </span>
                               </Tooltip>
                             </div>
+                            {(createdGadgetsByTurnItemSeq.get(msg.sequence) ?? []).map((created) => (
+                              <CreatedGadgetChatCard
+                                key={created.gadgetId}
+                                gadget={created}
+                                onOpen={() => onOpenGadget(created.gadgetId)}
+                                onOpenCode={() => onOpenCode?.(created.gadgetId)}
+                              />
+                            ))}
                           </div>
                         )}
                         {msg.type === "message" && (
@@ -7617,6 +7811,14 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                                   </span>
                                 </Tooltip>
                               </div>
+                              {(createdGadgetsByTurnItemSeq.get(msg.sequence) ?? []).map((created) => (
+                                <CreatedGadgetChatCard
+                                  key={created.gadgetId}
+                                  gadget={created}
+                                  onOpen={() => onOpenGadget(created.gadgetId)}
+                                  onOpenCode={() => onOpenCode?.(created.gadgetId)}
+                                />
+                              ))}
                             </div>
                           ) : (() => {
                             const messageToolGroups = entry.toolCallGroups;
@@ -7712,6 +7914,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                                 key={created.gadgetId}
                                 gadget={created}
                                 onOpen={() => onOpenGadget(created.gadgetId)}
+                                onOpenCode={() => onOpenCode?.(created.gadgetId)}
                               />
                             ))}
 
@@ -8124,30 +8327,25 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                     </div>
                   ))}
 
-                  {/* Socratic / Exam Mode Pill & National Past Papers Trigger */}
-                  <div className="flex items-center justify-between px-3.5 pt-2 pb-1 text-[11px]">
-                    <div className="flex items-center gap-2">
-                      {studentProfile?.cohortVariables?.socraticMode && (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                          Socratic Guidance Mode Active ({studentProfile.cohortName || 'Cohort'})
-                        </span>
-                      )}
-                      {studentProfile?.cohortVariables?.examLock && (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                          Exam Assessment Lockout Active
-                        </span>
-                      )}
+                  {/* Socratic / Exam Mode Pill */}
+                  {(studentProfile?.cohortVariables?.socraticMode || studentProfile?.cohortVariables?.examLock) && (
+                    <div className="flex items-center px-3.5 pt-2 pb-1 text-[11px]">
+                      <div className="flex items-center gap-2">
+                        {studentProfile?.cohortVariables?.socraticMode && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                            Socratic Guidance Mode Active ({studentProfile.cohortName || 'Cohort'})
+                          </span>
+                        )}
+                        {studentProfile?.cohortVariables?.examLock && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                            Exam Assessment Lockout Active
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsPastPaperOpen(true)}
-                      className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/70 text-zinc-300 hover:text-white transition cursor-pointer font-medium"
-                    >
-                      <span>📚 National Past Papers & Rubrics</span>
-                    </button>
-                  </div>
+                  )}
 
                   {/* Remount all transient composer state when the conversation changes. */}
                   <ChatInput
