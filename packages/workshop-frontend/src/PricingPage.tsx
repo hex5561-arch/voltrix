@@ -623,9 +623,13 @@ export default function PricingPage() {
   const finalUsd = parseFloat(Math.max(0, (rawSubtotalUsd * (1 - totalDiscountPct / 100))).toFixed(2))
 
   async function initiatePayment() {
-    if (!email) { setCheckoutError('Email address is required'); return }
+    if (!email.trim()) { setCheckoutError('Email address is required'); return }
     if (paymentMethod === 'card' && !cardNumber.trim()) {
       setCheckoutError('Please enter your card number')
+      return
+    }
+    if (paymentMethod === 'mobile_money' && !phone.trim()) {
+      setCheckoutError('Please enter your subscriber phone number to receive the payment prompt')
       return
     }
     setIsSubmitting(true)
@@ -652,6 +656,7 @@ export default function PricingPage() {
           planLabel: selectedPlan.label,
           months,
           paymentMethod,
+          operator: paymentMethod === 'mobile_money' ? momoProvider : undefined,
           autoRenew,
           cardDetails: paymentMethod === 'card' ? {
             last4: cardNumber.replace(/\s+/g, '').slice(-4) || '4242',
@@ -1412,6 +1417,13 @@ export default function PricingPage() {
                 </div>
               )}
               {promoError && <p className="text-xs text-red-400">{promoError}</p>}
+
+              {checkoutError && (
+                <div className="p-3 rounded-xl bg-red-950/70 border border-red-800/60 text-red-300 text-xs flex items-start gap-2 shadow-sm animate-fade-in">
+                  <span className="shrink-0 font-bold">⚠️</span>
+                  <span className="leading-snug">{checkoutError}</span>
+                </div>
+              )}
 
               {/* Primary CTA Button (ChatGPT Style) */}
               {step !== 'success' && (

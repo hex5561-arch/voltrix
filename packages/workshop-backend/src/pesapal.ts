@@ -236,6 +236,12 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
     } else if (normPhone.startsWith("+")) {
       normPhone = normPhone.slice(1);
     }
+    if (!normPhone) {
+      normPhone = countryCode === "KE" ? "254700000000" : "256770000000";
+    }
+
+    // Ensure email is valid for Pesapal schema
+    const normEmail = email && email.includes("@") ? email : `${email || "scholar"}@voltrix.stream`;
 
     const payload = {
       id: merchantRef,
@@ -247,8 +253,8 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
       notification_id: ipnId,
       redirect_mode: "TOP_WINDOW",
       billing_address: {
-        email_address: email || "scholar@voltrix.stream",
-        phone_number: normPhone || "",
+        email_address: normEmail,
+        phone_number: normPhone,
         first_name: firstName || "Scholar",
         last_name: lastName || "",
         country_code: countryCode || "UG",
