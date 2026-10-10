@@ -421,7 +421,7 @@ export default function PricingPage() {
   const [name, setName] = useState(() => studentProfile?.name || currentUser?.name || '')
   const [institution, setInstitution] = useState(() => studentProfile?.university || '')
   const [phone, setPhone] = useState('')
-  const [, setIframeUrl] = useState('')
+  const [iframeUrl, setIframeUrl] = useState('')
   const [trackId, setTrackId] = useState('')
   const [checkoutError, setCheckoutError] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -476,6 +476,22 @@ export default function PricingPage() {
         }
       })
       .catch(() => {})
+  }, [])
+
+  // Detect Pesapal return redirect (e.g. ?payment=success&ref=... or ?payment=failed)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const pStatus = params.get('payment')
+    const ref = params.get('ref') || params.get('OrderTrackingId')
+    if (pStatus === 'success' && ref) {
+      setTrackId(ref)
+      setStep('success')
+      fetch(`${COURSEHERO_API}/payments/status/${ref}`).catch(() => {})
+    } else if (pStatus === 'failed') {
+      setCheckoutError('The transaction was cancelled or declined. Please try again.')
+      setStep('form')
+    }
   }, [])
 
   // Fetch live plans and promos from backend KV
@@ -951,6 +967,42 @@ export default function PricingPage() {
                     </Link>
                   </div>
                 </div>
+              ) : step === 'payment' && iframeUrl ? (
+                /* ── PESAPAL SECURE GATEWAY IFRAME ── */
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950/70">
+                    <div className="flex items-center gap-2.5 text-xs">
+                      <ShieldCheck size={18} weight="fill" className="text-emerald-400" />
+                      <span className="font-bold text-white">Pesapal Secure Gateway</span>
+                      <span className="text-zinc-500 font-mono text-[11px]">· {formatPrice(finalUsd, currency)}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-mono text-zinc-400 flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        <span>Awaiting payment...</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (pollRef.current) clearInterval(pollRef.current)
+                          setStep('form')
+                          setIframeUrl('')
+                        }}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                  <div className="w-full h-[620px] bg-white">
+                    <iframe
+                      src={iframeUrl}
+                      title="Pesapal Checkout"
+                      className="w-full h-full border-0"
+                      allow="payment"
+                    />
+                  </div>
+                </div>
               ) : (
                 /* ── SCHOLAR DETAILS & CHATGPT PAYWALL ── */
                 <div className="space-y-6">
@@ -1365,7 +1417,7 @@ export default function PricingPage() {
               {step !== 'success' && (
                 <button
                   type="button"
-                  disabled={!email || isSubmitting}
+                  disabled={!email || isSubmitting || step === 'payment'}
                   onClick={initiatePayment}
                   className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
@@ -1373,6 +1425,11 @@ export default function PricingPage() {
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       <span>Processing Secure Order...</span>
+                    </>
+                  ) : step === 'payment' ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Awaiting Pesapal Authorization...</span>
                     </>
                   ) : (
                     <>

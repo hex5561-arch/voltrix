@@ -83,6 +83,12 @@ declare global {
       // Minimum connected-account balance (USD) to proceed via BYOK. Defaults to
       // MINIMUM_CLOUDFLARE_BALANCE.
       MINIMUM_CLOUDFLARE_BALANCE?: string;
+
+      // Pesapal v3 payment gateway configuration
+      PESAPAL_CONSUMER_KEY?: string;
+      PESAPAL_CONSUMER_SECRET?: string;
+      PESAPAL_ENV?: string;
+      PESAPAL_IPN_ID?: string;
     }
   }
 }

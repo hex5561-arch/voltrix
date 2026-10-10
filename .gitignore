@@ -50,4 +50,5 @@ wrangler.dev.jsonc
 hf-videos/
 packages/workshop-backend/hf-videos/
 
-
+# Screenshots
+screenshots/

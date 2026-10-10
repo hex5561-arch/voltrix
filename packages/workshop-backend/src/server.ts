@@ -31,6 +31,7 @@ import { createWorkshopLogger } from "./observability";
 import { wrapDoStubForTelemetry } from "./do-telemetry";
 
 import { handleYouTubeSearchRequest, handleYouTubeIngestRequest } from "./youtube-engine.js";
+import { submitPesapalOrder, getPesapalTransactionStatus } from "./pesapal.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1290,6 +1291,98 @@ async function recordInvoiceAndInbox(env: Env, invoice: any) {
   };
   const updatedInbox = [inboxItem, ...existingInbox.filter((m: any) => m.id !== inboxItem.id)].slice(0, 100);
   await env.BLUEPRINTS.put(userInboxKey, JSON.stringify(updatedInbox));
+}
+
+async function finalizeOrderPayment(
+  env: Env,
+  ctx: ExecutionContext,
+  trackingId: string,
+  ordData: any,
+  pesapalStatus?: any
+) {
+  const userEmail = (ordData.userId || "").toLowerCase().trim();
+  const tier = ordData.tier || "pro";
+  const label = ordData.planLabel || (tier === "campus" ? "Campus Institutional" : tier === "cohort" ? "Study Cohort" : "Scholar Pro");
+  const durationMonths = ordData.months || 1;
+  const paymentMethod = pesapalStatus?.paymentMethod || ordData.paymentMethod || "Pesapal v3";
+
+  // Mark order paid in KV
+  const updatedOrd = {
+    ...ordData,
+    status: "PAID",
+    paymentMethod,
+    confirmationCode: pesapalStatus?.confirmationCode,
+    completedAt: new Date().toISOString()
+  };
+  await env.BLUEPRINTS.put(`ord:${trackingId}`, JSON.stringify(updatedOrd));
+  if (ordData.order_id && ordData.order_id !== trackingId) {
+    await env.BLUEPRINTS.put(`ord:${ordData.order_id}`, JSON.stringify(updatedOrd));
+  }
+
+  // Construct invoice
+  const invoice = {
+    invoiceId: `INV-${trackingId.slice(-6).toUpperCase()}`,
+    orderTrackingId: trackingId,
+    orderId: ordData.order_id || trackingId,
+    userId: userEmail,
+    tier,
+    planLabel: label,
+    amount: ordData.amount,
+    currency: ordData.currency,
+    months: durationMonths,
+    paymentMethod,
+    autoRenew: ordData.autoRenew !== false,
+    processor: "Pesapal v3 Gateway",
+    paidAt: new Date().toISOString(),
+    status: "PAID"
+  };
+
+  if (userEmail) {
+    // 1. Upgrade user in KV
+    await env.BLUEPRINTS.put(`u:${userEmail}`, JSON.stringify({
+      id: userEmail,
+      plan: tier,
+      isPro: tier !== "free",
+      upgradedAt: Date.now()
+    }));
+
+    // 2. Upgrade user DO
+    try {
+      const userDoId = ctx.exports.UserDurableObject.idFromName(userEmail);
+      const userStub = ctx.exports.UserDurableObject.get(userDoId);
+      const prof = await userStub.getStudentProfile();
+      if (prof) {
+        await userStub.setStudentProfile({ ...prof, tier, isPro: tier !== "free" } as any);
+      }
+    } catch (e) {
+      logger.warn("Could not sync User DO profile on payment", { event: "user_sync_payment_error" });
+    }
+
+    // 3. Persist invoice & inbox
+    await recordInvoiceAndInbox(env, invoice);
+
+    // 4. Send email receipt
+    ctx.waitUntil(sendReceiptEmail(env, invoice));
+  }
+
+  // 5. Add to transactions ledger
+  try {
+    const currentTx = (await env.BLUEPRINTS.get("sys:transactions", "json")) as any[] || [];
+    const newTx = {
+      id: `tx_${Date.now().toString().slice(-4)}`,
+      student: userEmail || "scholar@voltrix.stream",
+      plan: label,
+      amount: ordData.amount,
+      currency: ordData.currency,
+      method: paymentMethod,
+      status: "verified",
+      processor: "Pesapal v3 Gateway",
+      timestamp: new Date().toISOString()
+    };
+    await env.BLUEPRINTS.put("sys:transactions", JSON.stringify([newTx, ...currentTx].slice(0, 100)));
+  } catch {}
+
+  return invoice;
 }
 
 export default {
@@ -2598,103 +2691,106 @@ export default {
     if (req.method === "POST" && url.pathname === "/api/payments/initiate") {
       try {
         const body = await req.json().catch(() => ({})) as any;
-        const { userId, tier, currency, amount, email, phone, firstName, lastName, months, paymentMethod, cardDetails, autoRenew, planLabel } = body;
+        const { userId, tier, currency, amount, email, phone, firstName, lastName, months, paymentMethod, cardDetails, autoRenew, planLabel, countryCode } = body;
         const targetTier = tier === 'scholar' ? 'pro' : (tier || 'pro');
         const durationMonths = Math.max(1, parseInt(months) || 1);
-        const orderId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const orderId = `ORD-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
         const trackingId = `trk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const userEmail = (email || userId || "").toLowerCase().trim();
         const activeMethod = paymentMethod === 'mobile_money'
-          ? (currency === 'KES' ? 'M-Pesa' : 'MTN / Airtel Mobile Money')
-          : 'Credit / Debit Card';
+          ? (currency === 'KES' ? 'M-Pesa (Pesapal)' : 'MTN / Airtel Mobile Money (Pesapal)')
+          : 'Credit / Debit Card (Pesapal)';
         const label = planLabel || (targetTier === 'campus' ? 'Campus Institutional' : targetTier === 'cohort' ? 'Study Cohort' : 'Scholar Pro');
         const totalAmount = parseFloat(amount) || 9.99;
+        const targetCurrency = currency || 'UGX';
+        const origin = req.headers.get("origin") || url.origin || "https://voltrix.stream";
 
-        // Construct official Voltrix Invoice
-        const invoice = {
-          invoiceId: `INV-${orderId.slice(-6).toUpperCase()}`,
-          orderTrackingId: trackingId,
-          orderId,
-          userId: userEmail,
-          tier: targetTier,
-          planLabel: label,
-          amount: totalAmount,
-          currency: currency || 'USD',
-          months: durationMonths,
-          paymentMethod: activeMethod,
-          autoRenew: autoRenew !== false,
-          processor: 'Voltrix Secure Billing',
-          paidAt: new Date().toISOString(),
-          status: 'PAID'
-        };
+        // Fast-track path: Zero amount or test card 4242 or explicit simulate flag
+        const isSimulation = body.simulate === true || cardDetails?.last4 === '4242' || totalAmount <= 0;
 
-        // Persist order in KV
-        const orderRecord = {
-          order_id: orderId,
-          order_tracking_id: trackingId,
-          userId: userEmail,
-          tier: targetTier,
-          planLabel: label,
-          currency: currency || 'USD',
-          amount: totalAmount,
-          months: durationMonths,
-          paymentMethod: activeMethod,
-          autoRenew: autoRenew !== false,
-          status: 'PAID',
-          createdAt: new Date().toISOString()
-        };
-        await env.BLUEPRINTS.put(`ord:${trackingId}`, JSON.stringify(orderRecord));
-
-        // 1. Upgrade user tier in KV and DO immediately
-        if (userEmail) {
-          await env.BLUEPRINTS.put(`u:${userEmail}`, JSON.stringify({
-            id: userEmail,
-            plan: targetTier,
-            isPro: targetTier !== 'free',
-            upgradedAt: Date.now()
-          }));
-
-          try {
-            const userDoId = ctx.exports.UserDurableObject.idFromName(userEmail);
-            const userStub = ctx.exports.UserDurableObject.get(userDoId);
-            const prof = await userStub.getStudentProfile();
-            if (prof) {
-              await userStub.setStudentProfile({ ...prof, tier: targetTier, isPro: targetTier !== 'free' } as any);
-            }
-          } catch (e) {
-            logger.warn("Could not sync User DO profile on payment", { event: "user_sync_payment_error" });
-          }
-
-          // 2. Persist invoice & inbox notification
-          await recordInvoiceAndInbox(env, invoice);
-
-          // 3. Dispatch Resend receipt email to payer
-          ctx.waitUntil(sendReceiptEmail(env, invoice));
+        if (isSimulation) {
+          const simOrder = {
+            order_id: orderId,
+            order_tracking_id: trackingId,
+            userId: userEmail,
+            tier: targetTier,
+            planLabel: label,
+            currency: targetCurrency,
+            amount: totalAmount,
+            months: durationMonths,
+            paymentMethod: activeMethod,
+            autoRenew: autoRenew !== false,
+            status: 'PAID',
+            gateway: 'simulated',
+            createdAt: new Date().toISOString()
+          };
+          const invoice = await finalizeOrderPayment(env, ctx, trackingId, simOrder);
+          return Response.json({
+            success: true,
+            completed: true,
+            order_tracking_id: trackingId,
+            order_id: orderId,
+            invoice
+          });
         }
 
-        // 4. Add to transactions ledger
-        const currentTx = (await env.BLUEPRINTS.get("sys:transactions", "json")) as any[] || [];
-        const newTx = {
-          id: `tx_${Date.now().toString().slice(-4)}`,
-          student: userEmail || 'scholar@voltrix.stream',
-          plan: label,
+        // Live / Sandbox Pesapal v3 Order Creation
+        const pesapalOrder = await submitPesapalOrder({
+          env,
+          origin,
+          merchantRef: orderId,
+          currency: targetCurrency,
           amount: totalAmount,
-          currency: currency || 'USD',
-          method: activeMethod,
-          status: 'verified',
-          processor: 'Voltrix Secure Billing',
-          timestamp: new Date().toISOString()
+          description: `Voltrix ${label} Subscription (${durationMonths} mo)`.slice(0, 100),
+          email: userEmail || "scholar@voltrix.stream",
+          phone: phone || "",
+          firstName: firstName || "Scholar",
+          lastName: lastName || "",
+          countryCode: countryCode || (targetCurrency === "KES" ? "KE" : "UG"),
+        });
+
+        const orderRecord = {
+          order_id: orderId,
+          order_tracking_id: pesapalOrder.order_tracking_id,
+          userId: userEmail,
+          tier: targetTier,
+          planLabel: label,
+          currency: targetCurrency,
+          amount: totalAmount,
+          months: durationMonths,
+          paymentMethod: activeMethod,
+          autoRenew: autoRenew !== false,
+          status: pesapalOrder.status === 'COMPLETED' ? 'PAID' : 'PENDING',
+          gateway: 'pesapal_v3',
+          redirectUrl: pesapalOrder.redirect_url,
+          createdAt: new Date().toISOString()
         };
-        await env.BLUEPRINTS.put("sys:transactions", JSON.stringify([newTx, ...currentTx].slice(0, 100)));
+
+        // Cache order record by tracking ID and merchant order ID
+        await env.BLUEPRINTS.put(`ord:${pesapalOrder.order_tracking_id}`, JSON.stringify(orderRecord));
+        await env.BLUEPRINTS.put(`ord:${orderId}`, JSON.stringify(orderRecord));
+
+        if (pesapalOrder.simulated || pesapalOrder.status === 'COMPLETED') {
+          const invoice = await finalizeOrderPayment(env, ctx, pesapalOrder.order_tracking_id, orderRecord);
+          return Response.json({
+            success: true,
+            completed: true,
+            order_tracking_id: pesapalOrder.order_tracking_id,
+            order_id: orderId,
+            redirect_url: pesapalOrder.redirect_url,
+            invoice
+          });
+        }
 
         return Response.json({
           success: true,
-          completed: true,
-          order_tracking_id: trackingId,
+          completed: false,
+          redirect_url: pesapalOrder.redirect_url,
+          order_tracking_id: pesapalOrder.order_tracking_id,
           order_id: orderId,
-          invoice
         });
       } catch (err: any) {
+        logger.warn("Pesapal initiate failed", { event: "pesapal_initiate_error", error: err?.message });
         return Response.json({ success: false, error: err?.message || "Payment initiation failed" }, { status: 500 });
       }
     }
@@ -2703,59 +2799,152 @@ export default {
     if (req.method === "GET" && (url.pathname.startsWith("/api/payments/status/") || url.pathname === "/api/payments/status")) {
       const parts = url.pathname.split("/");
       const id = parts[parts.length - 1];
-      const ordData = (await env.BLUEPRINTS.get(`ord:${id}`, "json")) as any;
+      let ordData = (await env.BLUEPRINTS.get(`ord:${id}`, "json")) as any;
 
-      let invoice: any = null;
-
-      if (ordData && ordData.userId) {
-        const uEmail = ordData.userId;
-        const tier = ordData.tier || 'pro';
-        await env.BLUEPRINTS.put(`u:${uEmail}`, JSON.stringify({
-          id: uEmail,
-          plan: tier,
-          isPro: tier !== 'free',
-          upgradedAt: Date.now()
-        }));
-
-        try {
-          const userDoId = ctx.exports.UserDurableObject.idFromName(uEmail);
-          const userStub = ctx.exports.UserDurableObject.get(userDoId);
-          const prof = await userStub.getStudentProfile();
-          if (prof) {
-            await userStub.setStudentProfile({ ...prof, tier, isPro: tier !== 'free' } as any);
-          }
-        } catch {}
-
-        invoice = {
-          invoiceId: `INV-${id.slice(-6).toUpperCase()}`,
-          orderTrackingId: id,
-          orderId: ordData.order_id,
-          userId: uEmail,
-          tier,
-          planLabel: ordData.planLabel || (tier === 'campus' ? 'Campus Institutional' : tier === 'cohort' ? 'Study Cohort' : 'Scholar Pro'),
-          amount: ordData.amount,
-          currency: ordData.currency,
-          months: ordData.months || 1,
-          paymentMethod: ordData.paymentMethod || 'Credit / Debit Card',
-          autoRenew: ordData.autoRenew !== false,
-          processor: 'Voltrix Secure Billing',
-          paidAt: ordData.createdAt || new Date().toISOString(),
-          status: 'PAID'
-        };
-
-        await recordInvoiceAndInbox(env, invoice);
-        ctx.waitUntil(sendReceiptEmail(env, invoice));
+      // 1. If already paid in KV, return confirmation immediately
+      if (ordData && ordData.status === "PAID") {
+        const inv = (await env.BLUEPRINTS.get(`inv:${id}`, "json")) as any;
+        return Response.json({
+          success: true,
+          completed: true,
+          status_code: 1,
+          tier: ordData.tier || 'pro',
+          order_tracking_id: id,
+          processor: 'Pesapal v3 Gateway',
+          invoice: inv
+        });
       }
 
+      // 2. Query Pesapal v3 status for pending order
+      try {
+        const pesapalStatus = await getPesapalTransactionStatus(env, id);
+        if (pesapalStatus.isCompleted) {
+          const effectiveOrd = ordData || {
+            order_id: id,
+            order_tracking_id: id,
+            userId: pesapalStatus.raw?.billing_address?.email_address || 'scholar@voltrix.stream',
+            tier: 'pro',
+            amount: pesapalStatus.amount || 9.99,
+            currency: pesapalStatus.currency || 'USD',
+            months: 1,
+            paymentMethod: pesapalStatus.paymentMethod || 'Pesapal v3',
+            autoRenew: true,
+            createdAt: new Date().toISOString()
+          };
+          const invoice = await finalizeOrderPayment(env, ctx, id, effectiveOrd, pesapalStatus);
+          return Response.json({
+            success: true,
+            completed: true,
+            status_code: 1,
+            tier: effectiveOrd.tier || 'pro',
+            order_tracking_id: id,
+            processor: 'Pesapal v3 Gateway',
+            invoice
+          });
+        }
+
+        if (pesapalStatus.isFailed) {
+          return Response.json({
+            success: false,
+            completed: false,
+            status_code: pesapalStatus.statusCode || 2,
+            status: 'FAILED',
+            message: pesapalStatus.statusDescription || 'Payment declined or cancelled'
+          });
+        }
+
+        return Response.json({
+          success: true,
+          completed: false,
+          status_code: 0,
+          status: 'PENDING',
+          message: 'Awaiting payment authorization'
+        });
+      } catch (err: any) {
+        return Response.json({
+          success: false,
+          completed: false,
+          status_code: 0,
+          status: 'PENDING',
+          error: err?.message
+        });
+      }
+    }
+
+    // SaaS Payments IPN: POST/GET /api/payments/ipn
+    if ((req.method === "POST" || req.method === "GET") && url.pathname === "/api/payments/ipn") {
+      let trackId = "";
+      let merchantRef = "";
+      let notifType = "POST";
+
+      if (req.method === "POST") {
+        const body = await req.json().catch(() => ({})) as any;
+        trackId = body.OrderTrackingId || body.orderTrackingId || url.searchParams.get("OrderTrackingId") || "";
+        merchantRef = body.OrderMerchantReference || body.orderMerchantReference || url.searchParams.get("OrderMerchantReference") || "";
+        notifType = body.OrderNotificationType || body.orderNotificationType || "POST";
+      } else {
+        trackId = url.searchParams.get("OrderTrackingId") || "";
+        merchantRef = url.searchParams.get("OrderMerchantReference") || "";
+        notifType = url.searchParams.get("OrderNotificationType") || "GET";
+      }
+
+      if (trackId) {
+        try {
+          const pesapalStatus = await getPesapalTransactionStatus(env, trackId);
+          if (pesapalStatus.isCompleted) {
+            let ordData = (await env.BLUEPRINTS.get(`ord:${trackId}`, "json")) as any;
+            if (!ordData && merchantRef) {
+              ordData = (await env.BLUEPRINTS.get(`ord:${merchantRef}`, "json")) as any;
+            }
+            if (ordData && ordData.status !== "PAID") {
+              await finalizeOrderPayment(env, ctx, trackId, ordData, pesapalStatus);
+            }
+          }
+        } catch (err: any) {
+          logger.warn("Pesapal IPN verification error", { event: "pesapal_ipn_error", error: err?.message });
+        }
+      }
+
+      // Pesapal requires exact response format with HTTP 200 to acknowledge webhook
       return Response.json({
-        success: true,
-        completed: true,
-        status_code: 1,
-        tier: ordData?.tier || 'pro',
-        order_tracking_id: id,
-        processor: 'Voltrix Secure Billing',
-        invoice
+        orderNotificationType: notifType,
+        orderTrackingId: trackId,
+        orderMerchantReference: merchantRef,
+        status: 200
       });
+    }
+
+    // SaaS Payments Callback: GET /api/payments/callback
+    if (req.method === "GET" && url.pathname === "/api/payments/callback") {
+      const trackId = url.searchParams.get("OrderTrackingId") || "";
+      const merchantRef = url.searchParams.get("OrderMerchantReference") || "";
+      const origin = req.headers.get("origin") || url.origin || "https://voltrix.stream";
+
+      if (!trackId) {
+        return Response.redirect(`${origin}/pricing?payment=failed`, 302);
+      }
+
+      try {
+        const pesapalStatus = await getPesapalTransactionStatus(env, trackId);
+        let ordData = (await env.BLUEPRINTS.get(`ord:${trackId}`, "json")) as any;
+        if (!ordData && merchantRef) {
+          ordData = (await env.BLUEPRINTS.get(`ord:${merchantRef}`, "json")) as any;
+        }
+
+        if (pesapalStatus.isCompleted) {
+          if (ordData && ordData.status !== "PAID") {
+            await finalizeOrderPayment(env, ctx, trackId, ordData, pesapalStatus);
+          }
+          const tier = ordData?.tier || "pro";
+          return Response.redirect(`${origin}/pricing?payment=success&ref=${encodeURIComponent(trackId)}&tier=${encodeURIComponent(tier)}`, 302);
+        } else if (pesapalStatus.isFailed) {
+          return Response.redirect(`${origin}/pricing?payment=failed&ref=${encodeURIComponent(trackId)}`, 302);
+        } else {
+          return Response.redirect(`${origin}/pricing?payment=pending&ref=${encodeURIComponent(trackId)}`, 302);
+        }
+      } catch (err: any) {
+        return Response.redirect(`${origin}/pricing?payment=error&msg=${encodeURIComponent(err.message)}`, 302);
+      }
     }
 
     // Inbox: GET /api/inbox — retrieve user notifications, receipts & announcements
