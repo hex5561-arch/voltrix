@@ -5056,6 +5056,12 @@ function ChatInterface({
     ),
     [currentMessages],
   );
+  const hasPendingShareDocument = useMemo(
+    () => currentMessages.some(
+      (msg) => msg.type === "shareDocument" && msg.state === "pending",
+    ),
+    [currentMessages],
+  );
   // A pending awaitDecision action also blocks the composer: the agent turn is suspended until the
   // user approves or rejects it, so (like a connection request) further input must wait.
   const hasPendingAwaitedAction = useMemo(
@@ -6579,6 +6585,68 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
     return out;
   }, [currentMessages, messageStates, outputOfWorkpiece]);
 
+  const renderShareDocumentCard = (
+    msg: AiChatMessage & { type: "shareDocument" },
+  ) => {
+    const isPending = msg.state === "pending";
+    const isShared = msg.state === "shared";
+    const stateLabel = isShared ? "Shared" : msg.state === "declined" ? "Kept private" : null;
+    const stateLabelCls = isShared ? "text-kumo-success" : "text-kumo-subtle";
+
+    return (
+      <div className="group/work max-w-[860px] text-[14px] leading-5 tracking-[-0.25px] text-kumo-subtle">
+        <div className="rounded-2xl border border-kumo-line bg-kumo-base px-4 py-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-brand">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="font-medium text-kumo-default">Share with Voltrix students?</span>
+                <span className="rounded-full bg-kumo-tint px-2 py-0.5 text-[11px] leading-4 text-kumo-subtle truncate max-w-[200px]">
+                  {msg.documentTitle}
+                </span>
+                {stateLabel && (
+                  <span className={`text-[12px] font-medium ${stateLabelCls}`}>{stateLabel}</span>
+                )}
+              </div>
+              {msg.reason && (
+                <p className="mt-1 text-[13px] leading-[18px] text-kumo-subtle">{msg.reason}</p>
+              )}
+            </div>
+            {isPending && (
+              <div className="ml-3 flex flex-shrink-0 items-center gap-2 self-center text-[13px] leading-4">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try { await overseer?.declineShareDocument(msg.requestId); } catch { /* ignore */ }
+                  }}
+                  className="cursor-pointer rounded-md px-2 py-1 font-medium text-kumo-inactive transition-colors duration-150 ease-out hover:text-kumo-danger focus-visible:text-kumo-danger focus-visible:outline-none"
+                >
+                  Keep private
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try { await overseer?.acceptShareDocument(msg.requestId); } catch { /* ignore */ }
+                  }}
+                  className="cursor-pointer rounded-md bg-kumo-brand px-3 py-1 font-medium text-white transition-[opacity,transform] duration-150 ease-out hover:opacity-90 focus-visible:outline-none active:scale-[0.98]"
+                >
+                  Share
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderConnectionRequestCard = (
     msg: AiChatMessage & { type: "connectionRequest" },
   ) => {
@@ -7995,6 +8063,8 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
 
                         {msg.type === "connectionRequest" && renderConnectionRequestCard(msg)}
 
+                        {msg.type === "shareDocument" && renderShareDocumentCard(msg)}
+
                         {msg.type === "useGadget" && (
                           <div className="max-w-[860px] text-[14px] leading-5 tracking-[-0.25px] text-kumo-subtle">
                             <Tooltip content={`Used the gadget at ${formatFullTimestamp(msg.timestamp)}`} asChild>
@@ -8379,7 +8449,9 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                         ? canSubmitQuery(studentProfile).reason
                         : hasPendingConnectionRequest
                           ? "Set up or deny the connection request above to continue."
-                          : hasPendingAwaitedAction
+                          : hasPendingShareDocument
+                            ? "Share or keep private the document above to continue."
+                            : hasPendingAwaitedAction
                             ? "Approve or reject the pending action above to continue."
                             : undefined
                     }

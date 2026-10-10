@@ -236,3 +236,77 @@ function toLibraryItem(info: AiSearchItemInfo): LibraryItem {
     metadata: (info.metadata ?? {}) as LibraryItemMetadata,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Personal library — per-user AI Search instances
+// ---------------------------------------------------------------------------
+
+const MAX_PERSONAL_RESULTS = 5;
+
+export function personalInstanceId(userId: string): string {
+  const sanitized = userId
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return `user-${sanitized || "unknown"}`;
+}
+
+async function ensurePersonalInstance(env: AiSearchEnv, userId: string): Promise<AiSearchInstance> {
+  const id = personalInstanceId(userId);
+  try {
+    await env.AI_SEARCH.create({
+      id, index_method: { vector: true, keyword: true }, fusion_method: "rrf",
+      reranking: true, chunk: true, chunk_size: 512, chunk_overlap: 64,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.toLowerCase().includes("already exist") && !msg.toLowerCase().includes("conflict")) {
+      logger.warn("unexpected error creating personal AI Search instance", { event: "ai-search.ensure-personal-instance.error", error: err });
+    }
+  }
+  return env.AI_SEARCH.get(id);
+}
+
+export async function isKeyInSharedLibrary(env: AiSearchEnv, key: string): Promise<boolean> {
+  try {
+    const instance = env.AI_SEARCH.get(LIBRARY_INSTANCE_ID);
+    const results = await instance.items.list({ search: key, per_page: 10 });
+    return results.result.some(item => item.key === key);
+  } catch { return false; }
+}
+
+export async function indexPersonalItem(
+  env: AiSearchEnv, userId: string, key: string, content: string, metadata: LibraryItemMetadata = {},
+): Promise<void> {
+  try {
+    const instance = await ensurePersonalInstance(env, userId);
+    await instance.items.upload(key, content, {
+      metadata: { ...metadata, indexedAt: metadata.indexedAt ?? new Date().toISOString() } as Record<string, unknown>,
+    });
+  } catch (err) {
+    logger.warn("indexPersonalItem failed", { event: "ai-search.personal.index.error", error: err });
+  }
+}
+
+export async function searchPersonalLibrary(env: AiSearchEnv, userId: string, query: string): Promise<LibrarySearchResult> {
+  const instanceId = personalInstanceId(userId);
+  try {
+    const instance = env.AI_SEARCH.get(instanceId);
+    const response = await instance.search({
+      query,
+      ai_search_options: {
+        retrieval: { retrieval_type: "hybrid", max_num_results: MAX_PERSONAL_RESULTS, match_threshold: 0.35 },
+        reranking: { enabled: true },
+      },
+    });
+    return { searchQuery: response.search_query, chunks: response.chunks.map(c => ({ key: c.item.key, score: c.score, text: c.text })) };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.toLowerCase().includes("not found") && !msg.toLowerCase().includes("404")) {
+      logger.warn("searchPersonalLibrary failed", { event: "ai-search.personal.search.error", error: err });
+    }
+    return { searchQuery: query, chunks: [] };
+  }
+}

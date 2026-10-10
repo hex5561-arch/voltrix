@@ -29,6 +29,9 @@ import { listFeaturedBlueprintsFromKv, readBlueprintContent, readBlueprintKvReco
 import { WebFetchEnv } from "./web-fetch";
 import { WebBrowseEnv } from "./web-browse";
 import { AiSearchEnv } from "./ai-search";
+import { classifyDocument } from "./document-classifier";
+import { screenForPII } from "./document-pii-screen";
+import { indexLibraryItem, indexPersonalItem, isKeyInSharedLibrary, searchPersonalLibrary } from "./ai-search";
 import { UserDurableObject, UserAiModelRecord, type UserChatContext, type WorkspaceOutputEntry } from "./user";
 import { AgentSpawnerBinding } from "./agent-spawner-binding";
 import { recordAnalytics } from "./analytics";
@@ -2807,6 +2810,14 @@ class OverseerImpl implements AgentHooks {
   // consumeCapturedConnectionRequests), so they appear after the assistant's tool-call message.
   #capturedConnectionRequests = new Map<number, AiChatMessageBody[]>();
 
+  // Maps chat ID to shareDocument proposal bodies queued during the current step.
+  #capturedShareProposals = new Map<number, AiChatMessageBody[]>();
+
+  // Tracks attachment IDs that have already been classified this DO lifetime.
+  // Avoids re-classifying the same attachment on every agent turn (classification is expensive).
+  // In-memory only: a DO restart may re-classify, which is acceptable (idempotent).
+  #seenAttachmentIds = new Set<string>();
+
   #getOrCreateCapturedActions(chatId: number) {
     let result = this.#capturedActions.get(chatId);
     if (!result) {
@@ -3046,6 +3057,104 @@ class OverseerImpl implements AgentHooks {
     const ai = (this.env as unknown as { AI_SEARCH?: AiSearchNamespace }).AI_SEARCH;
     if (!ai) return null;
     return { AI_SEARCH: ai };
+  }
+
+  // Returns the Workers AI binding for document classification. Null when absent.
+  getClassifierAi(): Ai | null {
+    return this.env.WORKERS_AI ?? null;
+  }
+
+  // Returns the user id for personal library indexing. Uses the DO owner's user string.
+  getCurrentUserId(): string | null {
+    return this.storage.ownerId.get() ?? null;
+  }
+
+  // Queue a shareDocument card proposal for the current step.
+  proposeDocumentShare(chatId: number, proposal: {
+    documentKey: string;
+    documentTitle: string;
+    reason: string;
+  }): void {
+    const requestId = `share:${chatId}:${crypto.randomUUID()}`;
+    const body: AiChatMessageBody = {
+      type: "shareDocument",
+      requestId,
+      documentKey: proposal.documentKey,
+      documentTitle: proposal.documentTitle,
+      reason: proposal.reason,
+      state: "pending",
+    };
+    const list = this.#capturedShareProposals.get(chatId) ?? [];
+    list.push(body);
+    this.#capturedShareProposals.set(chatId, list);
+  }
+
+  // Drain share proposals captured during the current step.
+  consumeCapturedShareProposals(chatId: number): AiChatMessageBody[] {
+    const result = this.#capturedShareProposals.get(chatId) ?? [];
+    this.#capturedShareProposals.delete(chatId);
+    return result;
+  }
+
+  // Track A: classify a user attachment and potentially queue a share proposal.
+  // Fire-and-forget: called during history replay, never blocks the turn.
+  onAttachmentFirstSeen(
+    chatId: number,
+    attachmentId: string,
+    fileName: string,
+    _mimeType: string,
+    textContent: string,
+  ): void {
+    // Skip if already classified this DO lifetime or text is too short to be meaningful.
+    if (this.#seenAttachmentIds.has(attachmentId)) return;
+    if (textContent.length < 100) return;
+    this.#seenAttachmentIds.add(attachmentId);
+
+    const ai = this.getClassifierAi();
+    const aiSearch = this.getAiSearchEnv();
+    const userId = this.getCurrentUserId();
+
+    // Fire-and-forget async classification. Never throws into the turn.
+    void (async () => {
+      try {
+        // Always index to personal library first (regardless of sharing decision).
+        if (aiSearch && userId) {
+          await indexPersonalItem(aiSearch, userId,
+            `user:${attachmentId}:${fileName}`, textContent, {
+              title: fileName,
+              indexedAt: new Date().toISOString(),
+            });
+        }
+
+        if (!ai) return;
+
+        const classification = await classifyDocument(ai, textContent);
+
+        // Only offer to share if: shareable + no PII + not already in shared library.
+        if (!classification.shareable || classification.hasPII) return;
+
+        const documentKey = `upload:${fileName.replace(/[^a-z0-9._-]/gi, "-")}`;
+        if (aiSearch) {
+          const alreadyIn = await isKeyInSharedLibrary(aiSearch, documentKey);
+          if (alreadyIn) return;
+        }
+
+        // Queue a share card — will appear after the agent's response message.
+        const categoryLabel: Record<string, string> = {
+          "past-paper": "a past exam paper",
+          "textbook": "textbook or reference material",
+          "notes": "study notes",
+        };
+        const label = categoryLabel[classification.category] ?? "academic content";
+        this.proposeDocumentShare(chatId, {
+          documentKey,
+          documentTitle: fileName,
+          reason: `This looks like ${label} that could help other Voltrix students.`,
+        });
+      } catch {
+        // Classification failure is silent — personal indexing attempt already happened above.
+      }
+    })();
   }
 
   // Record an observation that originated from a built-in agent tool (not a gatekeeper).
@@ -8456,6 +8565,72 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     // agent sees it the next time the user sends a message (see the connectionRequest history case).
   }
 
+  // Find a shareDocument message by its requestId.
+  #findShareDocument(requestId: string): AiChatMessage & {type: "shareDocument"} {
+    // requestId format: "share:{chatId}:{uuid}"
+    const parts = requestId.split(":");
+    const chatId = Number(parts[1]);
+    if (!Number.isFinite(chatId)) throw new Error(`Malformed share document request id: ${requestId}`);
+    for (let msg of this.impl.storage.chats.list({prefix: `${keyString(chatId)}.`})) {
+      if (msg.type === "shareDocument" && msg.requestId === requestId) {
+        return msg as AiChatMessage & {type: "shareDocument"};
+      }
+    }
+    throw new Error(`No such share document request: ${requestId}`);
+  }
+
+  async acceptShareDocument(requestId: string): Promise<void> {
+    const msg = this.#findShareDocument(requestId);
+    if (msg.state !== "pending") {
+      throw new Error(`Share document request is not pending: ${requestId}`);
+    }
+
+    const aiSearch = this.impl.getAiSearchEnv();
+
+    // Re-screen for PII before committing to the shared library. The stored document text
+    // is not available here (we only stored the key and title), so we retrieve it from the
+    // user's personal library first. If retrieval fails, keep private.
+    let indexedToShared = false;
+    if (aiSearch) {
+      try {
+        // The shared library key is documentKey; personal key is `user:{attachmentId}:{fileName}`.
+        // We need the document text — search personal library for it by exact key.
+        const userId = this.impl.getCurrentUserId();
+        if (userId) {
+          
+          const personalResults = await searchPersonalLibrary(aiSearch, userId,
+            msg.documentTitle);
+          // Use the first high-scoring result's text chunks to reconstruct document for screen.
+          const combined = personalResults.chunks.map(c => c.text).join("\n\n");
+          const screen = screenForPII(combined);
+          if (!screen.hasPII && combined.length > 50) {
+            await indexLibraryItem(aiSearch, msg.documentKey, combined, {
+              title: msg.documentTitle,
+              indexedAt: new Date().toISOString(),
+            });
+            indexedToShared = true;
+          }
+        }
+      } catch {
+        // Failure = keep private
+      }
+    }
+
+    msg.state = indexedToShared ? "shared" : "declined";
+    msg.timestamp = this.impl.getChatTimestamp();
+    this.impl.storage.chats.put(msg);
+  }
+
+  async declineShareDocument(requestId: string): Promise<void> {
+    const msg = this.#findShareDocument(requestId);
+    if (msg.state !== "pending") {
+      throw new Error(`Share document request is not pending: ${requestId}`);
+    }
+    msg.state = "declined";
+    msg.timestamp = this.impl.getChatTimestamp();
+    this.impl.storage.chats.put(msg);
+  }
+
   async subscribeToActions(subscriber: RpcStub<ActionsSubscriber>, startAfter?: Date)
       : Promise<RpcStub<{}>> {
     let actions = this.impl.storage.actions;
@@ -9496,6 +9671,8 @@ class UseOverseerInterface extends RpcTarget implements Overseer {
   }
   async acceptConnectionRequest(_requestId: string, _result: {gatekeeperId: number}): Promise<void> { this.#deny(); }
   async denyConnectionRequest(_requestId: string): Promise<void>  { this.#deny(); }
+  async acceptShareDocument(_requestId: string): Promise<void>    { this.#deny(); }
+  async declineShareDocument(_requestId: string): Promise<void>   { this.#deny(); }
   async subscribeToActions(
       subscriber: RpcStub<ActionsSubscriber>, _startAfter?: Date): Promise<RpcStub<{}>> {
     // Inert: "use" sessions have no visibility into the action log. Signal a settled, empty log

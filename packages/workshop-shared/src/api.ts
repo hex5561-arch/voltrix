@@ -1893,6 +1893,19 @@ export interface Overseer extends RpcTarget {
   denyConnectionRequest(requestId: string): Promise<void>;
 
   /**
+   * Accept a pending "shareDocument" card. Runs a deterministic PII screen; if it passes,
+   * indexes the document into the shared library and marks the card "shared". If screening
+   * fails (PII detected), marks it "declined". Does not resume the agent.
+   */
+  acceptShareDocument(requestId: string): Promise<void>;
+
+  /**
+   * Decline a pending "shareDocument" card. Marks it "declined". The document stays in the
+   * user's personal library only. Does not resume the agent.
+   */
+  declineShareDocument(requestId: string): Promise<void>;
+
+  /**
    * Subscribe to action adds/updates. Dispose the returned stub to unsubscribe.
    * If `startAfter` is set, replay actions changed after that timestamp.
    */
@@ -2516,6 +2529,25 @@ export type AiChatMessageBody = {
    * turn-start naming chokepoint.
    */
   bindingName?: string;
+} | {
+  /**
+   * The agent is proposing to share a document with the Voltrix community.
+   * Rendered as a Share / Keep private card.
+   * Accept: PII screen passes → indexes to shared library, state "shared".
+   * Decline: stays in personal library only, state "declined".
+   * Does not resume the agent.
+   */
+  type: "shareDocument";
+  /** Unique id used by acceptShareDocument() / declineShareDocument(). */
+  requestId: string;
+  /** Key under which the document lives in the user's personal library. */
+  documentKey: string;
+  /** Human-readable title shown on the card. */
+  documentTitle: string;
+  /** One-sentence reason the agent thinks this is worth sharing. */
+  reason: string;
+  /** Lifecycle state. "pending" until the user decides. */
+  state: "pending" | "shared" | "declined";
 };
 
 /**
