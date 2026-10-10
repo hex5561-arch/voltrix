@@ -7084,7 +7084,20 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                 <span className="text-[10.5px] text-kumo-inactive">Browse past national papers & exams</span>
               </div>
             </DropdownMenu.Item>
+            
             <DropdownMenu.Item
+              onClick={() => {
+                window.location.href = '/vtube';
+              }}
+              className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+            >
+              <Television size={15} weight="fill" className="text-blue-400 flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-medium text-blue-400">V-Tube (Academic Tube)</span>
+                <span className="text-[10.5px] text-kumo-inactive">Distraction-free lectures</span>
+              </div>
+            </DropdownMenu.Item>
+<DropdownMenu.Item
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('voltrix-open-exam-gadget'));
               }}
@@ -7483,7 +7496,20 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                         }
                       />
                       <DropdownMenu.Content className="themed-floating-shadow !z-[1100] !min-w-[220px] rounded-lg border border-kumo-line bg-kumo-base p-1.5 shadow-xl">
+                        
                         <DropdownMenu.Item
+                          onClick={() => {
+                            window.location.href = '/vtube';
+                          }}
+                          className="!h-auto rounded-md !px-2.5 !py-2 text-[12.5px] leading-4 text-kumo-default transition-colors data-highlighted:bg-kumo-tint flex items-center gap-2 cursor-pointer"
+                        >
+                          <Television size={15} weight="fill" className="text-blue-400 flex-shrink-0" />
+                          <div className="flex flex-col">
+                            <span className="font-medium text-blue-400">V-Tube (Academic Tube)</span>
+                            <span className="text-[10.5px] text-kumo-inactive">Distraction-free lectures</span>
+                          </div>
+                        </DropdownMenu.Item>
+<DropdownMenu.Item
                           onClick={() => {
                             window.dispatchEvent(new CustomEvent('voltrix-open-exam-gadget'));
                           }}
