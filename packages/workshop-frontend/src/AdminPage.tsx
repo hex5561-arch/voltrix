@@ -19,7 +19,7 @@ import {
 } from '@phosphor-icons/react'
 import CommandCenterView from './CommandCenterView'
 import { useAuthenticatedApi } from './AuthContext'
-import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR } from '@gadgets/workshop-shared/api'
+import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR, SUGGESTED_MODELS } from '@gadgets/workshop-shared/api'
 import { applyAccentColor, DEFAULT_ACCENT_COLOR } from './theme'
 import { cacheBustSiteLogoUrl, prepareSiteLogo } from './siteLogoUtils'
 import SiteLogo from './components/SiteLogo'
@@ -91,6 +91,10 @@ export default function AdminPage() {
   // Whether new account signups are allowed.
   const [signupsEnabled, setSignupsEnabled] = useState(true)
   const [savingSignups, setSavingSignups] = useState(false)
+
+  // Clef model routing pool: which TheHive models Clef may choose between pre-turn.
+  const [clefModelPool, setClefModelPool] = useState<string[]>(Object.keys(SUGGESTED_MODELS['thehive']))
+  const [savingClef, setSavingClef] = useState(false)
 
   // Gatekeeper resource config, and the set of resource keys ("vendorId\u0000urlPattern") busy toggling.
   const [resourceVendors, setResourceVendors] = useState<AdminResourceVendor[]>([])
@@ -175,6 +179,7 @@ export default function AdminPage() {
     setSavedAccent(view.accentColor)
     setAccentDraft(view.accentColor)
     setFormats(view.formats)
+    setClefModelPool(view.clefModelPool ?? Object.keys(SUGGESTED_MODELS['thehive']))
   }
 
   // Mint the admin capability once (the access check happens server-side) and load settings.
@@ -426,6 +431,21 @@ export default function AdminPage() {
       toasts.add({ title: message, variant: 'error' })
     } finally {
       setSavingInstructions(false)
+    }
+  }
+
+  const handleSaveClefPool = async (newPool: string[]) => {
+    if (!admin) return
+    setSavingClef(true)
+    try {
+      await admin.api.setClefModelPool(newPool)
+      setClefModelPool(newPool)
+      toasts.add({ title: 'Clef model pool saved', variant: 'success' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Clef pool'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setSavingClef(false)
     }
   }
 
@@ -1317,6 +1337,68 @@ export default function AdminPage() {
             </Button>
           </div>
         </div>
+      </div>
+      )}
+
+      {/* Clef model routing */}
+      {activeTab === 'general' && (
+      <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+        <div className="flex items-start justify-between mb-1">
+          <div>
+            <h2 className="text-lg font-semibold text-kumo-strong">Clef model routing</h2>
+            <p className="text-sm text-kumo-subtle mt-1">
+              When a user&rsquo;s active model is a TheHive model, Clef-flash automatically picks
+              the best model from this pool for each query — without touching the user&rsquo;s
+              setting. Requires at least 2 models selected. Deselect all or keep only one to
+              disable routing.
+            </p>
+          </div>
+          {savingClef && (
+            <span className="text-xs text-kumo-subtle ml-4 mt-1 shrink-0">Saving…</span>
+          )}
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {Object.entries(SUGGESTED_MODELS['thehive']).map(([modelId, meta]) => {
+            const checked = clefModelPool.includes(modelId)
+            const toggle = () => {
+              const next = checked
+                ? clefModelPool.filter(id => id !== modelId)
+                : [...clefModelPool, modelId]
+              void handleSaveClefPool(next)
+            }
+            return (
+              <label
+                key={modelId}
+                className="flex items-start gap-3 cursor-pointer select-none"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-[var(--color-accent-100)]"
+                  checked={checked}
+                  disabled={savingClef}
+                  onChange={toggle}
+                />
+                <div>
+                  <span className="text-sm font-medium text-kumo-strong">{meta.name}</span>
+                  <span className="block text-xs text-kumo-subtle font-mono">{modelId}</span>
+                </div>
+              </label>
+            )
+          })}
+        </div>
+
+        {clefModelPool.length < 2 && (
+          <p className="mt-3 text-xs text-kumo-subtle">
+            Clef routing is <strong>disabled</strong> — select at least 2 models to enable it.
+          </p>
+        )}
+        {clefModelPool.length >= 2 && (
+          <p className="mt-3 text-xs text-kumo-subtle">
+            Clef routing is <strong>active</strong> — Clef-flash will choose between{' '}
+            {clefModelPool.length} model{clefModelPool.length !== 1 ? 's' : ''} per query.
+          </p>
+        )}
       </div>
       )}
 

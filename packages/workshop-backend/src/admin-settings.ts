@@ -1,4 +1,4 @@
-import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
+import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, SUGGESTED_MODELS, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
 import { GatekeeperVendor } from '@gadgets/workshop-shared/gatekeeper';
 import { DurableObject } from 'cloudflare:workers';
 import { RpcTarget } from 'capnweb';
@@ -319,6 +319,7 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
       accentColor: config.accentColor,
       resourceVendors: await this.#listResourceConfig(config, adminUserId),
       formats: await this.#listFormatConfig(config),
+      clefModelPool: config.clefModelPool,
     };
   }
 
@@ -419,6 +420,11 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
 
   async setFormatOrder(blueprintIds: string[]): Promise<void> {
     await this.#mutateFormats(formats => reorderFormats(formats, blueprintIds));
+  }
+
+  /** Replace the Clef routing pool. Only valid TheHive model ids are kept; unknown ones are dropped. */
+  async setClefModelPool(modelIds: string[]): Promise<void> {
+    await this.updateAdminConfig({ clefModelPool: modelIds });
   }
 
   /** Enable/disable a single gatekeeper resource type atomically (read-modify-write within the DO). */
@@ -654,5 +660,13 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
 
   setFormatOrder(blueprintIds: string[]): Promise<void> {
     return this.admin.setFormatOrder(blueprintIds);
+  }
+
+  async setClefModelPool(modelIds: string[]): Promise<void> {
+    // Keep only known TheHive model ids — silently drop unknowns so a stale client can't
+    // poison the pool with garbage. Validation mirrors parseClefModelPool in admin-config.ts.
+    const valid = new Set(Object.keys(SUGGESTED_MODELS["thehive"]));
+    const filtered = modelIds.filter(id => valid.has(id));
+    await this.admin.setClefModelPool(filtered);
   }
 }

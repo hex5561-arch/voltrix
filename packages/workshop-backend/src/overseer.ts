@@ -11,6 +11,7 @@ import * as Y from "yjs";
 import {
   LanguageModelGatekeeperProps,
   getModel,
+  classifyWithClef,
   UserGatewayRouting,
 } from "./ai-models";
 import { AgentTurnError, completeText } from "./ai-invoke";
@@ -4264,8 +4265,32 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
       }
 
       let sessionAffinity = await computeSessionAffinity(this.ctx.id.toString(), chatId);
+
+      // Clef pre-turn routing: when the user's chosen model is a TheHive model and the admin has
+      // configured a pool of ≥2 TheHive models, ask Clef-flash to pick the best one for this
+      // query. We extract the latest user message as the query signal. Clef failures are silently
+      // swallowed — the turn always proceeds with the user's original model choice as fallback.
+      let resolvedConfig = aiModel.config;
+      if (resolvedConfig.provider === "thehive" && !byokRouting) {
+        const adminConfig = await readAdminConfig(this.env);
+        const pool = adminConfig.clefModelPool;
+        if (pool.length >= 2) {
+          const chatMessages = this.#listChatTail(chatId, this.getActiveChatCompaction(chatId));
+          // Find the most recent user text to give Clef context for the decision.
+          const latestMsg = [...chatMessages].reverse()
+            .find(m => m.author.type === "user" && m.type === "message");
+          const latestUserText = latestMsg?.type === "message" ? latestMsg.message : undefined;
+          if (latestUserText) {
+            const picked = await classifyWithClef(this.env.WORKERS_AI, latestUserText, pool);
+            if (picked && picked !== resolvedConfig.model) {
+              resolvedConfig = { ...resolvedConfig, model: picked };
+            }
+          }
+        }
+      }
+
       let chosenModel = getModel(
-          this.env, aiModel.config, initiator, {
+          this.env, resolvedConfig, initiator, {
             sessionAffinity,
             userGateway: byokRouting,
             metadata: { source: "chat", gadgetId: this.ctx.id.toString(), chatId },

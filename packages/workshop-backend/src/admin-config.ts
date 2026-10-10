@@ -8,7 +8,7 @@
 // changed by a compromised admin session. Everything here is enabled by default; the admin UI opts
 // things *out*.
 
-import { AmbientGatekeeperMode, BannerConfig, BlueprintBinding, BlueprintMetadata, BlueprintOutput, DEFAULT_BANNER_COLOR, OutputFormatOffer, isAmbientGatekeeperMode, isBannerColor, isOutputIcon } from "@gadgets/workshop-shared/api";
+import { AmbientGatekeeperMode, BannerConfig, BlueprintBinding, BlueprintMetadata, BlueprintOutput, DEFAULT_BANNER_COLOR, OutputFormatOffer, SUGGESTED_MODELS, isAmbientGatekeeperMode, isBannerColor, isOutputIcon } from "@gadgets/workshop-shared/api";
 import { SupportedResource } from "@gadgets/workshop-shared/gatekeeper";
 import { ADMIN_CONFIG_KEY, BlueprintKvEnv, readBlueprintKvRecord, sanitizeBlueprintOutput } from "./blueprint-archive.js";
 
@@ -54,6 +54,13 @@ export type AdminConfig = {
    * the deployment offers.
    */
   formats: FormatCuration[];
+
+  /**
+   * TheHive model IDs that Clef is allowed to route between pre-turn. Only entries that exist in
+   * SUGGESTED_MODELS["thehive"] are valid. When the pool has fewer than 2 entries Clef routing is
+   * disabled (nothing to choose between). Defaults to both TheHive models.
+   */
+  clefModelPool: string[];
 };
 
 /**
@@ -91,6 +98,7 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   disabledGatekeepers: [],
   ambientGatekeeperModes: {},
   formats: [],
+  clefModelPool: Object.keys(SUGGESTED_MODELS["thehive"]),
 };
 
 /**
@@ -281,6 +289,17 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+const VALID_THEHIVE_MODELS = new Set(Object.keys(SUGGESTED_MODELS["thehive"]));
+
+/** Parse and validate a clefModelPool array, keeping only known TheHive model ids. */
+function parseClefModelPool(value: unknown): string[] {
+  let ids = strings(value);
+  let valid = ids.filter(id => VALID_THEHIVE_MODELS.has(id));
+  // If no stored value, default to all TheHive models.
+  if (ids.length === 0) return Object.keys(SUGGESTED_MODELS["thehive"]);
+  return valid;
+}
+
 export function parseAdminConfig(raw: string | null): AdminConfig {
   if (!raw) return { ...DEFAULT_ADMIN_CONFIG };
   try {
@@ -313,6 +332,7 @@ export function parseAdminConfig(raw: string | null): AdminConfig {
       disabledGatekeepers: strings(p.disabledGatekeepers).map(v => v.toLowerCase()),
       ambientGatekeeperModes,
       formats: parseFormats(p.formats),
+      clefModelPool: parseClefModelPool(p.clefModelPool),
     };
   } catch {
     return { ...DEFAULT_ADMIN_CONFIG };

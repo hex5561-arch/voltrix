@@ -900,6 +900,12 @@ export type AdminSettingsView = {
   resourceVendors: AdminResourceVendor[];
   /** The blueprints promoted as standard output formats, in menu order (including disabled ones). */
   formats: AdminFormat[];
+  /**
+   * The TheHive model IDs Clef is allowed to route between. Each entry is a model id from the
+   * "thehive" bucket of SUGGESTED_MODELS. Empty or single-entry = Clef routing disabled (no
+   * point classifying when there's nothing to choose between).
+   */
+  clefModelPool: string[];
 };
 
 /**
@@ -1047,6 +1053,14 @@ export interface AdminApi {
 
   /** Reorder the menu. `blueprintIds` must be a permutation of the currently promoted ids. */
   setFormatOrder(blueprintIds: string[]): Promise<void>;
+
+  /**
+   * Set the TheHive model IDs Clef may route between. Pass an array of model ids from the
+   * "thehive" bucket of SUGGESTED_MODELS (e.g. ["deepseek-ai/deepseek-v4.1-flash",
+   * "zai-org/glm-5.3-flash"]). An empty array or a single-entry array disables Clef routing.
+   * Unknown model ids are silently dropped.
+   */
+  setClefModelPool(modelIds: string[]): Promise<void>;
 }
 
 /** A partial edit to one promoted format. Absent fields are left alone. */

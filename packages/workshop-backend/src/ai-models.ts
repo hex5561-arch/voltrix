@@ -594,6 +594,62 @@ function getModelViaThehiveDirect(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Clef — pre-turn model routing via Workers AI decision model
+// ---------------------------------------------------------------------------
+
+/**
+ * Use Clef-flash (Workers AI) to pick the best TheHive model from `pool` for the given query.
+ * Returns the chosen model id, or `null` when:
+ *   - the pool has fewer than 2 entries (nothing to choose between)
+ *   - the call fails for any reason (never blocks the agent turn)
+ *
+ * Clef-flash launched after the July 2026 workers-types snapshot so the model id isn't in the
+ * type catalog yet — we cast through `unknown` matching its documented input/output shape.
+ */
+export async function classifyWithClef(
+  ai: Ai,
+  query: string,
+  pool: string[],
+): Promise<string | null> {
+  if (pool.length < 2) return null;
+
+  // Build human-readable option labels so Clef can reason about the choice.
+  const labels = pool.map(id => SUGGESTED_MODELS["thehive"]?.[id]?.name ?? id);
+
+  try {
+    const result = await (ai as unknown as {
+      run(
+        model: string,
+        inputs: { state: string; questions: Array<{ text: string; options: string[] }> },
+      ): Promise<{ answers: Array<{ probabilities: Record<string, number> }> }>;
+    }).run("@cf/cloudflare/clef-flash", {
+      state: query.slice(0, 2000), // cap state so the Clef call stays cheap
+      questions: [
+        {
+          text: "Which AI model is best suited to answer this query?",
+          options: labels,
+        },
+      ],
+    });
+
+    const probs = result?.answers?.[0]?.probabilities;
+    if (!probs) return null;
+
+    // Pick the option with highest probability, map back to the pool model id.
+    let bestLabel = "";
+    let bestProb = -1;
+    for (const [label, prob] of Object.entries(probs)) {
+      if (prob > bestProb) { bestProb = prob; bestLabel = label; }
+    }
+    const idx = labels.indexOf(bestLabel);
+    return idx >= 0 ? pool[idx] : null;
+  } catch {
+    // A Clef failure must never block or delay the agent turn.
+    return null;
+  }
+}
+
 // Direct provider access using the credentials in the model config itself (no AI Gateway).
 function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelHandle {
   const catalog = catalogModel(config.provider, config.model);
