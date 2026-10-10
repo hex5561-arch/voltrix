@@ -26,6 +26,7 @@ import { foldProposedChanges, isCompactionTurn, type ChangeBatch } from "./agent
 import { ambientGatekeeperMode } from "./provisioning-policy";
 import { listFeaturedBlueprintsFromKv, readBlueprintContent, readBlueprintKvRecord, sanitizeBlueprintOutput } from "./blueprint-archive";
 import { WebFetchEnv } from "./web-fetch";
+import { WebBrowseEnv } from "./web-browse";
 import { UserDurableObject, UserAiModelRecord, type UserChatContext, type WorkspaceOutputEntry } from "./user";
 import { AgentSpawnerBinding } from "./agent-spawner-binding";
 import { recordAnalytics } from "./analytics";
@@ -3017,6 +3018,23 @@ class OverseerImpl implements AgentHooks {
       ai: this.env.WORKERS_AI,
       gateway: getAiGatewayConfig(this.env),
     };
+  }
+
+  // Provides webBrowse with the Browser Run binding (Kitesurf). Returns null when the BROWSER
+  // binding is absent so the tool surfaces a clear "not configured" error rather than crashing.
+  // The "markdown" Quick Action handles its own HTML→Markdown conversion, so no AI binding
+  // is needed here.
+  getBrowserEnv(): WebBrowseEnv | null {
+    if (this.storage.prohibitAllSharing.get()) {
+      throw new Error(
+          "This workspace has observed sensitive data. To prevent leaks, the workspace is prohibited " +
+          "from fetching from public web sites.");
+    }
+
+    const browser = this.env.BROWSER;
+    if (!browser) return null;
+
+    return { browser };
   }
 
   // Record an observation that originated from a built-in agent tool (not a gatekeeper).
