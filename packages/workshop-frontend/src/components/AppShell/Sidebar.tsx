@@ -9,6 +9,7 @@ import {
   SidebarSimple,
   SquaresFour,
   Stack,
+  Television,
 } from '@phosphor-icons/react'
 import { useSiteName } from '../../ServerConfigContext'
 import SiteLogo from '../SiteLogo'
@@ -139,6 +140,12 @@ export default function Sidebar({
               to="/outputs"
               label="Outputs"
               icon={<Stack size={14} weight="regular" />}
+              collapsed={collapsed}
+            />
+            <SidebarItem
+              to="/vtube"
+              label="V-Tube"
+              icon={<Television size={14} weight="regular" />}
               collapsed={collapsed}
             />
             {/* Gatekeeper management apps (e.g. the Context Library), listed dynamically. */}
