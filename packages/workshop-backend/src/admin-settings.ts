@@ -1,4 +1,4 @@
-import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, SUGGESTED_MODELS, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
+import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, MAX_ANNOUNCEMENT_LENGTH, MAX_CLEF_ROUTING_HINT_LENGTH as MAX_CLEF_HINT_API, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, SUGGESTED_MODELS, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
 import { GatekeeperVendor } from '@gadgets/workshop-shared/gatekeeper';
 import { DurableObject } from 'cloudflare:workers';
 import { RpcTarget } from 'capnweb';
@@ -6,7 +6,7 @@ import { validateRpc } from 'capnweb-validate';
 import { collection, createTypedStorage } from '@gadgets/typed-storage';
 import { createWorkshopLogger } from "./observability";
 import { ADMIN_CONFIG_KEY, FEATURED_BLUEPRINTS_KEY, isReservedBlueprintKey, parseBlueprintKvRecord, readBlueprintKvRecord, sanitizeBlueprintOutput, serializeFeaturedBlueprints } from './blueprint-archive.js';
-import { AdminConfig, DEFAULT_ADMIN_CONFIG, FormatCuration, MAX_AGENT_HINT, defaultOutputFormatId, listPromotedFormats, reorderFormats, sanitizeOutputOverrides, serializeAdminConfig } from './admin-config.js';
+import { AdminConfig, DEFAULT_ADMIN_CONFIG, FormatCuration, MAX_AGENT_HINT, MAX_CLEF_ROUTING_HINT_LENGTH, defaultOutputFormatId, listPromotedFormats, reorderFormats, sanitizeOutputOverrides, serializeAdminConfig } from './admin-config.js';
 import { SITE_LOGO_R2_KEY, siteLogoImage, validateSiteLogo } from './site-logo.js';
 import { ambientGatekeeperMode, DEFAULT_AMBIENT_GATEKEEPER_MODE } from './provisioning-policy.js';
 import { buildGatekeeperVendorMap } from './auth/auth-vendors.js';
@@ -320,6 +320,7 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
       resourceVendors: await this.#listResourceConfig(config, adminUserId),
       formats: await this.#listFormatConfig(config),
       clefModelPool: config.clefModelPool,
+      clefRoutingHint: config.clefRoutingHint,
     };
   }
 
@@ -425,6 +426,11 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
   /** Replace the Clef routing pool. Only valid TheHive model ids are kept; unknown ones are dropped. */
   async setClefModelPool(modelIds: string[]): Promise<void> {
     await this.updateAdminConfig({ clefModelPool: modelIds });
+  }
+
+  /** Replace the Clef routing hint. Empty string clears it. */
+  async setClefRoutingHint(hint: string): Promise<void> {
+    await this.updateAdminConfig({ clefRoutingHint: hint.slice(0, MAX_CLEF_ROUTING_HINT_LENGTH) });
   }
 
   /** Enable/disable a single gatekeeper resource type atomically (read-modify-write within the DO). */
@@ -668,5 +674,12 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
     const valid = new Set(Object.keys(SUGGESTED_MODELS["thehive"]));
     const filtered = modelIds.filter(id => valid.has(id));
     await this.admin.setClefModelPool(filtered);
+  }
+
+  async setClefRoutingHint(hint: string): Promise<void> {
+    if (hint.length > MAX_CLEF_HINT_API) {
+      throw new Error(`Clef routing hint too long (max ${MAX_CLEF_HINT_API} characters).`);
+    }
+    await this.admin.setClefRoutingHint(hint);
   }
 }

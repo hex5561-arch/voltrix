@@ -604,18 +604,28 @@ function getModelViaThehiveDirect(
  *   - the pool has fewer than 2 entries (nothing to choose between)
  *   - the call fails for any reason (never blocks the agent turn)
  *
- * Clef-flash launched after the July 2026 workers-types snapshot so the model id isn't in the
- * type catalog yet — we cast through `unknown` matching its documented input/output shape.
+ * `adminHint` is an optional admin-authored guidance string (e.g. "DeepSeek for code, GLM for
+ * general questions") that is prepended to the state so Clef uses admin preferences alongside
+ * the raw user message. Clef-flash launched after the July 2026 workers-types snapshot so the
+ * model id isn't in the type catalog yet — we cast through `unknown`.
  */
 export async function classifyWithClef(
   ai: Ai,
   query: string,
   pool: string[],
+  adminHint?: string,
 ): Promise<string | null> {
   if (pool.length < 2) return null;
 
   // Build human-readable option labels so Clef can reason about the choice.
   const labels = pool.map(id => SUGGESTED_MODELS["thehive"]?.[id]?.name ?? id);
+
+  // Compose the state: admin routing guidance first (if any), then the user's message.
+  // The hint tells Clef *how* to decide; the query tells it *what* to decide on.
+  const hintPrefix = adminHint?.trim()
+    ? `Admin routing guidance: ${adminHint.trim()}\n\nUser query: `
+    : "";
+  const state = (hintPrefix + query).slice(0, 2000); // cap so the Clef call stays cheap
 
   try {
     const result = await (ai as unknown as {
@@ -624,7 +634,7 @@ export async function classifyWithClef(
         inputs: { state: string; questions: Array<{ text: string; options: string[] }> },
       ): Promise<{ answers: Array<{ probabilities: Record<string, number> }> }>;
     }).run("@cf/cloudflare/clef-flash", {
-      state: query.slice(0, 2000), // cap state so the Clef call stays cheap
+      state,
       questions: [
         {
           text: "Which AI model is best suited to answer this query?",

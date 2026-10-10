@@ -857,6 +857,8 @@ export type GatekeeperVendorInfo = {
 /** Maximum length (characters) of the admin-authored agent system-prompt instructions. */
 export const MAX_INSTANCE_INSTRUCTIONS_LENGTH = 8000;
 
+export const MAX_CLEF_ROUTING_HINT_LENGTH = 600;
+
 /** Maximum length (characters) of the admin-authored site name shown next to the top-bar logo. */
 export const MAX_SITE_NAME_LENGTH = 40;
 
@@ -906,6 +908,13 @@ export type AdminSettingsView = {
    * point classifying when there's nothing to choose between).
    */
   clefModelPool: string[];
+
+  /**
+   * Admin-authored routing hint that Clef reads alongside the user's query when picking a model.
+   * Encode per-deployment routing preferences, e.g. "DeepSeek for code, GLM for general."
+   * Empty string = no hint (Clef decides solely from the user message).
+   */
+  clefRoutingHint: string;
 };
 
 /**
@@ -1061,6 +1070,12 @@ export interface AdminApi {
    * Unknown model ids are silently dropped.
    */
   setClefModelPool(modelIds: string[]): Promise<void>;
+
+  /**
+   * Set the admin routing hint Clef reads alongside the user's message when picking a model.
+   * Pass "" to clear. Rejects over MAX_CLEF_ROUTING_HINT_LENGTH.
+   */
+  setClefRoutingHint(hint: string): Promise<void>;
 }
 
 /** A partial edit to one promoted format. Absent fields are left alone. */

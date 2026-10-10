@@ -61,6 +61,15 @@ export type AdminConfig = {
    * disabled (nothing to choose between). Defaults to both TheHive models.
    */
   clefModelPool: string[];
+
+  /**
+   * Admin-authored routing hint injected into Clef's decision context before the user's message.
+   * Encode deployment-specific preferences here, e.g.:
+   * "DeepSeek is better for code and math. GLM is better for creative writing."
+   * Clef reads this alongside the user's query when choosing a model.
+   * Max MAX_CLEF_ROUTING_HINT_LENGTH characters.
+   */
+  clefRoutingHint: string;
 };
 
 /**
@@ -99,6 +108,7 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   ambientGatekeeperModes: {},
   formats: [],
   clefModelPool: Object.keys(SUGGESTED_MODELS["thehive"]),
+  clefRoutingHint: "",
 };
 
 /**
@@ -107,6 +117,12 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
  * two is what the panel asks for.
  */
 export const MAX_AGENT_HINT = 400;
+
+/**
+ * Max length for the admin's Clef routing hint. Long enough for a few sentences covering each
+ * model's strengths; short enough that it doesn't bloat Clef's input significantly.
+ */
+export const MAX_CLEF_ROUTING_HINT_LENGTH = 600;
 
 // Accept a stored format entry only if it is well-formed.
 function parseFormats(value: unknown): FormatCuration[] {
@@ -333,6 +349,8 @@ export function parseAdminConfig(raw: string | null): AdminConfig {
       ambientGatekeeperModes,
       formats: parseFormats(p.formats),
       clefModelPool: parseClefModelPool(p.clefModelPool),
+      clefRoutingHint: typeof p.clefRoutingHint === "string"
+          ? p.clefRoutingHint.slice(0, MAX_CLEF_ROUTING_HINT_LENGTH) : "",
     };
   } catch {
     return { ...DEFAULT_ADMIN_CONFIG };

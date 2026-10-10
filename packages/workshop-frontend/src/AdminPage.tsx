@@ -16,15 +16,17 @@ import {
   Cpu,
   ArrowSquareOut,
   ShieldCheck,
+  Plus,
 } from '@phosphor-icons/react'
 import CommandCenterView from './CommandCenterView'
 import { useAuthenticatedApi } from './AuthContext'
-import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR, SUGGESTED_MODELS } from '@gadgets/workshop-shared/api'
+import { AdminApi, AdminFormat, AdminResourceVendor, AiChatAuthorInfo, AiGatewayInfo, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, MAX_CLEF_ROUTING_HINT_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR, SUGGESTED_MODELS } from '@gadgets/workshop-shared/api'
 import { applyAccentColor, DEFAULT_ACCENT_COLOR } from './theme'
 import { cacheBustSiteLogoUrl, prepareSiteLogo } from './siteLogoUtils'
 import SiteLogo from './components/SiteLogo'
 import { useDocumentTitle } from './useDocumentTitle'
 import AdminFormatsPanel from './components/format/AdminFormatsPanel'
+import AddModelModal from './AddModelModal'
 
 // Preset accent colors offered in the Theme section ('' = default brand).
 const ACCENT_PRESETS: { label: string; value: string }[] = [
@@ -95,6 +97,16 @@ export default function AdminPage() {
   // Clef model routing pool: which TheHive models Clef may choose between pre-turn.
   const [clefModelPool, setClefModelPool] = useState<string[]>(Object.keys(SUGGESTED_MODELS['thehive']))
   const [savingClef, setSavingClef] = useState(false)
+
+  // Clef routing hint: admin guidance Clef reads alongside the user's query.
+  const [savedClefHint, setSavedClefHint] = useState('')
+  const [clefHintDraft, setClefHintDraft] = useState('')
+  const [savingClefHint, setSavingClefHint] = useState(false)
+
+  // Admin's own model list + AI gateway config (for AddModelModal).
+  const [adminModels, setAdminModels] = useState<AiChatAuthorInfo[]>([])
+  const [aiConfig, setAiConfig] = useState<AiGatewayInfo | null>(null)
+  const [addModelOpen, setAddModelOpen] = useState(false)
 
   // Gatekeeper resource config, and the set of resource keys ("vendorId\u0000urlPattern") busy toggling.
   const [resourceVendors, setResourceVendors] = useState<AdminResourceVendor[]>([])
@@ -180,6 +192,8 @@ export default function AdminPage() {
     setAccentDraft(view.accentColor)
     setFormats(view.formats)
     setClefModelPool(view.clefModelPool ?? Object.keys(SUGGESTED_MODELS['thehive']))
+    setSavedClefHint(view.clefRoutingHint ?? '')
+    setClefHintDraft(view.clefRoutingHint ?? '')
   }
 
   // Mint the admin capability once (the access check happens server-side) and load settings.
@@ -204,6 +218,13 @@ export default function AdminPage() {
         stub = api
         setAdmin({ api })
         applySettings(await api.getSettings())
+        // Load the admin's own model list and AI config for the AddModelModal.
+        const [modelList, cfg] = await Promise.all([
+          authenticatedApi.listModels(),
+          authenticatedApi.getAiConfig(),
+        ])
+        setAdminModels(modelList)
+        setAiConfig(cfg)
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load admin settings:', err)
@@ -446,6 +467,21 @@ export default function AdminPage() {
       toasts.add({ title: message, variant: 'error' })
     } finally {
       setSavingClef(false)
+    }
+  }
+
+  const handleSaveClefHint = async () => {
+    if (!admin) return
+    setSavingClefHint(true)
+    try {
+      await admin.api.setClefRoutingHint(clefHintDraft)
+      setSavedClefHint(clefHintDraft)
+      toasts.add({ title: 'Routing hint saved', variant: 'success' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save routing hint'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setSavingClefHint(false)
     }
   }
 
@@ -1343,64 +1379,160 @@ export default function AdminPage() {
       {/* Clef model routing */}
       {activeTab === 'general' && (
       <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+        {/* Header row */}
         <div className="flex items-start justify-between mb-1">
-          <div>
+          <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-kumo-strong">Clef model routing</h2>
             <p className="text-sm text-kumo-subtle mt-1">
               When a user&rsquo;s active model is a TheHive model, Clef-flash automatically picks
-              the best model from this pool for each query — without touching the user&rsquo;s
-              setting. Requires at least 2 models selected. Deselect all or keep only one to
-              disable routing.
+              the best model from this pool for each query &mdash; without touching the user&rsquo;s
+              setting. Requires at least 2 models checked. Uncheck all or keep one to disable.
             </p>
           </div>
-          {savingClef && (
-            <span className="text-xs text-kumo-subtle ml-4 mt-1 shrink-0">Saving…</span>
-          )}
+          <div className="flex items-center gap-2 ml-4 shrink-0">
+            {savingClef && <span className="text-xs text-kumo-subtle">Saving…</span>}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setAddModelOpen(true)}
+            >
+              <Plus size={13} weight="bold" className="mr-1" />
+              Add model
+            </Button>
+          </div>
         </div>
 
+        {/* Model checkboxes: built-in SUGGESTED_MODELS + any custom TheHive models admin added */}
         <div className="mt-4 space-y-3">
-          {Object.entries(SUGGESTED_MODELS['thehive']).map(([modelId, meta]) => {
-            const checked = clefModelPool.includes(modelId)
-            const toggle = () => {
-              const next = checked
-                ? clefModelPool.filter(id => id !== modelId)
-                : [...clefModelPool, modelId]
-              void handleSaveClefPool(next)
-            }
-            return (
-              <label
-                key={modelId}
-                className="flex items-start gap-3 cursor-pointer select-none"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 accent-[var(--color-accent-100)]"
-                  checked={checked}
-                  disabled={savingClef}
-                  onChange={toggle}
-                />
-                <div>
-                  <span className="text-sm font-medium text-kumo-strong">{meta.name}</span>
-                  <span className="block text-xs text-kumo-subtle font-mono">{modelId}</span>
-                </div>
-              </label>
-            )
-          })}
+          {(() => {
+            // Merge built-in suggestions with admin's own thehive models (deduplicated).
+            const builtIn = Object.entries(SUGGESTED_MODELS['thehive']) as [string, { name: string }][]
+            const builtInIds = new Set(builtIn.map(([id]) => id))
+            const custom = adminModels
+              .filter(m => m.id.includes('/') && !builtInIds.has(m.id))
+              // Rough heuristic: custom thehive model IDs contain "/" (e.g. "org/model-name")
+              // and are not already in the built-in list.
+              // More precise: check if the model was added with thehive provider — but we only
+              // have AiChatAuthorInfo (name+id) here, not the full config. Use ID pattern.
+              .map(m => [m.id, { name: m.name }] as [string, { name: string }])
+            const allModels = [...builtIn, ...custom]
+            return allModels.map(([modelId, meta]) => {
+              const checked = clefModelPool.includes(modelId)
+              const toggle = () => {
+                const next = checked
+                  ? clefModelPool.filter(id => id !== modelId)
+                  : [...clefModelPool, modelId]
+                void handleSaveClefPool(next)
+              }
+              return (
+                <label key={modelId} className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-[var(--color-accent-100)]"
+                    checked={checked}
+                    disabled={savingClef}
+                    onChange={toggle}
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-kumo-strong">{meta.name}</span>
+                    <span className="block text-xs text-kumo-subtle font-mono">{modelId}</span>
+                  </div>
+                </label>
+              )
+            })
+          })()}
         </div>
 
-        {clefModelPool.length < 2 && (
+        {/* Status line */}
+        {clefModelPool.length < 2 ? (
           <p className="mt-3 text-xs text-kumo-subtle">
             Clef routing is <strong>disabled</strong> — select at least 2 models to enable it.
           </p>
-        )}
-        {clefModelPool.length >= 2 && (
+        ) : (
           <p className="mt-3 text-xs text-kumo-subtle">
             Clef routing is <strong>active</strong> — Clef-flash will choose between{' '}
             {clefModelPool.length} model{clefModelPool.length !== 1 ? 's' : ''} per query.
           </p>
         )}
+
+        {/* Admin routing hint */}
+        <div className="mt-6 border-t border-kumo-line pt-5">
+          <h3 className="text-sm font-semibold text-kumo-strong mb-1">Routing hint</h3>
+          <p className="text-xs text-kumo-subtle mb-3">
+            Tell Clef how to choose between the models above. This note is prepended to every
+            routing decision alongside the user&rsquo;s message, so your preferences take
+            priority. Example: &ldquo;DeepSeek is better for code and math. GLM is better for
+            creative writing and general questions.&rdquo;
+          </p>
+          <Textarea
+            className="w-full"
+            value={clefHintDraft}
+            onValueChange={setClefHintDraft}
+            rows={3}
+            placeholder="e.g. DeepSeek is better for code and math. GLM is better for creative writing."
+            maxLength={MAX_CLEF_ROUTING_HINT_LENGTH}
+            error={
+              clefHintDraft.length > MAX_CLEF_ROUTING_HINT_LENGTH
+                ? `Too long by ${clefHintDraft.length - MAX_CLEF_ROUTING_HINT_LENGTH} characters`
+                : undefined
+            }
+          />
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-xs text-kumo-subtle">
+              {clefHintDraft.length} / {MAX_CLEF_ROUTING_HINT_LENGTH}
+            </span>
+            <div className="flex items-center gap-2">
+              {clefHintDraft !== savedClefHint && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setClefHintDraft(savedClefHint)}
+                  disabled={savingClefHint}
+                >
+                  Reset
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveClefHint}
+                loading={savingClefHint}
+                disabled={
+                  clefHintDraft === savedClefHint ||
+                  clefHintDraft.length > MAX_CLEF_ROUTING_HINT_LENGTH
+                }
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
       )}
+
+      {/* AddModelModal for Clef pool */}
+      <AddModelModal
+        visible={addModelOpen}
+        onCancel={() => setAddModelOpen(false)}
+        onSuccess={async () => {
+          setAddModelOpen(false)
+          // Refresh admin's model list so the new model appears in the pool checkboxes.
+          try {
+            const updated = await authenticatedApi.listModels()
+            setAdminModels(updated)
+            // Auto-add to pool if it's a new custom TheHive model not already there.
+            const builtInIds = new Set(Object.keys(SUGGESTED_MODELS['thehive']))
+            const newThehive = updated.filter(
+              m => m.id.includes('/') && !builtInIds.has(m.id) && !clefModelPool.includes(m.id)
+            )
+            if (newThehive.length > 0) {
+              void handleSaveClefPool([...clefModelPool, ...newThehive.map(m => m.id)])
+            }
+          } catch { /* non-fatal */ }
+        }}
+        authenticatedApi={authenticatedApi}
+        aiConfig={aiConfig}
+      />
 
       {/* Gatekeeper resources */}
       {activeTab === 'gatekeepers' && (

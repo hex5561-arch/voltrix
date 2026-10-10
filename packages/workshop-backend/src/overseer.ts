@@ -4281,7 +4281,8 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
             .find(m => m.author.type === "user" && m.type === "message");
           const latestUserText = latestMsg?.type === "message" ? latestMsg.message : undefined;
           if (latestUserText) {
-            const picked = await classifyWithClef(this.env.WORKERS_AI, latestUserText, pool);
+            const picked = await classifyWithClef(
+              this.env.WORKERS_AI, latestUserText, pool, adminConfig.clefRoutingHint || undefined);
             if (picked && picked !== resolvedConfig.model) {
               resolvedConfig = { ...resolvedConfig, model: picked };
             }
