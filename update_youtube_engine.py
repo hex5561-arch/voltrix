@@ -1,7 +1,6 @@
 import sys
 
 file_path = "cloudflare-os/packages/workshop-backend/src/youtube-engine.ts"
-
 with open(file_path, "r") as f:
     content = f.read()
 
