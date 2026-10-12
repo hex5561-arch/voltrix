@@ -82,6 +82,10 @@ export function useAuth(publicApi: RpcStub<PublicApi>) {
           .then((data: any) => {
             if (data.success && data.token) {
               localStorage.setItem('authToken', data.token)
+              if (data.googleAccessToken) {
+                localStorage.setItem('youtube_access_token', data.googleAccessToken)
+                window.dispatchEvent(new CustomEvent('voltrix:youtube-connected', { detail: { token: data.googleAccessToken } }))
+              }
               window.history.replaceState({}, document.title, window.location.pathname)
               authenticateWithToken(data.token)
             } else {

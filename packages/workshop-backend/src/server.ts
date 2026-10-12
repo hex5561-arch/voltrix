@@ -31,6 +31,7 @@ import { createWorkshopLogger } from "./observability";
 import { wrapDoStubForTelemetry } from "./do-telemetry";
 
 import { handleYouTubeSearchRequest, handleYouTubeIngestRequest, handleVTubeFeedRequest, handleVTubeVideoRequest } from "./youtube-engine.js";
+import { executeYouTubeLike, executeYouTubeSubscribe, resolveChannelId } from "./youtube-actions.js";
 import { submitPesapalOrder, getPesapalTransactionStatus } from "./pesapal.js";
 
 const logger = createWorkshopLogger("workshop.server");
@@ -1445,6 +1446,91 @@ export default {
       }
     }
 
+    // ── V-Tube Live YouTube Operations ──
+    if (req.method === "POST" && url.pathname === "/api/vtube/youtube/like") {
+      try {
+        const body = await req.json() as any;
+        const videoId = body.videoId;
+        const rating = (body.rating || "like") as "like" | "none";
+        const authHeader = req.headers.get("Authorization");
+        const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        const accessToken = body.accessToken || headerToken;
+        
+        const result = await executeYouTubeLike(videoId, rating, accessToken);
+        return Response.json(result, { status: result.status });
+      } catch (err: any) {
+        return Response.json({ success: false, status: 500, message: err?.message || "Like execution failed" }, { status: 500 });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/vtube/youtube/subscribe") {
+      try {
+        const body = await req.json() as any;
+        const authHeader = req.headers.get("Authorization");
+        const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        const accessToken = body.accessToken || headerToken;
+        
+        const result = await executeYouTubeSubscribe({
+          channelId: body.channelId,
+          author: body.author,
+          videoId: body.videoId,
+          action: body.action || "subscribe",
+          subscriptionId: body.subscriptionId,
+          accessToken,
+        });
+        return Response.json(result, { status: result.status });
+      } catch (err: any) {
+        return Response.json({ success: false, status: 500, message: err?.message || "Subscribe execution failed" }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/vtube/youtube/channel-info") {
+      const author = url.searchParams.get("author") || "";
+      const videoId = url.searchParams.get("videoId") || "";
+      const authHeader = req.headers.get("Authorization");
+      const accessToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+      const channelId = await resolveChannelId(author, videoId, accessToken);
+      return Response.json({ success: !!channelId, channelId, author });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/vtube/youtube/exchange-token") {
+      try {
+        const body = await req.json() as any;
+        const { code, redirectUri } = body;
+        if (!code) {
+          return Response.json({ success: false, error: "Authorization code is required" }, { status: 400 });
+        }
+        const googleClientId = (env.GOOGLE_CLIENT_ID || "").trim();
+        const googleClientSecret = (env.GOOGLE_CLIENT_SECRET || "").trim();
+        const effectiveRedirectUri = redirectUri || `${url.origin}/`;
+
+        const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: googleClientId,
+            client_secret: googleClientSecret,
+            code,
+            redirect_uri: effectiveRedirectUri.replace(/\/$/, ""),
+            grant_type: "authorization_code",
+          }),
+        });
+
+        const tokenData = await tokenResp.json() as any;
+        if (tokenData.access_token) {
+          return Response.json({
+            success: true,
+            accessToken: tokenData.access_token,
+            refreshToken: tokenData.refresh_token || null,
+            expiresIn: tokenData.expires_in,
+          });
+        }
+        return Response.json({ success: false, error: tokenData.error_description || "Token exchange failed", details: tokenData }, { status: 400 });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Internal error during token exchange" }, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/youtube/search" || url.pathname === "/api/youtube-search" || url.pathname === "/api/vtube/search") {
       return handleYouTubeSearchRequest(req, env);
     }
@@ -1526,7 +1612,11 @@ export default {
     if (req.method === "GET" && url.pathname === "/api/auth/oauth/google/url") {
       const clientId = (env.GOOGLE_CLIENT_ID || "").trim();
       const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/`;
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account&state=google`;
+      const scopeParam = url.searchParams.get("scope");
+      const scope = scopeParam === "basic"
+        ? "openid email profile"
+        : "openid email profile https://www.googleapis.com/auth/youtube.force-ssl";
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=google`;
       return Response.json({ enabled: true, url: authUrl, clientId });
     }
 
@@ -1555,6 +1645,8 @@ export default {
 
         let userEmail = "";
         let userName = "";
+        let googleAccessToken: string | null = null;
+        let googleRefreshToken: string | null = null;
 
         if (provider === "google") {
           const googleClientId = (env.GOOGLE_CLIENT_ID || "").trim();
@@ -1575,6 +1667,8 @@ export default {
             });
             const tokenData = await tokenResp.json() as any;
             if (tokenData.access_token) {
+              googleAccessToken = tokenData.access_token;
+              googleRefreshToken = tokenData.refresh_token || null;
               const googleUserResp = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
                 headers: { Authorization: `Bearer ${tokenData.access_token}` },
               });
@@ -1694,6 +1788,8 @@ export default {
           success: true,
           token: sessionToken,
           user: { id: userEmail, name: userName },
+          googleAccessToken,
+          googleRefreshToken,
         });
       } catch (err) {
         logger.error("Social OAuth error", { event: "oauth.social.failed", error: err });

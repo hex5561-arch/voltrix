@@ -11,6 +11,7 @@ import {
   ThumbsUp,
   Bell,
   Check,
+  YoutubeLogo,
 } from '@phosphor-icons/react';
 import { ACADEMIC_DISCOVERY_CATALOG, AcademicLecture } from '../components/video/YouTubePlayerCard';
 import {
@@ -21,6 +22,13 @@ import {
   isLikedVideo,
   isSubscribedChannel,
 } from '../services/studentProfile';
+import {
+  isYouTubeConnected,
+  executeLiveYouTubeLike,
+  executeLiveYouTubeSubscribe,
+  setYouTubeAccessToken,
+} from '../services/youtubeService';
+import { YouTubeConnectModal } from '../components/vtube/YouTubeConnectModal';
 import { VTubePlayer, VTubePlayerHandle } from '../components/vtube/VTubePlayer';
 import { VTubeChapters } from '../components/vtube/VTubeChapters';
 import { VTubeNotebook } from '../components/vtube/VTubeNotebook';
@@ -49,6 +57,55 @@ function VTubeTheater() {
     const author = ACADEMIC_DISCOVERY_CATALOG.find((l) => l.videoId === videoId)?.author;
     return author ? isSubscribedChannel(author, prof) : false;
   });
+
+  // YouTube live integration states
+  const [isYtConnected, setIsYtConnected] = useState<boolean>(() => isYouTubeConnected());
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    type: 'like' | 'subscribe';
+    videoId?: string;
+    author?: string;
+  } | null>(null);
+  const [ytFeedback, setYtFeedback] = useState<string | null>(null);
+
+  // Listen for YouTube connection events
+  useEffect(() => {
+    const onConnected = () => setIsYtConnected(true);
+    const onDisconnected = () => setIsYtConnected(false);
+    window.addEventListener('voltrix:youtube-connected', onConnected);
+    window.addEventListener('voltrix:youtube-disconnected', onDisconnected);
+    return () => {
+      window.removeEventListener('voltrix:youtube-connected', onConnected);
+      window.removeEventListener('voltrix:youtube-disconnected', onDisconnected);
+    };
+  }, []);
+
+  // Intercept Google OAuth return code if user just authorized YouTube
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    if (code) {
+      const redirectUri = window.location.origin + window.location.pathname;
+      fetch('/api/vtube/youtube/exchange-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirectUri }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: any) => {
+          if (data && data.accessToken) {
+            setYouTubeAccessToken(data.accessToken);
+            setIsYtConnected(true);
+            setYtFeedback('Connected to YouTube successfully!');
+            setTimeout(() => setYtFeedback(null), 3500);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        });
+    }
+  }, []);
 
   useEffect(() => {
     // Attempt backend fetch with fallback
@@ -98,15 +155,47 @@ function VTubeTheater() {
     playerRef.current?.seekTo(seconds);
   };
 
-  const handleToggleLike = () => {
+  const handleToggleLike = async () => {
     const willLike = toggleLikedVideo(videoId);
     setIsLiked(willLike);
+
+    if (isYouTubeConnected()) {
+      const res = await executeLiveYouTubeLike(videoId, willLike);
+      if (res.requiresAuth) {
+        setPendingAction({ type: 'like', videoId });
+        setConnectModalOpen(true);
+      } else if (res.message) {
+        setYtFeedback(res.message);
+        setTimeout(() => setYtFeedback(null), 3000);
+      }
+    } else {
+      setPendingAction({ type: 'like', videoId });
+      setConnectModalOpen(true);
+    }
   };
 
-  const handleToggleSubscribe = () => {
+  const handleToggleSubscribe = async () => {
     if (!activeLecture.author) return;
     const willSub = toggleSubscribedChannel(activeLecture.author);
     setIsSubscribed(willSub);
+
+    if (isYouTubeConnected()) {
+      const res = await executeLiveYouTubeSubscribe({
+        author: activeLecture.author,
+        videoId,
+        willSubscribe: willSub,
+      });
+      if (res.requiresAuth) {
+        setPendingAction({ type: 'subscribe', author: activeLecture.author, videoId });
+        setConnectModalOpen(true);
+      } else if (res.message) {
+        setYtFeedback(res.message);
+        setTimeout(() => setYtFeedback(null), 3000);
+      }
+    } else {
+      setPendingAction({ type: 'subscribe', author: activeLecture.author, videoId });
+      setConnectModalOpen(true);
+    }
   };
 
   return (
@@ -134,6 +223,26 @@ function VTubeTheater() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {isYtConnected ? (
+            <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 font-semibold">
+              <YoutubeLogo size={14} weight="fill" />
+              <span className="hidden sm:inline">YouTube Synced</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setPendingAction(null);
+                setConnectModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-red-500/40 bg-red-600/10 text-red-400 hover:bg-red-600/20 cursor-pointer transition-colors"
+              title="Connect your Google account to sync likes & subscriptions directly to YouTube"
+            >
+              <YoutubeLogo size={14} weight="fill" />
+              <span className="hidden sm:inline">Connect YouTube</span>
+            </button>
+          )}
+
           {/* Low Bandwidth / Audio Mode Toggle */}
           <button
             type="button"
@@ -278,6 +387,28 @@ function VTubeTheater() {
         onClose={() => setIsQuizOpen(false)}
         videoTitle={activeLecture.title}
         takeaways={activeLecture.takeaways || []}
+      />
+
+      {/* Live YouTube Toast Notification */}
+      {ytFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-kumo-base border border-emerald-500/40 text-emerald-300 text-xs shadow-2xl animate-fade-in backdrop-blur-md">
+          <CheckCircle size={16} weight="fill" className="text-emerald-400" />
+          <span>{ytFeedback}</span>
+        </div>
+      )}
+
+      {/* Direct YouTube Connection Modal */}
+      <YouTubeConnectModal
+        isOpen={connectModalOpen}
+        onClose={() => {
+          setConnectModalOpen(false);
+          setPendingAction(null);
+        }}
+        pendingAction={pendingAction}
+        onProceedInternalOnly={() => {
+          setConnectModalOpen(false);
+          setPendingAction(null);
+        }}
       />
     </div>
   );

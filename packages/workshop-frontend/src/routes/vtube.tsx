@@ -14,6 +14,8 @@ import {
   Lightning,
   Bell,
   Sliders,
+  YoutubeLogo,
+  CheckCircle,
 } from '@phosphor-icons/react';
 import {
   getStudentProfile,
@@ -24,6 +26,13 @@ import {
   addWeakness,
   removeWeakness,
 } from '../services/studentProfile';
+import {
+  isYouTubeConnected,
+  executeLiveYouTubeLike,
+  executeLiveYouTubeSubscribe,
+  setYouTubeAccessToken,
+} from '../services/youtubeService';
+import { YouTubeConnectModal } from '../components/vtube/YouTubeConnectModal';
 import { ACADEMIC_DISCOVERY_CATALOG, AcademicLecture } from '../components/video/YouTubePlayerCard';
 
 interface RecommendedLecture extends AcademicLecture {
@@ -52,6 +61,16 @@ function VTubeDashboard() {
   const [weaknesses, setWeaknesses] = useState<string[]>(() => profile?.weaknesses ?? ['Linear Transformations', 'Eigenvectors', 'Algorithm Complexity']);
   const [newWeaknessInput, setNewWeaknessInput] = useState('');
   const [showWeaknessBar, setShowWeaknessBar] = useState(true);
+
+  // YouTube live integration states
+  const [isYtConnected, setIsYtConnected] = useState<boolean>(() => isYouTubeConnected());
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    type: 'like' | 'subscribe';
+    videoId?: string;
+    author?: string;
+  } | null>(null);
+  const [ytFeedback, setYtFeedback] = useState<string | null>(null);
 
   // Load feed from backend based on profile and weaknesses
   const loadFeed = (targetWeaknesses?: string[], targetSubs?: string[]) => {
@@ -109,6 +128,45 @@ function VTubeDashboard() {
     return unsubscribe;
   }, []);
 
+  // Listen for YouTube connection events
+  useEffect(() => {
+    const onConnected = () => setIsYtConnected(true);
+    const onDisconnected = () => setIsYtConnected(false);
+    window.addEventListener('voltrix:youtube-connected', onConnected);
+    window.addEventListener('voltrix:youtube-disconnected', onDisconnected);
+    return () => {
+      window.removeEventListener('voltrix:youtube-connected', onConnected);
+      window.removeEventListener('voltrix:youtube-disconnected', onDisconnected);
+    };
+  }, []);
+
+  // Intercept Google OAuth return code if user just authorized YouTube
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    if (code) {
+      const redirectUri = window.location.origin + window.location.pathname;
+      fetch('/api/vtube/youtube/exchange-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirectUri }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: any) => {
+          if (data && data.accessToken) {
+            setYouTubeAccessToken(data.accessToken);
+            setIsYtConnected(true);
+            setYtFeedback('Connected to YouTube successfully!');
+            setTimeout(() => setYtFeedback(null), 3500);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        });
+    }
+  }, []);
+
   // Multi-tier hybrid search
   useEffect(() => {
     const q = search.trim();
@@ -144,16 +202,30 @@ function VTubeDashboard() {
     return () => clearTimeout(timer);
   }, [search, feed]);
 
-  const handleToggleLike = (e: React.MouseEvent, videoId: string) => {
+  const handleToggleLike = async (e: React.MouseEvent, videoId: string) => {
     e.preventDefault();
     e.stopPropagation();
     const willLike = toggleLikedVideo(videoId);
     setLikedVideoIds((prev) =>
       willLike ? [...prev, videoId] : prev.filter((id) => id !== videoId)
     );
+
+    if (isYouTubeConnected()) {
+      const res = await executeLiveYouTubeLike(videoId, willLike);
+      if (res.requiresAuth) {
+        setPendingAction({ type: 'like', videoId });
+        setConnectModalOpen(true);
+      } else if (res.message) {
+        setYtFeedback(res.message);
+        setTimeout(() => setYtFeedback(null), 3000);
+      }
+    } else {
+      setPendingAction({ type: 'like', videoId });
+      setConnectModalOpen(true);
+    }
   };
 
-  const handleToggleSubscribe = (e: React.MouseEvent, author: string) => {
+  const handleToggleSubscribe = async (e: React.MouseEvent, author: string, videoId?: string) => {
     e.preventDefault();
     e.stopPropagation();
     const willSub = toggleSubscribedChannel(author);
@@ -163,6 +235,20 @@ function VTubeDashboard() {
     setSubscribedChannels(updated);
     // Refresh feed with new subscribed preference
     loadFeed(weaknesses, updated);
+
+    if (isYouTubeConnected()) {
+      const res = await executeLiveYouTubeSubscribe({ author, videoId, willSubscribe: willSub });
+      if (res.requiresAuth) {
+        setPendingAction({ type: 'subscribe', author, videoId });
+        setConnectModalOpen(true);
+      } else if (res.message) {
+        setYtFeedback(res.message);
+        setTimeout(() => setYtFeedback(null), 3000);
+      }
+    } else {
+      setPendingAction({ type: 'subscribe', author, videoId });
+      setConnectModalOpen(true);
+    }
   };
 
   const handleAddWeakness = (e: React.FormEvent) => {
@@ -207,14 +293,35 @@ function VTubeDashboard() {
             <Television size={24} weight="bold" />
             <span className="font-mono text-xs uppercase tracking-wider font-semibold">Academic Stream Layer</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowWeaknessBar((b) => !b)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-kumo-line bg-kumo-elevated text-kumo-subtle hover:text-kumo-default cursor-pointer transition-colors"
-          >
-            <Sliders size={13} />
-            <span>{showWeaknessBar ? 'Hide Weakness Tuning' : 'Tune Weaknesses'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {isYtConnected ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 font-semibold">
+                <YoutubeLogo size={15} weight="fill" />
+                <span>YouTube Synced</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingAction(null);
+                  setConnectModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-red-500/40 bg-red-600/10 text-red-400 hover:bg-red-600/20 cursor-pointer transition-colors"
+                title="Connect your Google account to sync likes & subscriptions directly to YouTube"
+              >
+                <YoutubeLogo size={15} weight="fill" />
+                <span>Connect YouTube</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowWeaknessBar((b) => !b)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-kumo-line bg-kumo-elevated text-kumo-subtle hover:text-kumo-default cursor-pointer transition-colors"
+            >
+              <Sliders size={13} />
+              <span>{showWeaknessBar ? 'Hide Weakness Tuning' : 'Tune Weaknesses'}</span>
+            </button>
+          </div>
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-kumo-default">V-Tube Academic Theater</h1>
         <p className="text-xs sm:text-sm text-kumo-subtle max-w-3xl leading-relaxed">
@@ -342,7 +449,7 @@ function VTubeDashboard() {
                       <span className="text-xs text-kumo-subtle truncate">{lecture.author}</span>
                       <button
                         type="button"
-                        onClick={(e) => handleToggleSubscribe(e, lecture.author)}
+                        onClick={(e) => handleToggleSubscribe(e, lecture.author, lecture.videoId)}
                         className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
                           isSubscribed
                             ? 'bg-kumo-elevated text-emerald-400 border border-emerald-500/30'
@@ -487,7 +594,7 @@ function VTubeDashboard() {
                   <span className="text-xs text-kumo-subtle truncate">{lecture.author}</span>
                   <button
                     type="button"
-                    onClick={(e) => handleToggleSubscribe(e, lecture.author)}
+                    onClick={(e) => handleToggleSubscribe(e, lecture.author, lecture.videoId)}
                     className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
                       isSubscribed
                         ? 'bg-kumo-elevated text-emerald-400 border border-emerald-500/30'
@@ -544,6 +651,28 @@ function VTubeDashboard() {
           <p className="text-xs text-kumo-inactive mt-1">Try clearing search or typing a new topic.</p>
         </div>
       )}
+
+      {/* Live YouTube Toast Notification */}
+      {ytFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-kumo-base border border-emerald-500/40 text-emerald-300 text-xs shadow-2xl animate-fade-in backdrop-blur-md">
+          <CheckCircle size={16} weight="fill" className="text-emerald-400" />
+          <span>{ytFeedback}</span>
+        </div>
+      )}
+
+      {/* Direct YouTube Connection Modal */}
+      <YouTubeConnectModal
+        isOpen={connectModalOpen}
+        onClose={() => {
+          setConnectModalOpen(false);
+          setPendingAction(null);
+        }}
+        pendingAction={pendingAction}
+        onProceedInternalOnly={() => {
+          setConnectModalOpen(false);
+          setPendingAction(null);
+        }}
+      />
     </div>
   );
 }
