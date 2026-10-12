@@ -17,6 +17,7 @@ import {
 } from '@phosphor-icons/react';
 import {
   getStudentProfile,
+  subscribeStudentProfile,
   StudentProfile,
   toggleLikedVideo,
   toggleSubscribedChannel,
@@ -46,9 +47,9 @@ function VTubeDashboard() {
   const [recommended, setRecommended] = useState<RecommendedLecture[]>([]);
   const [feed, setFeed] = useState<AcademicLecture[]>(ACADEMIC_DISCOVERY_CATALOG);
   
-  const [likedVideoIds, setLikedVideoIds] = useState<string[]>(() => profile?.likedVideoIds || ['fNk_zzaMoSs']);
-  const [subscribedChannels, setSubscribedChannels] = useState<string[]>(() => profile?.subscribedChannels || ['3Blue1Brown']);
-  const [weaknesses, setWeaknesses] = useState<string[]>(() => profile?.weaknesses || ['Linear Transformations', 'Eigenvectors', 'Algorithm Complexity']);
+  const [likedVideoIds, setLikedVideoIds] = useState<string[]>(() => profile?.likedVideoIds ?? []);
+  const [subscribedChannels, setSubscribedChannels] = useState<string[]>(() => profile?.subscribedChannels ?? []);
+  const [weaknesses, setWeaknesses] = useState<string[]>(() => profile?.weaknesses ?? ['Linear Transformations', 'Eigenvectors', 'Algorithm Complexity']);
   const [newWeaknessInput, setNewWeaknessInput] = useState('');
   const [showWeaknessBar, setShowWeaknessBar] = useState(true);
 
@@ -97,6 +98,15 @@ function VTubeDashboard() {
 
   useEffect(() => {
     loadFeed();
+    const unsubscribe = subscribeStudentProfile((updatedProfile) => {
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        if (updatedProfile.likedVideoIds) setLikedVideoIds(updatedProfile.likedVideoIds);
+        if (updatedProfile.subscribedChannels) setSubscribedChannels(updatedProfile.subscribedChannels);
+        if (updatedProfile.weaknesses) setWeaknesses(updatedProfile.weaknesses);
+      }
+    });
+    return unsubscribe;
   }, []);
 
   // Multi-tier hybrid search

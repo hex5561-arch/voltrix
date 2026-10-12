@@ -15,6 +15,7 @@ import {
 import { ACADEMIC_DISCOVERY_CATALOG, AcademicLecture } from '../components/video/YouTubePlayerCard';
 import {
   getStudentProfile,
+  subscribeStudentProfile,
   toggleLikedVideo,
   toggleSubscribedChannel,
   isLikedVideo,
@@ -65,6 +66,15 @@ function VTubeTheater() {
       .catch(() => {
         // Fallback already assigned in initial state
       });
+
+    const unsubscribe = subscribeStudentProfile((prof) => {
+      setIsLiked(isLikedVideo(videoId, prof));
+      if (activeLecture.author) {
+        setIsSubscribed(isSubscribedChannel(activeLecture.author, prof));
+      }
+    });
+
+    return unsubscribe;
   }, [videoId]);
 
   const activeLecture: AcademicLecture = lecture || {
