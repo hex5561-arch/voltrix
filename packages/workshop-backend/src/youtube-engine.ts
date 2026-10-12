@@ -478,3 +478,63 @@ export async function handleYouTubeIngestRequest(req: Request): Promise<Response
     }
   });
 }
+
+/**
+ * Handle GET /api/vtube/feed requests.
+ */
+export async function handleVTubeFeedRequest(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const discipline = url.searchParams.get('discipline')?.toLowerCase();
+  const courses = url.searchParams.get('courses')?.toLowerCase().split(',').filter(Boolean);
+
+  let feed = [...ACADEMIC_DISCOVERY_CATALOG];
+
+  if (discipline) {
+    feed.sort((a, b) => {
+      const aMatch = a.discipline.toLowerCase().includes(discipline);
+      const bMatch = b.discipline.toLowerCase().includes(discipline);
+      if (aMatch && !bMatch) return -1;
+      if (!aMatch && bMatch) return 1;
+      return 0;
+    });
+  } else if (courses && courses.length > 0) {
+    feed.sort((a, b) => {
+      const aMatch = courses.some(c => a.discipline.toLowerCase().includes(c) || a.title.toLowerCase().includes(c));
+      const bMatch = courses.some(c => b.discipline.toLowerCase().includes(c) || b.title.toLowerCase().includes(c));
+      if (aMatch && !bMatch) return -1;
+      if (!aMatch && bMatch) return 1;
+      return 0;
+    });
+  }
+
+  return new Response(JSON.stringify({ success: true, feed }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
+/**
+ * Handle GET /api/vtube/video/:id requests.
+ */
+export async function handleVTubeVideoRequest(req: Request, videoId: string): Promise<Response> {
+  const video = ACADEMIC_DISCOVERY_CATALOG.find(c => c.videoId === videoId);
+
+  if (!video) {
+    return new Response(JSON.stringify({ success: false, error: 'Video not found' }), {
+      status: 404,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+  }
+
+  return new Response(JSON.stringify({ success: true, video }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}

@@ -20,11 +20,13 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as VtubeRouteImport } from './routes/vtube'
 import { Route as WorkspacesRouteImport } from './routes/workspaces'
 import { Route as AdminCommandCenterRouteImport } from './routes/admin_.command-center'
 import { Route as BlueprintIdRouteImport } from './routes/blueprint.$id'
 import { Route as GadgetIdRouteImport } from './routes/gadget.$id'
 import { Route as GatekeepersAppIdRouteImport } from './routes/gatekeepers_.$appId'
+import { Route as VtubeVideoIdRouteImport } from './routes/vtube_.$videoId'
 import { Route as WorkspaceIdRouteImport } from './routes/workspace.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -82,6 +84,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VtubeRoute = VtubeRouteImport.update({
+  id: '/vtube',
+  path: '/vtube',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspacesRoute = WorkspacesRouteImport.update({
   id: '/workspaces',
   path: '/workspaces',
@@ -107,6 +114,11 @@ const GatekeepersAppIdRoute = GatekeepersAppIdRouteImport.update({
   path: '/gatekeepers/$appId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VtubeVideoIdRoute = VtubeVideoIdRouteImport.update({
+  id: '/vtube_/$videoId',
+  path: '/vtube/$videoId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspaceIdRoute = WorkspaceIdRouteImport.update({
   id: '/workspace/$id',
   path: '/workspace/$id',
@@ -125,11 +137,13 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
+  '/vtube': typeof VtubeRoute
   '/workspaces': typeof WorkspacesRoute
   '/admin/command-center': typeof AdminCommandCenterRoute
   '/blueprint/$id': typeof BlueprintIdRoute
   '/gadget/$id': typeof GadgetIdRoute
   '/gatekeepers/$appId': typeof GatekeepersAppIdRoute
+  '/vtube/$videoId': typeof VtubeVideoIdRoute
   '/workspace/$id': typeof WorkspaceIdRoute
 }
 export interface FileRoutesByTo {
@@ -144,11 +158,13 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
+  '/vtube': typeof VtubeRoute
   '/workspaces': typeof WorkspacesRoute
   '/admin/command-center': typeof AdminCommandCenterRoute
   '/blueprint/$id': typeof BlueprintIdRoute
   '/gadget/$id': typeof GadgetIdRoute
   '/gatekeepers/$appId': typeof GatekeepersAppIdRoute
+  '/vtube/$videoId': typeof VtubeVideoIdRoute
   '/workspace/$id': typeof WorkspaceIdRoute
 }
 export interface FileRoutesById {
@@ -164,11 +180,13 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/providers': typeof ProvidersRoute
   '/signup': typeof SignupRoute
+  '/vtube': typeof VtubeRoute
   '/workspaces': typeof WorkspacesRoute
   '/admin_/command-center': typeof AdminCommandCenterRoute
   '/blueprint/$id': typeof BlueprintIdRoute
   '/gadget/$id': typeof GadgetIdRoute
   '/gatekeepers_/$appId': typeof GatekeepersAppIdRoute
+  '/vtube_/$videoId': typeof VtubeVideoIdRoute
   '/workspace/$id': typeof WorkspaceIdRoute
 }
 export interface FileRouteTypes {
@@ -185,11 +203,13 @@ export interface FileRouteTypes {
     | '/profile'
     | '/providers'
     | '/signup'
+    | '/vtube'
     | '/workspaces'
     | '/admin/command-center'
     | '/blueprint/$id'
     | '/gadget/$id'
     | '/gatekeepers/$appId'
+    | '/vtube/$videoId'
     | '/workspace/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -204,11 +224,13 @@ export interface FileRouteTypes {
     | '/profile'
     | '/providers'
     | '/signup'
+    | '/vtube'
     | '/workspaces'
     | '/admin/command-center'
     | '/blueprint/$id'
     | '/gadget/$id'
     | '/gatekeepers/$appId'
+    | '/vtube/$videoId'
     | '/workspace/$id'
   id:
     | '__root__'
@@ -223,11 +245,13 @@ export interface FileRouteTypes {
     | '/profile'
     | '/providers'
     | '/signup'
+    | '/vtube'
     | '/workspaces'
     | '/admin_/command-center'
     | '/blueprint/$id'
     | '/gadget/$id'
     | '/gatekeepers_/$appId'
+    | '/vtube_/$videoId'
     | '/workspace/$id'
   fileRoutesById: FileRoutesById
 }
@@ -243,11 +267,13 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   ProvidersRoute: typeof ProvidersRoute
   SignupRoute: typeof SignupRoute
+  VtubeRoute: typeof VtubeRoute
   WorkspacesRoute: typeof WorkspacesRoute
   AdminCommandCenterRoute: typeof AdminCommandCenterRoute
   BlueprintIdRoute: typeof BlueprintIdRoute
   GadgetIdRoute: typeof GadgetIdRoute
   GatekeepersAppIdRoute: typeof GatekeepersAppIdRoute
+  VtubeVideoIdRoute: typeof VtubeVideoIdRoute
   WorkspaceIdRoute: typeof WorkspaceIdRoute
 }
 
@@ -330,6 +356,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vtube': {
+      id: '/vtube'
+      path: '/vtube'
+      fullPath: '/vtube'
+      preLoaderRoute: typeof VtubeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspaces': {
       id: '/workspaces'
       path: '/workspaces'
@@ -365,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GatekeepersAppIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vtube_/$videoId': {
+      id: '/vtube_/$videoId'
+      path: '/vtube/$videoId'
+      fullPath: '/vtube/$videoId'
+      preLoaderRoute: typeof VtubeVideoIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace/$id': {
       id: '/workspace/$id'
       path: '/workspace/$id'
@@ -387,11 +427,13 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   ProvidersRoute: ProvidersRoute,
   SignupRoute: SignupRoute,
+  VtubeRoute: VtubeRoute,
   WorkspacesRoute: WorkspacesRoute,
   AdminCommandCenterRoute: AdminCommandCenterRoute,
   BlueprintIdRoute: BlueprintIdRoute,
   GadgetIdRoute: GadgetIdRoute,
   GatekeepersAppIdRoute: GatekeepersAppIdRoute,
+  VtubeVideoIdRoute: VtubeVideoIdRoute,
   WorkspaceIdRoute: WorkspaceIdRoute,
 }
 export const routeTree = rootRouteImport

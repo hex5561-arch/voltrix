@@ -30,7 +30,7 @@ import { serveSiteLogo, SITE_LOGO_PATH } from "./site-logo.js";
 import { createWorkshopLogger } from "./observability";
 import { wrapDoStubForTelemetry } from "./do-telemetry";
 
-import { handleYouTubeSearchRequest, handleYouTubeIngestRequest } from "./youtube-engine.js";
+import { handleYouTubeSearchRequest, handleYouTubeIngestRequest, handleVTubeFeedRequest, handleVTubeVideoRequest } from "./youtube-engine.js";
 import { submitPesapalOrder, getPesapalTransactionStatus } from "./pesapal.js";
 
 const logger = createWorkshopLogger("workshop.server");
@@ -1431,6 +1431,17 @@ export default {
       } catch (err) {
         logger.warn("whatsapp validate-link error", { event: "whatsapp.link.validate.failed", error: err });
         return Response.json({ success: false, error: "server_error" }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/vtube/feed") {
+      return handleVTubeFeedRequest(req);
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/vtube/video/")) {
+      const videoId = url.pathname.slice("/api/vtube/video/".length);
+      if (videoId) {
+        return handleVTubeVideoRequest(req, videoId);
       }
     }
 
