@@ -54,6 +54,9 @@ export interface StudentProfile {
   dailyQueriesLimit?: number
   dailyQueriesUsed?: number
   lastQueryDate?: string
+  weaknesses?: string[]
+  subscribedChannels?: string[]
+  likedVideoIds?: string[]
   updatedAt: number
 }
 
@@ -83,6 +86,9 @@ export function getDefaultStudentProfile(): StudentProfile {
       description: `${c.code} · ${c.name} course workspace`,
       selected: true,
     })),
+    weaknesses: ['Linear Transformations', 'Eigenvectors', 'Algorithm Complexity'],
+    subscribedChannels: ['3Blue1Brown', 'MIT OpenCourseWare (Prof. Gilbert Strang)'],
+    likedVideoIds: ['fNk_zzaMoSs'],
     updatedAt: Date.now(),
   }
 }
@@ -215,5 +221,68 @@ export function bindCohortToProfile(cohortData: {
     cohortInstitution: cohortData.institution,
     cohortVariables: cohortData.variables,
   });
+}
+
+export function isLikedVideo(videoId: string, profile?: StudentProfile | null): boolean {
+  const p = profile ?? getStudentProfile();
+  return Boolean(p?.likedVideoIds?.includes(videoId));
+}
+
+export function toggleLikedVideo(videoId: string): boolean {
+  const p = getStudentProfile() || getDefaultStudentProfile();
+  const current = new Set(p.likedVideoIds || []);
+  const willLike = !current.has(videoId);
+  if (willLike) {
+    current.add(videoId);
+  } else {
+    current.delete(videoId);
+  }
+  saveStudentProfile({ likedVideoIds: Array.from(current) });
+  return willLike;
+}
+
+export function isSubscribedChannel(author: string, profile?: StudentProfile | null): boolean {
+  const p = profile ?? getStudentProfile();
+  return Boolean(p?.subscribedChannels?.includes(author));
+}
+
+export function toggleSubscribedChannel(author: string): boolean {
+  const p = getStudentProfile() || getDefaultStudentProfile();
+  const current = new Set(p.subscribedChannels || []);
+  const willSubscribe = !current.has(author);
+  if (willSubscribe) {
+    current.add(author);
+  } else {
+    current.delete(author);
+  }
+  saveStudentProfile({ subscribedChannels: Array.from(current) });
+  return willSubscribe;
+}
+
+export function toggleWeakness(topic: string): boolean {
+  const p = getStudentProfile() || getDefaultStudentProfile();
+  const current = new Set(p.weaknesses || []);
+  const willHave = !current.has(topic);
+  if (willHave) {
+    current.add(topic);
+  } else {
+    current.delete(topic);
+  }
+  saveStudentProfile({ weaknesses: Array.from(current) });
+  return willHave;
+}
+
+export function addWeakness(topic: string): void {
+  const p = getStudentProfile() || getDefaultStudentProfile();
+  const current = new Set(p.weaknesses || []);
+  current.add(topic);
+  saveStudentProfile({ weaknesses: Array.from(current) });
+}
+
+export function removeWeakness(topic: string): void {
+  const p = getStudentProfile() || getDefaultStudentProfile();
+  const current = new Set(p.weaknesses || []);
+  current.delete(topic);
+  saveStudentProfile({ weaknesses: Array.from(current) });
 }
 

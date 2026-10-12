@@ -8,8 +8,18 @@ import {
   WifiHigh,
   WifiSlash,
   CheckCircle,
+  ThumbsUp,
+  Bell,
+  Check,
 } from '@phosphor-icons/react';
 import { ACADEMIC_DISCOVERY_CATALOG, AcademicLecture } from '../components/video/YouTubePlayerCard';
+import {
+  getStudentProfile,
+  toggleLikedVideo,
+  toggleSubscribedChannel,
+  isLikedVideo,
+  isSubscribedChannel,
+} from '../services/studentProfile';
 import { VTubePlayer, VTubePlayerHandle } from '../components/vtube/VTubePlayer';
 import { VTubeChapters } from '../components/vtube/VTubeChapters';
 import { VTubeNotebook } from '../components/vtube/VTubeNotebook';
@@ -32,6 +42,13 @@ function VTubeTheater() {
   const [isSocraticOpen, setIsSocraticOpen] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
 
+  const [isLiked, setIsLiked] = useState<boolean>(() => isLikedVideo(videoId));
+  const [isSubscribed, setIsSubscribed] = useState<boolean>(() => {
+    const prof = getStudentProfile();
+    const author = ACADEMIC_DISCOVERY_CATALOG.find((l) => l.videoId === videoId)?.author;
+    return author ? isSubscribedChannel(author, prof) : false;
+  });
+
   useEffect(() => {
     // Attempt backend fetch with fallback
     fetch(`/api/vtube/video/${videoId}`)
@@ -39,6 +56,10 @@ function VTubeTheater() {
       .then((data) => {
         if (data && data.video) {
           setLecture(data.video);
+          const prof = getStudentProfile();
+          if (data.video.author) {
+            setIsSubscribed(isSubscribedChannel(data.video.author, prof));
+          }
         }
       })
       .catch(() => {
@@ -65,6 +86,17 @@ function VTubeTheater() {
 
   const handleSeek = (seconds: number) => {
     playerRef.current?.seekTo(seconds);
+  };
+
+  const handleToggleLike = () => {
+    const willLike = toggleLikedVideo(videoId);
+    setIsLiked(willLike);
+  };
+
+  const handleToggleSubscribe = () => {
+    if (!activeLecture.author) return;
+    const willSub = toggleSubscribedChannel(activeLecture.author);
+    setIsSubscribed(willSub);
   };
 
   return (
@@ -146,8 +178,43 @@ function VTubeTheater() {
 
           {/* Video Metadata & Synthesis */}
           <div className="flex flex-col rounded-xl border border-kumo-line bg-kumo-base p-5">
-            <h1 className="text-base font-bold text-kumo-default leading-snug">{activeLecture.title}</h1>
-            <p className="text-xs font-medium text-kumo-brand mt-1">{activeLecture.author}</p>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div className="flex-1">
+                <h1 className="text-base font-bold text-kumo-default leading-snug">{activeLecture.title}</h1>
+                <div className="flex items-center gap-2.5 mt-2 flex-wrap">
+                  <span className="text-xs font-semibold text-kumo-brand">{activeLecture.author}</span>
+                  <button
+                    type="button"
+                    onClick={handleToggleSubscribe}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      isSubscribed
+                        ? 'bg-kumo-elevated text-emerald-400 border border-emerald-500/30'
+                        : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/30'
+                    }`}
+                    title={isSubscribed ? 'Subscribed to creator' : 'Subscribe to creator'}
+                  >
+                    {isSubscribed ? <Check size={12} weight="bold" /> : <Bell size={12} weight="fill" />}
+                    <span>{isSubscribed ? 'Subscribed' : 'Subscribe'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Like Button */}
+              <button
+                type="button"
+                onClick={handleToggleLike}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border ${
+                  isLiked
+                    ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                    : 'bg-kumo-elevated text-kumo-default border-kumo-line hover:bg-kumo-tint'
+                }`}
+                title={isLiked ? 'Liked' : 'Like video'}
+              >
+                <ThumbsUp size={14} weight={isLiked ? 'fill' : 'regular'} />
+                <span>{isLiked ? 'Liked' : 'Like'}</span>
+              </button>
+            </div>
+
             <p className="text-xs text-kumo-subtle mt-3 leading-relaxed">{activeLecture.summary}</p>
 
             {/* Core Takeaways */}

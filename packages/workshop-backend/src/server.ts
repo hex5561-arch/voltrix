@@ -1445,8 +1445,8 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/youtube/search" || url.pathname === "/api/youtube-search") {
-      return handleYouTubeSearchRequest(req);
+    if (url.pathname === "/api/youtube/search" || url.pathname === "/api/youtube-search" || url.pathname === "/api/vtube/search") {
+      return handleYouTubeSearchRequest(req, env);
     }
 
     if (url.pathname === "/api/rag/ingest-youtube" || url.pathname === "/api/youtube/ingest") {
