@@ -57,6 +57,7 @@ import {
   GraduationCap,
   CalendarBlank,
   BookOpen,
+  Television,
 } from "@phosphor-icons/react";
 import { RpcStub, RpcTarget } from "capnweb";
 import ReactMarkdown, { type Components } from "react-markdown";

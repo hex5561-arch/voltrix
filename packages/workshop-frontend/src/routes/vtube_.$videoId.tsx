@@ -21,7 +21,7 @@ export const Route = createFileRoute('/vtube_/$videoId')({
 });
 
 function VTubeTheater() {
-  const { videoId } = useParams({ from: '/vtube/$videoId' });
+  const { videoId } = useParams({ from: '/vtube_/$videoId' });
   const playerRef = useRef<VTubePlayerHandle>(null);
 
   const [currentTime, setCurrentTime] = useState(0);

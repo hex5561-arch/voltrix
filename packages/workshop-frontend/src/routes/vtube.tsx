@@ -17,7 +17,7 @@ export const Route = createFileRoute('/vtube')({
 });
 
 function VTubeDashboard() {
-  const [profile, setProfile] = useState<StudentProfile>(getStudentProfile());
+  const [profile, setProfile] = useState<StudentProfile | null>(() => getStudentProfile());
   const [search, setSearch] = useState('');
   const [selectedDiscipline, setSelectedDiscipline] = useState<string>('All');
   const [lectures, setLectures] = useState<AcademicLecture[]>(ACADEMIC_DISCOVERY_CATALOG);
@@ -28,8 +28,8 @@ function VTubeDashboard() {
 
     // Fetch profile-curated feed from backend with fallback to catalog
     const params = new URLSearchParams();
-    if (prof.discipline) params.set('discipline', prof.discipline);
-    if (prof.courses && prof.courses.length > 0) {
+    if (prof?.discipline) params.set('discipline', prof.discipline);
+    if (prof?.courses && prof.courses.length > 0) {
       params.set('courses', prof.courses.map((c) => c.name).join(','));
     }
 
@@ -73,7 +73,7 @@ function VTubeDashboard() {
         </p>
 
         {/* Profile Pill */}
-        {profile.discipline && (
+        {profile?.discipline && (
           <div className="mt-2 flex items-center gap-2 text-xs text-kumo-default bg-kumo-elevated w-fit px-3 py-1.5 rounded-lg border border-kumo-line">
             <GraduationCap size={15} className="text-emerald-400" weight="fill" />
             <span>Profile-curated for:</span>
