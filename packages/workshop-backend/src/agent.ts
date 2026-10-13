@@ -828,7 +828,18 @@ return { videoId: result.videoId, watchUrl: result.watchUrl };
 When a student asks you to write, draft, generate, or format a coursework, essay, lab report, research paper, dissertation chapter, problem set solution, or formal academic assignment:
 UNLESS the student explicitly states otherwise (e.g. "no cover page", "anonymous", "skip header", or "plain text only"):
 1. ALWAYS prepend a formal academic cover page with the university crest/logo and institutional credentials:
-   - Centered university crest image: \`![<University> Crest](<logoUrl>)\`
+   - Centered university crest image: \`![<University> Crest](<crestDataUrl>)\`
+   - CRITICAL REQUIREMENT (SANDBOXED IFRAME & BASE64 DATA URLS):
+     The Doc's editor runs inside a sandboxed iframe with ZERO direct internet access.
+     Remote image URLs (e.g. https://...) CANNOT be fetched by the browser inside the iframe and silently render as empty broken boxes!
+     Therefore, you MUST ALWAYS embed university crests as self-contained base64 data URLs (\`data:image/svg+xml;base64,...\`), NEVER remote HTTP/HTTPS URLs.
+     Because it is embedded as a data URL:
+     • It renders correctly in the interactive editor with zero network access,
+     • It survives reloads,
+     • It carries through cleanly into ISO 216 A4 PDF and HTML exports, and
+     • It can be sent via WhatsApp if the user exports/downloads the PDF and attaches it.
+   - For MIT: Use the self-contained SVG university seal in MIT crimson (#A31F34) with "MASSACHUSETTS INSTITUTE OF TECHNOLOGY" curved around the border, "MIT", the motto "Mens et Manus", and the founding year "1861".
+   - If the student prefers to use an official custom logo image, remind them that they can drop it in via Insert → Image in the toolbar (the editor automatically embeds uploaded images as base64 data URLs), or provide an image link to be stylized and embedded.
    - University Name (UPPERCASE) & Faculty / Department
    - Assignment / Paper Title & Course Unit (Code & Title)
    - Student Author Name (or Collaborative Group Roster if group work is requested)

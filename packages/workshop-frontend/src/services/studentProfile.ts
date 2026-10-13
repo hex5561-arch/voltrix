@@ -7,7 +7,7 @@ import {
   SecondarySchool,
   InstitutionSector,
 } from '../data/academicData'
-import { resolveUniversityLogoUrl, ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE } from '@gadgets/workshop-shared/institutional'
+import { resolveUniversityLogoUrl, getUniversityCrestDataUrl, ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE } from '@gadgets/workshop-shared/institutional'
 
 export interface EnrolledCourse {
   id: string
@@ -145,11 +145,13 @@ export function formatStudentContextPrompt(profile?: StudentProfile | null): str
   const p = profile ?? getStudentProfile()
   if (!p) return ''
   const namePart = p.name ? `Student: ${p.name} | ` : ''
-  const courseList = p.courses.map(c => c.code).join(', ')
-  const logoUrl = p.universityLogoUrl || resolveUniversityLogoUrl(p.university, p.universityDomain || p.universityDetails?.domains?.[0] || p.universityDetails?.website)
-  const baseCtx = `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''} | Crest: ${logoUrl}]`
+  const crestDataUrl = getUniversityCrestDataUrl(p.university)
+  const logoUrl = (p.universityLogoUrl && p.universityLogoUrl.startsWith('data:'))
+    ? p.universityLogoUrl
+    : crestDataUrl
+  const baseCtx = `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''} | Crest Data URL: ${crestDataUrl}]`
 
-  const submissionMandate = `[ACADEMIC SUBMISSION MANDATE: When writing or formatting coursework, lab reports, essays, or academic papers for this student, ALWAYS prepend a formal academic cover page featuring their university crest: ![${p.university} Crest](${logoUrl}), institutional header, student name (${p.name || 'Student Scholar'}), degree program (${p.degreeProgram}), course unit, and submission date, unless the student explicitly states otherwise.]\n${ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE}`
+  const submissionMandate = `[ACADEMIC SUBMISSION MANDATE: When writing or formatting coursework, lab reports, essays, or academic papers for this student, ALWAYS prepend a formal academic cover page featuring their university crest: ![${p.university} Crest](${logoUrl}), institutional header, student name (${p.name || 'Student Scholar'}), degree program (${p.degreeProgram}), course unit, and submission date, unless the student explicitly states otherwise. NOTE: Remote image URLs silently fail in the sandboxed Doc editor iframe; ALWAYS embed the crest as the self-contained base64 data URL provided above.]\n${ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE}`
 
   const parts = [baseCtx, submissionMandate];
 
