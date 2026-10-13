@@ -19,6 +19,8 @@ export interface HistoryEntry {
 
 export interface AcademicProfile {
   university?: string;
+  universityLogoUrl?: string;
+  universityDomain?: string;
   degree?: string;
   year?: string;
   discipline?: string;

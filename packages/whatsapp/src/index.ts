@@ -17,6 +17,7 @@
 
 export { WhatsAppSession } from "./session";
 import type { SessionData, AcademicProfile } from "./session";
+import { resolveUniversityLogoUrl } from "./institutional.js";
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -285,10 +286,12 @@ function buildSystemPrompt(session: SessionData): string {
     .join(", ");
 
   const p = session.academicProfile;
+  const crestUrl = p ? (p.universityLogoUrl || resolveUniversityLogoUrl(p.university, p.universityDomain)) : "";
   const profileLine = p
     ? `${p.university ?? "Unknown"} | ${p.degree ?? "Unknown"} (${p.year ?? "Unknown"}) | ` +
       `${p.discipline ?? "Unknown"} | Citation: ${p.citationStyle ?? "APA"}` +
-      (p.courses?.length ? ` | Courses: ${p.courses.join(", ")}` : "")
+      (p.courses?.length ? ` | Courses: ${p.courses.join(", ")}` : "") +
+      (crestUrl ? ` | University Crest: ${crestUrl}` : "")
     : "General undergraduate student";
 
   return `You are Volt, an expert AI academic copilot on WhatsApp for Voltrix (voltrix.stream).
@@ -303,7 +306,15 @@ Topic focus this session: ${topTopics || "General"}
 3. Give mathematically precise, Oxford-grade answers where needed.
 4. Use WhatsApp markdown (*bold*, _italic_, • bullets). Keep responses under 800 words unless asked for a full essay.
 5. Recognise !help, !clear, !status, !link <code> commands and respond accordingly.
-6. You can read documents and transcribe voice notes. Analyse any image or document fully.`;
+6. You can read documents and transcribe voice notes. Analyse any image or document fully.
+7. ACADEMIC COURSEWORK & INSTITUTIONAL COVER PAGE MANDATE:
+   When the student requests to write, draft, generate, or solve a coursework, lab report, essay, paper, or formal assignment:
+   UNLESS the student explicitly states otherwise, ALWAYS prepend a formal academic header / cover block containing:
+   • The institution name & crest: [${p?.university ?? "University"} Crest](${crestUrl || "https://mak.ac.ug"})
+   • Assignment Title & Course Unit Code/Name
+   • Student Author Name (${session.contactName}) & Degree Program (${p?.degree ?? "Scholar"})
+   • Current Date
+   • Follow with a clean separator (━━━━━━━━━━━━━━━━━━━━━━━━) before the introduction.`;
 }
 
 // ── Command handlers ──────────────────────────────────────────────────────────
@@ -358,7 +369,13 @@ async function handleCommand(
         if (d.success && d.userId) {
           const stub = getSessionStub(env, from);
           await sessionFetch<{ ok: boolean }>(stub, "/link", { userId: d.userId });
-          if (d.profile) await sessionFetch<{ ok: boolean }>(stub, "/profile", d.profile);
+          if (d.profile) {
+            const enrichedProfile = {
+              ...d.profile,
+              universityLogoUrl: d.profile.universityLogoUrl || resolveUniversityLogoUrl(d.profile.university, d.profile.universityDomain),
+            };
+            await sessionFetch<{ ok: boolean }>(stub, "/profile", enrichedProfile);
+          }
           return `✅ *Linked successfully!*\n\nWelcome, ${d.name ?? "Scholar"}! Your academic profile is now active on WhatsApp.\n\nType !status to see your profile.`;
         }
       } catch { /* fall through */ }

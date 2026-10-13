@@ -358,6 +358,8 @@ export interface StudentProfile {
   discipline: string;
   disciplineTitle: string;
   university: string;
+  universityLogoUrl?: string;
+  universityDomain?: string;
   degreeProgram: string;
   academicLevel: string;
   academicYear: string;

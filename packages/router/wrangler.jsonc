@@ -11,6 +11,10 @@
     {
       "binding": "WORKSHOP_BACKEND",
       "service": "workshop-backend"
+    },
+    {
+      "binding": "WHATSAPP",
+      "service": "voltrix-whatsapp"
     }
   ],
 

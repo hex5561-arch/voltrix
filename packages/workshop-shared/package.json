@@ -30,6 +30,10 @@
     "./theme": {
       "types": "./src/theme.ts",
       "import": "./src/theme.ts"
+    },
+    "./institutional": {
+      "types": "./src/institutional.ts",
+      "import": "./src/institutional.ts"
     }
   },
   "scripts": {

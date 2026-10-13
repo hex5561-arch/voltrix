@@ -48,6 +48,7 @@ import {
   saveStudentProfile,
   EnrolledCourse,
 } from './services/studentProfile'
+import { resolveUniversityLogoUrl } from '@gadgets/workshop-shared/institutional'
 
 const TOTAL_STEPS = 5
 
@@ -457,12 +458,17 @@ export default function OnboardingWizard({
       const finalLevel = isSecondary ? 'Secondary / High School' : academicLevel
       const finalYear = isSecondary ? secondaryLevel : academicYear
 
+      const domain = (!isSecondary && !isCustomUniversity ? (selectedUniversityDetails?.domains?.[0] || selectedUniversityDetails?.website) : '') || ''
+      const logoUrl = resolveUniversityLogoUrl(finalUniversity, domain)
+
       saveStudentProfile({
         name: studentName,
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
         institutionSector,
         university: finalUniversity,
+        universityLogoUrl: logoUrl,
+        universityDomain: domain,
         universityDetails: !isSecondary && !isCustomUniversity ? selectedUniversityDetails : null,
         secondarySchoolDetails: isSecondary && !isCustomSecondary ? selectedSecondarySchoolDetails : null,
         degreeProgram: finalProgram,
@@ -480,6 +486,8 @@ export default function OnboardingWizard({
         discipline: selectedDiscipline,
         disciplineTitle: activePersona.title,
         university: finalUniversity,
+        universityLogoUrl: logoUrl,
+        universityDomain: domain,
         degreeProgram: finalProgram,
         academicLevel: finalLevel,
         academicYear: finalYear,

@@ -48,6 +48,7 @@ import { searchYouTubeLectures } from "./youtube-engine";
 import { wrapDoStubForTelemetry } from "./do-telemetry";
 import type { ChatGatewayRpcTarget, SubmitExternalMessageResult } from "@gadgets/workshop-shared/external-message-gateway";
 import type { GadgetExportFormat } from "@gadgets/workshop-shared/api";
+import { resolveUniversityLogoUrl, ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE } from "./institutional";
 import {
   assertChatAttachmentSupportedByProvider,
   isAllowedChatAttachmentImageMimeType,
@@ -6073,13 +6074,17 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
             const studentName = profile.name || authorInfo?.name || "";
             const namePart = studentName ? `Student: ${studentName} | ` : "";
             const courseList = profile.courses.map(c => c.code).join(", ");
+            const logoUrl = profile.universityLogoUrl || resolveUniversityLogoUrl(profile.university, profile.universityDomain);
             profileSection =
               `\n\n[Academic Context: ${namePart}${profile.university} | ` +
               `${profile.degreeProgram} (${profile.academicYear}) | ` +
               `Discipline: ${profile.disciplineTitle} | ` +
               `Citation Style: ${profile.citationStyle}` +
               (courseList ? ` | Enrolled: ${courseList}` : "") +
-              `]`;
+              ` | Crest: ${logoUrl}` +
+              `]\n` +
+              `\n[ACADEMIC SUBMISSION MANDATE: When writing or formatting coursework, lab reports, essays, or academic papers for this student, ALWAYS prepend a formal academic cover page featuring their university crest: ![${profile.university} Crest](${logoUrl}), institutional header, student name (${studentName || "Student Scholar"}), degree program (${profile.degreeProgram}), course unit, and submission date, unless the student explicitly states otherwise.]\n` +
+              ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE;
           } else {
             this.logger.info("student profile not set for user", {
               event: "profile.missing",

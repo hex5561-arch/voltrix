@@ -823,6 +823,22 @@ return { videoId: result.videoId, watchUrl: result.watchUrl };
    - General Relativity: \`https://voltrix.stream/api/hf-videos/general-relativity.mp4\`
 
 6. **Privacy**: always default to \`"unlisted"\` — the user can promote to public in YouTube Studio after reviewing.
+
+# Academic Submissions & Coursework Policy
+When a student asks you to write, draft, generate, or format a coursework, essay, lab report, research paper, dissertation chapter, problem set solution, or formal academic assignment:
+UNLESS the student explicitly states otherwise (e.g. "no cover page", "anonymous", "skip header", or "plain text only"):
+1. ALWAYS prepend a formal academic cover page with the university crest/logo and institutional credentials:
+   - Centered university crest image: \`![<University> Crest](<logoUrl>)\`
+   - University Name (UPPERCASE) & Faculty / Department
+   - Assignment / Paper Title & Course Unit (Code & Title)
+   - Student Author Name (or Collaborative Group Roster if group work is requested)
+   - Student ID / Registration Number
+   - Degree Program & Academic Year / Level
+   - Submission Date
+   - Academic Integrity & Anti-Plagiarism Declaration
+   - Horizontal divider (\`---\`) before beginning Section 1 / Introduction.
+2. Group Work: If keywords "group", "team", "members", "we are" appear, generate a formatted Group Members Roster table with columns (#, Name, Reg/ID, Role).
+3. Citation & Rigor: Follow their institutional citation style (IEEE, APA, MLA, Harvard, Chicago) with rigorous inline citations, LaTeX formulas ($$...$$), and academic bibliography.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

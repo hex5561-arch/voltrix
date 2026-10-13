@@ -7,6 +7,7 @@ import {
   SecondarySchool,
   InstitutionSector,
 } from '../data/academicData'
+import { resolveUniversityLogoUrl, ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE } from '@gadgets/workshop-shared/institutional'
 
 export interface EnrolledCourse {
   id: string
@@ -33,6 +34,8 @@ export interface StudentProfile {
   disciplineTitle: string
   institutionSector?: InstitutionSector
   university: string
+  universityLogoUrl?: string
+  universityDomain?: string
   universityDetails?: University | null
   secondarySchoolDetails?: SecondarySchool | null
   streamOrCombination?: string
@@ -143,9 +146,12 @@ export function formatStudentContextPrompt(profile?: StudentProfile | null): str
   if (!p) return ''
   const namePart = p.name ? `Student: ${p.name} | ` : ''
   const courseList = p.courses.map(c => c.code).join(', ')
-  const baseCtx = `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''}]`
+  const logoUrl = p.universityLogoUrl || resolveUniversityLogoUrl(p.university, p.universityDomain || p.universityDetails?.domains?.[0] || p.universityDetails?.website)
+  const baseCtx = `[Academic Context: ${namePart}${p.university} | ${p.degreeProgram} (${p.academicYear}) | Discipline: ${p.disciplineTitle} | Citation Style: ${p.citationStyle}${courseList ? ` | Enrolled: ${courseList}` : ''} | Crest: ${logoUrl}]`
 
-  const parts = [baseCtx];
+  const submissionMandate = `[ACADEMIC SUBMISSION MANDATE: When writing or formatting coursework, lab reports, essays, or academic papers for this student, ALWAYS prepend a formal academic cover page featuring their university crest: ![${p.university} Crest](${logoUrl}), institutional header, student name (${p.name || 'Student Scholar'}), degree program (${p.degreeProgram}), course unit, and submission date, unless the student explicitly states otherwise.]\n${ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE}`
+
+  const parts = [baseCtx, submissionMandate];
 
   if (p.cohortVariables?.socraticMode) {
     parts.push(`[ACADEMIC INTEGRITY DIRECTIVE - INSTRUCTOR SOCRATIC MODE ACTIVE:

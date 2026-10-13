@@ -23,6 +23,7 @@ import {
   SEMESTERS,
   COURSE_COLORS,
 } from './data/academicData'
+import { resolveUniversityLogoUrl } from '@gadgets/workshop-shared/institutional'
 
 // Shared, on-language control classes (match the rest of the app: Workspaces/Blueprints headers,
 // the gatekeepers toolbar, the command palette). Kept here so the profile page reads as part of the
@@ -168,6 +169,7 @@ export default function SettingsPage() {
     const patch = {
       name: studentName,
       university: academicUni.trim() || 'My University',
+      universityLogoUrl: resolveUniversityLogoUrl(academicUni.trim(), studentProfile.universityDomain || studentProfile.universityDetails?.domains?.[0] || studentProfile.universityDetails?.website),
       degreeProgram: academicDegree.trim() || 'Degree Program',
       academicYear,
       semester: academicSemester,
@@ -184,6 +186,8 @@ export default function SettingsPage() {
         discipline: updated.discipline ?? '',
         disciplineTitle: updated.disciplineTitle ?? '',
         university: updated.university,
+        universityLogoUrl: updated.universityLogoUrl,
+        universityDomain: updated.universityDomain,
         degreeProgram: updated.degreeProgram,
         academicLevel: updated.academicLevel ?? '',
         academicYear: updated.academicYear,
