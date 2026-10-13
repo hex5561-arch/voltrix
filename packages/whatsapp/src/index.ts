@@ -388,6 +388,66 @@ function detectTopic(text: string): string | null {
   return null;
 }
 
+// ── Scholarly Context Fetchers (OpenAlex & Wikibooks) ───────────────────────
+
+async function fetchOpenAlexContext(query: string): Promise<string> {
+  try {
+    const url = new URL("https://api.openalex.org/works");
+    url.searchParams.set("search", query);
+    url.searchParams.set("per-page", "3");
+    url.searchParams.set("select", "id,title,doi,publication_year,cited_by_count,authorships,open_access");
+    url.searchParams.set("sort", "relevance_score:desc");
+    url.searchParams.set("mailto", "volt@voltrix.dev");
+    const resp = await fetch(url.toString(), {
+      headers: { "User-Agent": "Voltrix-WhatsApp/1.0 (mailto:volt@voltrix.dev)" },
+    });
+    if (!resp.ok) return "";
+    const data = (await resp.json()) as any;
+    const works = data.results || [];
+    if (!works.length) return "";
+    const lines = [`[OpenAlex Verified Papers for "${query}"]`];
+    works.forEach((w: any, i: number) => {
+      const authors = (w.authorships || []).slice(0, 3).map((a: any) => a?.author?.display_name).filter(Boolean).join(", ");
+      lines.push(`${i + 1}. *${w.title}* (${w.publication_year || "n.d."})`);
+      if (authors) lines.push(`   Authors: ${authors}`);
+      lines.push(`   Citations: ${w.cited_by_count || 0}`);
+      if (w.doi) lines.push(`   DOI: ${w.doi}`);
+      if (w.open_access?.oa_url) lines.push(`   PDF: ${w.open_access.oa_url}`);
+    });
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+async function fetchWikibooksContext(query: string): Promise<string> {
+  try {
+    const url = new URL("https://en.wikibooks.org/w/api.php");
+    url.searchParams.set("action", "query");
+    url.searchParams.set("list", "search");
+    url.searchParams.set("srsearch", query);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("utf8", "1");
+    url.searchParams.set("srlimit", "2");
+    const resp = await fetch(url.toString(), {
+      headers: { "User-Agent": "Voltrix-WhatsApp/1.0 (mailto:volt@voltrix.dev)" },
+    });
+    if (!resp.ok) return "";
+    const data = (await resp.json()) as any;
+    const items = data.query?.search || [];
+    if (!items.length) return "";
+    const lines = [`[Wikibooks Textbook Guides for "${query}"]`];
+    items.forEach((item: any) => {
+      const cleanSnippet = (item.snippet || "").replace(/<[^>]+>/g, "").trim();
+      const enc = encodeURIComponent(item.title.replace(/ /g, "_"));
+      lines.push(`• *${item.title}*: ${cleanSnippet}\n  Link: https://en.wikibooks.org/wiki/${enc}`);
+    });
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
 // ── Message processor ─────────────────────────────────────────────────────────
 
 type WaMessage = Record<string, unknown>;
@@ -474,6 +534,38 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
   const topic = detectTopic(userText);
   if (topic) sessionFetch<{ ok: boolean }>(stub, "/topic", { topic });
 
+  // ── Scholarly Context Augmentation ──────────────────────────────────────────
+  let contextualUserText = userText;
+  const isResearchQuery = /\b(find papers|search openalex|search literature|cite papers|peer[- ]reviewed|academic sources|look up citations|find sources|search papers|literature review)\b/i.test(userText);
+  const isWikibookQuery = /\b(wikibook|wikibooks|textbook guide|curriculum guide)\b/i.test(userText);
+  const isOpenStaxQuery = /\b(openstax|textbook pdf|college textbook|calculus textbook|physics textbook|chemistry textbook|biology textbook|free textbook)\b/i.test(userText);
+
+  if (isResearchQuery) {
+    const paperContext = await fetchOpenAlexContext(userText);
+    if (paperContext) {
+      contextualUserText = `${userText}\n\n[VERIFIED SCHOLARLY CONTEXT VIA OPENALEX]:\n${paperContext}`;
+    }
+  } else if (isWikibookQuery) {
+    const bookContext = await fetchWikibooksContext(userText);
+    if (bookContext) {
+      contextualUserText = `${userText}\n\n[WIKIBOOKS CURRICULUM CONTEXT]:\n${bookContext}`;
+    }
+  } else if (isOpenStaxQuery) {
+    try {
+      const res = await fetch(`https://voltrix.stream/api/scholar/openstax?query=${encodeURIComponent(userText)}`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const books = data?.books || [];
+        if (books.length > 0) {
+          const lines = books.slice(0, 3).map((b: any) => `• *${b.title}*\n  Web: ${b.url}\n  Direct PDF: ${b.pdfUrl}`);
+          contextualUserText = `${userText}\n\n[OFFICIAL OPENSTAX COLLEGE TEXTBOOKS]:\n${lines.join("\n\n")}`;
+        }
+      }
+    } catch {
+      // non-fatal fallback
+    }
+  }
+
   // ── AI ─────────────────────────────────────────────────────────────────────
 
   const systemPrompt = buildSystemPrompt({ ...session, contactName });
@@ -481,7 +573,7 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
 
   await sessionFetch<{ ok: boolean }>(stub, "/message", { role: "user", content: userText });
 
-  const aiReply = await runAI(env, systemPrompt, historyForAI, userText);
+  const aiReply = await runAI(env, systemPrompt, historyForAI, contextualUserText);
 
   await sessionFetch<{ ok: boolean }>(stub, "/message", { role: "assistant", content: aiReply });
 

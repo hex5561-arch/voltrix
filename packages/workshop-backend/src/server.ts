@@ -33,6 +33,7 @@ import { wrapDoStubForTelemetry } from "./do-telemetry";
 import { handleYouTubeSearchRequest, handleYouTubeIngestRequest, handleVTubeFeedRequest, handleVTubeVideoRequest } from "./youtube-engine.js";
 import { executeYouTubeLike, executeYouTubeSubscribe, resolveChannelId } from "./youtube-actions.js";
 import { submitPesapalOrder, getPesapalTransactionStatus } from "./pesapal.js";
+import { searchOpenAlex, formatOpenAlexResults, searchWikibooks, readWikibookPage, searchOpenStax } from "./scholarly.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1537,6 +1538,61 @@ export default {
 
     if (url.pathname === "/api/rag/ingest-youtube" || url.pathname === "/api/youtube/ingest") {
       return handleYouTubeIngestRequest(req);
+    }
+
+    // ── Scholarly & Academic Retrieval APIs ──
+    if (req.method === "GET" && url.pathname === "/api/scholar/openalex") {
+      const q = url.searchParams.get("query") || url.searchParams.get("q") || "";
+      if (!q.trim()) {
+        return Response.json({ success: false, error: "Query parameter required" }, { status: 400 });
+      }
+      const limit = Number(url.searchParams.get("limit") || "5");
+      const fromYear = url.searchParams.get("fromYear") ? Number(url.searchParams.get("fromYear")) : undefined;
+      const openAccessOnly = url.searchParams.get("openAccessOnly") === "true";
+      try {
+        const result = await searchOpenAlex(q, { limit, fromYear, openAccessOnly });
+        return Response.json({ success: true, ...result, formattedMarkdown: formatOpenAlexResults(result) });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err.message }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/scholar/wikibooks/search") {
+      const q = url.searchParams.get("query") || url.searchParams.get("q") || "";
+      if (!q.trim()) {
+        return Response.json({ success: false, error: "Query parameter required" }, { status: 400 });
+      }
+      const limit = Number(url.searchParams.get("limit") || "5");
+      try {
+        const result = await searchWikibooks(q, limit);
+        return Response.json({ success: true, ...result });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err.message }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/scholar/wikibooks/page") {
+      const title = url.searchParams.get("title") || "";
+      if (!title.trim()) {
+        return Response.json({ success: false, error: "Title parameter required" }, { status: 400 });
+      }
+      const maxChars = Number(url.searchParams.get("maxChars") || "4000");
+      try {
+        const result = await readWikibookPage(title, maxChars);
+        return Response.json({ success: true, ...result });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err.message }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && (url.pathname === "/api/scholar/openstax/search" || url.pathname === "/api/scholar/openstax")) {
+      const q = url.searchParams.get("query") || url.searchParams.get("q") || "";
+      try {
+        const books = searchOpenStax(q);
+        return Response.json({ success: true, query: q, count: books.length, books });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err.message }, { status: 500 });
+      }
     }
 
     // ── HyperFrames Video Serving ──

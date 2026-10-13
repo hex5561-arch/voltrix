@@ -19,6 +19,11 @@ import {
   searchLibrary as searchLibraryImpl, AiSearchEnv, formatLibrarySearchResult,
   indexPersonalItem, isKeyInSharedLibrary, indexLibraryItem as indexSharedLibItem,
 } from "./ai-search";
+import {
+  searchOpenAlex as searchOpenAlexImpl, formatOpenAlexResults,
+  searchWikibooks as searchWikibooksImpl, readWikibookPage as readWikibookPageImpl,
+  searchOpenStax as searchOpenStaxImpl,
+} from "./scholarly.js";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { AgentCatalogSnapshot, formatAlwaysAvailableResourcesPrompt } from "./agent-catalog";
@@ -891,6 +896,36 @@ Use this BEFORE going to the web when:
 Pass a natural-language query. The tool returns the most relevant text chunks with their source document names. Cite sources in your answer using the \`source\` field.
 
 Returns an empty result when the library has no matching content — fall back to \`webFetch\` or \`webBrowse\` in that case.
+`.trim();
+
+let SEARCH_OPENALEX_TOOL_DESCRIPTION = `
+Search OpenAlex (250M+ peer-reviewed academic papers, journals, conferences, and preprints).
+Returns verified paper titles, author lists, publication years, citation counts, reconstructed abstracts, verified DOIs, and direct Open Access PDF download links.
+
+Use this tool when:
+- The user requests peer-reviewed academic literature, empirical studies, scientific research, or citations ("find papers on X", "search OpenAlex for Y", "cite recent studies on Z").
+- You need verified citations with actual DOIs. NEVER invent or hallucinate paper DOIs or authors.
+`.trim();
+
+let SEARCH_WIKIBOOKS_TOOL_DESCRIPTION = `
+Search Wikibooks for open college textbooks, university curriculum study guides, and comprehensive subject tutorials.
+Returns matching book titles, text snippets, page IDs, and URLs.
+
+Use this tool when:
+- The user asks for textbook explanations, subject primers, or curriculum chapter outlines.
+`.trim();
+
+let READ_WIKIBOOK_TOOL_DESCRIPTION = `
+Read the full plain-text content of a specific Wikibook page or chapter by title (e.g., "Operating System Design", "Calculus/Derivatives", "Linear Algebra").
+Returns clean plain text extract of the chapter. Use the exact title returned from \`searchWikibooks\`.
+`.trim();
+
+let SEARCH_OPENSTAX_TOOL_DESCRIPTION = `
+Search OpenStax for official peer-reviewed college textbooks (Calculus, University Physics, Chemistry, Biology, Economics, Psychology, Statistics, Python, Computer Science).
+Returns book title, subject tags, web reader link, and direct full-text PDF download URL.
+
+Use this tool when:
+- The user asks for college textbooks, syllabus references, or direct textbook download links.
 `.trim();
 
 let OBSERVE_USER_CHANGES_TOOL_DESCRIPTION = `
@@ -2929,6 +2964,104 @@ export async function runAgent(
                 description: `Query: "${query.slice(0, 80)}"\nResults: ${result.chunks.length} chunk${result.chunks.length !== 1 ? "s" : ""}`,
               });
           let formatted = formatLibrarySearchResult(result);
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    searchOpenAlex: defineTool({
+      name: "searchOpenAlex",
+      label: "Search OpenAlex papers",
+      description: SEARCH_OPENALEX_TOOL_DESCRIPTION,
+      parameters: Type.Object({
+        query: Type.String({description: "Scholarly query or research topic to find peer-reviewed papers for."}),
+        limit: Type.Optional(Type.Number({description: "Number of papers to retrieve (default 5, max 10)."})),
+        fromYear: Type.Optional(Type.Number({description: "Only return papers published after this year (e.g. 2020)."})),
+        openAccessOnly: Type.Optional(Type.Boolean({description: "Only return open-access papers with free PDFs."})),
+      }),
+      execute: async (toolCallId, {query, limit, fromYear, openAccessOnly}) => {
+        try {
+          let res = await searchOpenAlexImpl(query, {limit, fromYear, openAccessOnly});
+          await hooks.recordAgentObservation(chatId, `OpenAlex search: ${query.slice(0, 60)}`, undefined, {
+            title: `OpenAlex paper search`,
+            description: `Query: "${query.slice(0, 80)}"\nResults: ${res.works.length} paper${res.works.length !== 1 ? "s" : ""}`,
+          });
+          let formatted = formatOpenAlexResults(res);
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    searchWikibooks: defineTool({
+      name: "searchWikibooks",
+      label: "Search Wikibooks",
+      description: SEARCH_WIKIBOOKS_TOOL_DESCRIPTION,
+      parameters: Type.Object({
+        query: Type.String({description: "Curriculum topic or book title to search on Wikibooks."}),
+        limit: Type.Optional(Type.Number({description: "Number of book results to retrieve (default 5)."})),
+      }),
+      execute: async (toolCallId, {query, limit}) => {
+        try {
+          let res = await searchWikibooksImpl(query, limit);
+          await hooks.recordAgentObservation(chatId, `Wikibooks search: ${query.slice(0, 60)}`, undefined, {
+            title: `Wikibooks search`,
+            description: `Query: "${query.slice(0, 80)}"\nResults: ${res.results.length} book${res.results.length !== 1 ? "s" : ""}`,
+          });
+          let lines = res.results.map(r => `• **${r.title}**: ${r.snippet}\n  URL: ${r.url}`);
+          let formatted = `[Wikibooks search results for "${query}"]\n` + (lines.join("\n\n") || "No books found.");
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    readWikibookPage: defineTool({
+      name: "readWikibookPage",
+      label: "Read Wikibook page",
+      description: READ_WIKIBOOK_TOOL_DESCRIPTION,
+      parameters: Type.Object({
+        title: Type.String({description: "Exact title of the Wikibook page or chapter to read."}),
+      }),
+      execute: async (toolCallId, {title}) => {
+        try {
+          let res = await readWikibookPageImpl(title);
+          await hooks.recordAgentObservation(chatId, `Wikibook page: ${title.slice(0, 60)}`, undefined, {
+            title: `Read Wikibook: ${title}`,
+            description: `Extracted ${res.extract.length} characters from ${res.url}`,
+          });
+          let formatted = `### Wikibook Chapter: ${res.title}\nSource: ${res.url}\n\n${res.extract}`;
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    searchOpenStaxTextbooks: defineTool({
+      name: "searchOpenStaxTextbooks",
+      label: "Search OpenStax college textbooks",
+      description: SEARCH_OPENSTAX_TOOL_DESCRIPTION,
+      parameters: Type.Object({
+        query: Type.String({description: "Course subject or topic to find OpenStax textbooks for (e.g. 'calculus', 'physics', 'python', 'chemistry')."}),
+      }),
+      execute: async (toolCallId, {query}) => {
+        try {
+          let books = searchOpenStaxImpl(query);
+          await hooks.recordAgentObservation(chatId, `OpenStax search: ${query.slice(0, 60)}`, undefined, {
+            title: `OpenStax textbook search`,
+            description: `Query: "${query.slice(0, 80)}"\nFound: ${books.length} textbook${books.length !== 1 ? "s" : ""}`,
+          });
+          let lines = books.map(b => `• **${b.title}**\n  - Subjects: ${b.subjects.join(", ")}\n  - Web Reader: ${b.url}\n  - Direct PDF: ${b.pdfUrl}`);
+          let formatted = `### OpenStax College Textbooks for "${query}":\n\n` + (lines.join("\n\n") || "No textbooks matched.");
           return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
         } catch (error) {
           toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
