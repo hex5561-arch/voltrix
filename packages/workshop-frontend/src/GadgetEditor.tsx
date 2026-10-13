@@ -546,12 +546,15 @@ export default function GadgetEditor() {
     title?: string
   } | null>(null)
 
-  // HyperFrames MP4 playback in the Gadget UI (App tab)
+  // HyperFrames MP4 & Interactive playback in the Gadget UI (App tab)
   const [activeHyperFramesVideo, setActiveHyperFramesVideo] = useState<{
     path: string
     title?: string
     preset?: string
     duration?: string
+    interactiveUrl?: string
+    mp4Url?: string
+    jobId?: string
   } | null>(null)
 
   // Declared here (before the video event-listener useEffect below) so Rollup places the
@@ -587,7 +590,15 @@ export default function GadgetEditor() {
       }
     }
     const handlePlayHyperFramesVideo = (e: Event) => {
-      const custom = e as CustomEvent<{ path: string; title?: string; preset?: string; duration?: string }>
+      const custom = e as CustomEvent<{
+        path: string
+        title?: string
+        preset?: string
+        duration?: string
+        interactiveUrl?: string
+        mp4Url?: string
+        jobId?: string
+      }>
       if (custom.detail?.path) {
         setActiveGadgetVideo(null)
         setActiveHyperFramesVideo({
@@ -595,6 +606,9 @@ export default function GadgetEditor() {
           title: custom.detail.title,
           preset: custom.detail.preset,
           duration: custom.detail.duration,
+          interactiveUrl: custom.detail.interactiveUrl,
+          mp4Url: custom.detail.mp4Url,
+          jobId: custom.detail.jobId,
         })
         setWorkspaceVisibility('open')
         setActiveTab('app')
@@ -1942,6 +1956,9 @@ export default function GadgetEditor() {
                     path={activeHyperFramesVideo.path}
                     title={activeHyperFramesVideo.title}
                     preset={activeHyperFramesVideo.preset}
+                    interactiveUrl={activeHyperFramesVideo.interactiveUrl}
+                    mp4Url={activeHyperFramesVideo.mp4Url}
+                    jobId={activeHyperFramesVideo.jobId}
                   />
                 </Suspense>
               ) : selectedGadgetStub && !previewMode ? (

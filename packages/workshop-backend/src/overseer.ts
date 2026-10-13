@@ -3721,7 +3721,7 @@ Evaluate their revision trajectory against their graduation GPA target, provide 
             ? `Present a HyperFrames academic explainer video about: "${topic}".\n\n${
                 isGR
                   ? `General Relativity and Gravity are already rendered and ready! Respond with a \`\`\`hyperframes\n{"topic":"${topic || "General Relativity"}","title":"${topic ? topic.charAt(0).toUpperCase() + topic.slice(1) + " Explained" : "General Relativity Explained"}","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the ready video card with the active Play button immediately, and summarize the key visual intuition.`
-                  : `Emit a \`\`\`hyperframes\n{"topic":"${topic}","title":"${topic} Explained","status":"generating","preset":"cobalt-grid"}\n\`\`\` block so the UI shows the video card, then explain the key concepts and scenes visualised in the video.`
+                  : `Generate a hybrid HyperFrames explainer video using the \`generateHyperFramesVideo\` tool! Provide a rich self-contained HTML5 composition with GSAP animation for instant 60fps edge playback and background MP4 rendering, then emit the resulting \`\`\`hyperframes\`\`\` card.`
               }`
             : `Present a HyperFrames academic explainer video. Recommend available library videos like General Relativity & Gravity (ready for playback), or ask what topic they want explained and emit the corresponding \`\`\`hyperframes\`\`\` card.`;
           return {

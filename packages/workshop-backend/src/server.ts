@@ -42,6 +42,13 @@ import {
   deleteSiteFromStorage,
   renderSiteNotFoundHtml,
 } from "./sites.js";
+import {
+  createHyperFramesJob,
+  getHyperFramesJob,
+  updateHyperFramesJob,
+  pollPendingHyperFramesJobs,
+  listRecentHyperFramesJobs,
+} from "./hf-jobs.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1513,12 +1520,102 @@ async function handleSitesRequest(req: Request, env: Env): Promise<Response> {
   return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
 }
 
+async function handleHyperFramesJobsRequest(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  // 1. Create job: POST /api/hf-jobs/create
+  if (url.pathname === "/api/hf-jobs/create" && req.method === "POST") {
+    try {
+      const body = await req.json() as any;
+      if (!body.topic && !body.title) {
+        return Response.json({ success: false, error: "topic or title is required" }, { status: 400, headers: corsHeaders });
+      }
+      const job = await createHyperFramesJob(env.BLUEPRINT_CONTENT, {
+        slug: body.slug,
+        topic: body.topic || body.title,
+        title: body.title,
+        preset: body.preset,
+        durationSeconds: body.durationSeconds,
+        durationDisplay: body.durationDisplay,
+        interactiveUrl: body.interactiveUrl,
+        scenes: body.scenes,
+        htmlContent: body.htmlContent,
+        userId: body.userId,
+      });
+      return Response.json({ success: true, job }, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to create job" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 2. Poll pending jobs: GET /api/hf-jobs/poll
+  if (url.pathname === "/api/hf-jobs/poll" && req.method === "GET") {
+    try {
+      const pending = await pollPendingHyperFramesJobs(env.BLUEPRINT_CONTENT);
+      return Response.json({ success: true, jobs: pending }, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to poll jobs" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 3. Update job: POST /api/hf-jobs/update
+  if (url.pathname === "/api/hf-jobs/update" && req.method === "POST") {
+    try {
+      const body = await req.json() as any;
+      if (!body.id) {
+        return Response.json({ success: false, error: "job id is required" }, { status: 400, headers: corsHeaders });
+      }
+      const updated = await updateHyperFramesJob(env.BLUEPRINT_CONTENT, body.id, {
+        status: body.status,
+        progressPercent: body.progressPercent,
+        mp4Url: body.mp4Url,
+        error: body.error,
+      });
+      if (!updated) {
+        return Response.json({ success: false, error: "Job not found" }, { status: 404, headers: corsHeaders });
+      }
+      return Response.json({ success: true, job: updated }, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to update job" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 4. Get job: GET /api/hf-jobs/:id or /api/hf-jobs/recent
+  if (url.pathname.startsWith("/api/hf-jobs/") && req.method === "GET") {
+    const jobId = url.pathname.slice("/api/hf-jobs/".length).trim();
+    if (jobId === "recent" || jobId === "latest") {
+      const recent = await listRecentHyperFramesJobs(env.BLUEPRINT_CONTENT);
+      return Response.json({ success: true, jobs: recent }, { headers: corsHeaders });
+    }
+    const job = await getHyperFramesJob(env.BLUEPRINT_CONTENT, jobId);
+    if (!job) {
+      return Response.json({ success: false, error: "Job not found" }, { status: 404, headers: corsHeaders });
+    }
+    return Response.json({ success: true, job }, { headers: corsHeaders });
+  }
+
+  return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
 
     if (url.pathname.startsWith("/s/") || url.pathname === "/s" || url.pathname.startsWith("/api/sites")) {
       return handleSitesRequest(req, env);
+    }
+
+    if (url.pathname.startsWith("/api/hf-jobs")) {
+      return handleHyperFramesJobsRequest(req, env);
     }
 
     if (url.pathname === SITE_LOGO_PATH) {
@@ -1726,6 +1823,16 @@ export default {
     }
 
     // ── HyperFrames Video Serving ──
+    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload")) {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Range",
+        },
+      });
+    }
+
     // GET /api/hf-videos/:name  — serves an MP4 stored in R2 under the key `hf-videos/<name>`
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/api/hf-videos/")) {
       const name = url.pathname.slice("/api/hf-videos/".length);
@@ -1739,6 +1846,7 @@ export default {
           "Content-Type": "video/mp4",
           "Cache-Control": "public, max-age=86400",
           "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
         },
       });
     }
@@ -1755,7 +1863,10 @@ export default {
         httpMetadata: { contentType: "video/mp4" },
       });
       return new Response(JSON.stringify({ ok: true, url: `/api/hf-videos/${name}` }), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       });
     }
 

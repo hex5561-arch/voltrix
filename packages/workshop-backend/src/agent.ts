@@ -25,6 +25,7 @@ import {
   searchOpenStax as searchOpenStaxImpl,
 } from "./scholarly.js";
 import { publishSiteToStorage } from "./sites.js";
+import { createHyperFramesJob } from "./hf-jobs.js";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { AgentCatalogSnapshot, formatAlwaysAvailableResourcesPrompt } from "./agent-catalog";
@@ -783,16 +784,19 @@ When a user asks:
      {"topic":"General Relativity & Gravity","title":"General Relativity & Gravity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
      \`\`\`
      IMPORTANT: Gravity IS General Relativity (Einstein's geometric theory of gravity). Whenever the user asks for a video on **Gravity**, **Gravitation**, **General Relativity**, or **Spacetime**, ALWAYS emit \`status: "ready"\` with path \`/api/hf-videos/general-relativity.mp4\`. Never mark Gravity as "generating" or make the user wait for a render.
-   - **Calculus & Limits** (Status: PIPELINE / GENERATING):
+   - **Calculus & Limits**:
      \`\`\`hyperframes
-     {"topic":"Calculus","title":"Calculus & Limits Explained","status":"generating","preset":"cobalt-grid"}
+     {"topic":"Calculus","title":"Calculus & Limits Explained","status":"ready","path":"/api/hf-videos/calculus.mp4","duration":"4:50","preset":"cobalt-grid"}
      \`\`\`
-   - **Raft & Paxos Distributed Consensus** (Status: PIPELINE / GENERATING):
+   - **Raft & Paxos Distributed Consensus**:
      \`\`\`hyperframes
-     {"topic":"Raft & Paxos","title":"Raft & Paxos Consensus Explained","status":"generating","preset":"cobalt-grid"}
+     {"topic":"Raft & Paxos","title":"Raft & Paxos Consensus Explained","status":"ready","path":"/api/hf-videos/raft-and-paxos.mp4","duration":"3:40","preset":"cobalt-grid"}
      \`\`\`
-   - **Any other topic requested by the user**:
-     Emit the \`hyperframes\` block with \`status: "generating"\`, \`title: "<Topic> Explained"\`, \`preset: "cobalt-grid"\`, and accompany it with a breakdown of key scenes, visual metaphors, and core principles being illustrated.
+   - **Custom Academic Explainer Videos (Hybrid Engine)**:
+     When the user asks for an explainer video on any custom topic (e.g. Fluid Mechanics, Quantum Computing, Algorithms):
+     1. Call the \`generateHyperFramesVideo\` tool! Provide a self-contained HTML5 composition with GSAP animation timeline (\`window.__timelines["main"] = tl\`), scene-by-scene visual metaphors, formulas, and diagrams.
+     2. The tool automatically publishes the composition for instant 60fps edge playback (\`/s/<slug>\`) so the user can watch it IMMEDIATELY in the right gadget panel, and queues the background MP4 render job in R2 for host encoding!
+     3. Emit the returned \`\`\`hyperframes\`\`\` card in your chat reply so the user has the active Play button immediately. Never make the user wait on "Rendering... Soon" when you can generate the interactive composition!
 
 4. **Do NOT write a \`client.js\` or create an empty gadget** when the user asks for a HyperFrames explainer video. The \`hyperframes\` card directly triggers playback in the Gadget UI when the user clicks Play.
 
@@ -3171,6 +3175,85 @@ export async function runAgent(
             `• **Size:** ${(res.sizeBytes / 1024).toFixed(1)} KB\n` +
             `• **Global Edge:** Sub-50ms TTFB via Cloudflare Workers & R2\n\n` +
             `*Anyone on the internet can open this link now over HTTPS.*`;
+
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    generateHyperFramesVideo: defineTool({
+      name: "generateHyperFramesVideo",
+      label: "Generate HyperFrames video",
+      description: "Generates an animated academic HyperFrames explainer video (hybrid: instant 60fps interactive HTML5 player on edge + background host MP4 render). Returns the live interactive URL, queues the MP4 job, and formats the hyperframes playback card.",
+      parameters: Type.Object({
+        topic: Type.String({description: "Topic/subject being explained, e.g. 'Fluid Mechanics Coursework Capabilities'"}),
+        title: Type.String({description: "Display title for the explainer video"}),
+        slug: Type.Optional(Type.String({description: "URL slug, e.g. 'fluid-mechanics-explained'"})),
+        preset: Type.Optional(Type.String({description: "Visual preset: 'cobalt-grid' (default), 'cartesian', or 'code-editorial'"})),
+        durationSeconds: Type.Optional(Type.Number({description: "Total duration in seconds, default 120 (2:00)"})),
+        htmlContent: Type.String({description: "The complete, self-contained HyperFrames HTML5 composition with GSAP animation timeline, scene markup, styling, and interactive controls."}),
+        description: Type.Optional(Type.String({description: "Summary of key visual concepts"})),
+      }),
+      execute: async (toolCallId, {topic, title, slug, preset, durationSeconds, htmlContent, description}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+          const userId = hooks.getCurrentUserId() || "scholar";
+          const cleanSlug = (slug || topic || "explainer-video")
+            .toLowerCase()
+            .trim()
+            .replace(/[^\w\s-]/g, "")
+            .replace(/[\s_-]+/g, "-");
+
+          // 1. Publish to Edge Sites for instant 60fps interactive playback
+          const siteRes = await publishSiteToStorage(bucket, {
+            title,
+            html: htmlContent,
+            slug: cleanSlug,
+            description,
+            userId,
+            origin: "https://voltrix.stream",
+          });
+
+          // 2. Queue background MP4 render job in R2
+          const job = await createHyperFramesJob(bucket, {
+            slug: cleanSlug,
+            topic,
+            title,
+            preset: preset || "cobalt-grid",
+            durationSeconds: durationSeconds || 120,
+            interactiveUrl: siteRes.liveUrl,
+            htmlContent,
+            userId,
+          });
+
+          await hooks.recordAgentObservation(chatId, `HyperFrames explainer ready: ${title}`, siteRes.liveUrl, {
+            title: `HyperFrames Hybrid Explainer Video`,
+            description: `Interactive live at ${siteRes.liveUrl}, background MP4 render queued (Job ID: ${job.id})`,
+          });
+
+          const jsonCard = JSON.stringify({
+            topic,
+            title,
+            status: "ready",
+            interactiveUrl: siteRes.liveUrl,
+            path: `/s/${cleanSlug}`,
+            mp4Url: `/api/hf-videos/${cleanSlug}.mp4`,
+            duration: job.durationDisplay,
+            preset: preset || "cobalt-grid",
+            jobId: job.id,
+          });
+
+          const formatted = `🎬 **HyperFrames Explainer Video Ready for Playback!**\n\n` +
+            `• **Title:** ${title}\n` +
+            `• **Interactive 60fps Playback:** [${siteRes.liveUrl}](${siteRes.liveUrl})\n` +
+            `• **Background MP4 Status:** Queued for Host Encode (Job ID: \`${job.id}\`)\n\n` +
+            `\`\`\`hyperframes\n${jsonCard}\n\`\`\``;
 
           return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
         } catch (error) {
