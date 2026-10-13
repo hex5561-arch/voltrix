@@ -10,6 +10,14 @@ import {
   EyeSlash,
   Sparkle,
   ShieldCheck,
+  GraduationCap,
+  Television,
+  Brain,
+  BookOpen,
+  YoutubeLogo,
+  CheckCircle,
+  ArrowSquareOut,
+  LockKey,
 } from '@phosphor-icons/react'
 import { Button, Banner, Loader } from '@cloudflare/kumo'
 import { hashPassword } from './passwordHash'
@@ -304,19 +312,139 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
   const strength = getPasswordStrength(password)
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-kumo-base px-4 py-8 relative overflow-hidden">
-      {/* Dot grid — fades from top to bottom */}
+    <div className="min-h-screen flex flex-col bg-kumo-base text-kumo-default relative overflow-x-hidden selection:bg-kumo-brand selection:text-white">
+      {/* Background ambient mesh & grid */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage: 'radial-gradient(circle, var(--color-kumo-line) 1px, transparent 1px)',
           backgroundSize: '24px 24px',
-          maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 75%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 75%)',
+          maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 85%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 85%)',
         }}
       />
 
-      <div className="w-full max-w-md relative bg-kumo-elevated/85 backdrop-blur-xl border border-kumo-line rounded-3xl p-6 sm:p-8 shadow-2xl">
+      {/* Top Public Navigation Bar */}
+      <header className="sticky top-0 z-40 w-full border-b border-kumo-line/80 bg-kumo-base/80 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <SiteLogo size={34}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-kumo-brand shadow-md shadow-kumo-brand/20">
+                <Hexagon size={18} className="text-white" weight="bold" />
+              </div>
+            </SiteLogo>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-base text-kumo-default tracking-tight">{siteName}</span>
+              <span className="hidden sm:inline-flex text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 items-center gap-1">
+                <Sparkle size={10} weight="fill" /> Academic OS
+              </span>
+            </div>
+          </div>
+
+          <nav className="flex items-center gap-4 text-xs font-medium text-kumo-subtle">
+            <a href="#about-purpose" className="hover:text-kumo-default transition-colors hidden md:inline">
+              About &amp; Purpose
+            </a>
+            <a href="#youtube-integration" className="hover:text-kumo-default transition-colors hidden sm:inline">
+              YouTube Integration
+            </a>
+            <a href="/privacy.html" className="hover:text-kumo-default transition-colors">
+              Privacy Policy
+            </a>
+            <a href="/terms.html" className="hover:text-kumo-default transition-colors hidden sm:inline">
+              Terms
+            </a>
+            <a
+              href="#auth-card"
+              className="py-1.5 px-3 rounded-xl bg-kumo-brand text-white font-semibold text-xs hover:bg-kumo-brand-hover transition shadow-sm"
+            >
+              Sign In
+            </a>
+          </nav>
+        </div>
+      </header>
+
+      {/* Main Landing & Authentication Container */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 sm:py-16 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
+          {/* Left Column: Purpose & Value Proposition */}
+          <div className="lg:col-span-7 space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+              <GraduationCap size={15} weight="fill" />
+              <span>Academic Learning &amp; Research Workstation</span>
+            </div>
+
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-kumo-default leading-tight">
+              Distraction-Free Academic Learning Operating System
+            </h1>
+
+            <p className="text-sm sm:text-base text-kumo-subtle leading-relaxed">
+              Voltrix is an academic workstation and curriculum environment engineered for university students, educators, and independent scholars. Featuring <strong>V-Tube</strong> distraction-free lecture streaming with direct YouTube account synchronization, Socratic AI tutoring, smart timestamped notebooks, and structured research workspaces.
+            </p>
+
+            {/* Core Capability Badges */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
+                <div className="h-9 w-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0 mt-0.5">
+                  <Television size={18} weight="fill" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-kumo-default">V-Tube Academic Theater</h3>
+                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
+                    Watch university lectures (MIT, Stanford, Harvard, 3Blue1Brown) without ads, clickbait, or comment rabbit holes.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
+                <div className="h-9 w-9 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0 mt-0.5">
+                  <YoutubeLogo size={18} weight="fill" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-kumo-default">Direct YouTube Sync</h3>
+                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
+                    Connect Google OAuth to like educational videos and subscribe to academic creators directly on your actual YouTube account.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
+                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
+                  <Brain size={18} weight="fill" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-kumo-default">Socratic AI Tutoring</h3>
+                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
+                    Grounded concept derivations, chapter checkpoints, and active recall retention quizzes directly during lectures.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
+                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
+                  <BookOpen size={18} weight="fill" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-kumo-default">Timestamped Notebook</h3>
+                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
+                    Snap notes and mathematical formulas anchored to exact seconds in lecture videos for rapid review.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Compliance Guarantee */}
+            <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-3 text-xs text-emerald-400">
+              <CheckCircle size={20} weight="fill" className="shrink-0" />
+              <span>
+                <strong>Google User Data Policy Compliant:</strong> We adhere to Google Limited Use requirements. Your YouTube tokens are used exclusively for user-initiated likes and subscriptions, and are never sold or shared.
+              </span>
+            </div>
+          </div>
+
+          {/* Right Column: Scholar Authentication Card */}
+          <div id="auth-card" className="lg:col-span-5 w-full">
+            <div className="w-full relative bg-kumo-elevated/90 backdrop-blur-xl border border-kumo-line rounded-3xl p-6 sm:p-8 shadow-2xl">
         {/* Branding & Logo */}
         <div className="flex flex-col items-center mb-6 text-center">
           <SiteLogo size={42} className="mb-3">
@@ -772,7 +900,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
           </div>
         )}
 
-        {/* Footer Security Badge */}
+        {/* Card Security Badge */}
         <div className="mt-6 pt-4 border-t border-kumo-line flex items-center justify-between text-[11px] text-kumo-inactive">
           <span className="flex items-center gap-1">
             <ShieldCheck size={14} className="text-emerald-500" /> Edge Argon2id &amp; HMAC-SHA256
@@ -781,5 +909,129 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
         </div>
       </div>
     </div>
-  )
+  </div>
+
+  {/* SECTION 2: APPLICATION PURPOSE & ACADEMIC ARCHITECTURE */}
+  <section id="about-purpose" className="mt-24 pt-16 border-t border-kumo-line/80 space-y-8">
+    <div className="text-center max-w-3xl mx-auto space-y-3">
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-xs font-semibold">
+        <Sparkle size={12} weight="fill" />
+        <span>Application Purpose</span>
+      </div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-kumo-default tracking-tight">
+        Why Voltrix OS Exists: Deep Academic Focus
+      </h2>
+      <p className="text-xs sm:text-sm text-kumo-subtle leading-relaxed">
+        Modern commercial video platforms are intentionally engineered with engagement algorithms designed to maximize watch time through clickbait, algorithmically suggested unrelated content, and algorithmic rabbit holes. Voltrix OS provides an academic barrier that protects students while giving them access to world-class educational lectures.
+      </p>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
+      <div className="p-6 rounded-2xl bg-kumo-elevated/60 border border-kumo-line space-y-3">
+        <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+          <GraduationCap size={22} weight="fill" />
+        </div>
+        <h3 className="text-sm font-bold text-kumo-default">Curriculum-Aligned Lectures</h3>
+        <p className="text-xs text-kumo-subtle leading-relaxed">
+          Lectures are strictly filtered and categorized by discipline (Computer Science, Mathematics, Medicine, Engineering) and enrolled courses. Students only see verified academic lectures from institutions like MIT OpenCourseWare, Stanford, and 3Blue1Brown.
+        </p>
+      </div>
+
+      <div className="p-6 rounded-2xl bg-kumo-elevated/60 border border-kumo-line space-y-3">
+        <div className="h-10 w-10 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500">
+          <YoutubeLogo size={22} weight="fill" />
+        </div>
+        <h3 className="text-sm font-bold text-kumo-default">Verified YouTube Sync</h3>
+        <p className="text-xs text-kumo-subtle leading-relaxed">
+          Students can like educational lectures and subscribe to university channels directly from Voltrix OS. Through the YouTube Data API v3, their actions execute on their personal YouTube account, preserving their YouTube subscription feeds without distraction.
+        </p>
+      </div>
+
+      <div className="p-6 rounded-2xl bg-kumo-elevated/60 border border-kumo-line space-y-3">
+        <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <Brain size={22} weight="fill" />
+        </div>
+        <h3 className="text-sm font-bold text-kumo-default">Retention &amp; Recall Checkpoints</h3>
+        <p className="text-xs text-kumo-subtle leading-relaxed">
+          Lectures feature interactive syllabus chapters, an integrated Socratic AI tutor that references specific video timestamps, and active recall retention checkpoints derived directly from the lecture material.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {/* SECTION 3: YOUTUBE API SERVICES & GOOGLE USER DATA DISCLOSURE */}
+  <section id="youtube-integration" className="mt-20 pt-16 border-t border-kumo-line/80">
+    <div className="p-6 sm:p-8 rounded-3xl bg-kumo-elevated/80 border border-kumo-line space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0">
+          <YoutubeLogo size={22} weight="fill" />
+        </div>
+        <div>
+          <h2 className="text-base sm:text-lg font-bold text-kumo-default">
+            YouTube API Services &amp; Google User Data Disclosure
+          </h2>
+          <p className="text-xs text-kumo-subtle">
+            Transparent compliance with the Google API Services User Data Policy
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3 text-xs text-kumo-subtle leading-relaxed">
+        <p>
+          Voltrix OS integrates with <strong>YouTube API Services</strong> to provide educational lecture viewing, chapters, and optional user-directed account synchronization.
+        </p>
+        <p>
+          Our application requests the <code>https://www.googleapis.com/auth/youtube.force-ssl</code> scope for two specific educational purposes:
+        </p>
+        <ul className="list-disc list-inside space-y-1 pl-2 text-kumo-default font-medium">
+          <li><strong>Rating educational videos:</strong> Calling <code>videos.rate</code> when a student clicks "Like" on an academic lecture.</li>
+          <li><strong>Subscribing to educational channels:</strong> Calling <code>subscriptions.insert</code> or <code>subscriptions.delete</code> when a student follows an academic creator or university channel.</li>
+        </ul>
+        <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 space-y-1.5 mt-4">
+          <p className="font-semibold text-white">Google Limited Use Disclosure:</p>
+          <p>
+            Voltrix’s use and transfer to any other app of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener" className="underline text-indigo-200">Google API Services User Data Policy</a>, including the <strong>Limited Use</strong> requirements. We do not sell, transfer, or share Google user data with third parties, advertisers, or data brokers.
+          </p>
+        </div>
+        <p className="pt-2">
+          By utilizing YouTube-powered features in Voltrix OS, you agree to be bound by the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener" className="underline text-kumo-brand">YouTube Terms of Service</a> and the <a href="http://www.google.com/policies/privacy" target="_blank" rel="noopener" className="underline text-kumo-brand">Google Privacy Policy</a>. You can revoke access at any time via <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" className="underline text-kumo-brand">Google Account Permissions</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+{/* Comprehensive Public Footer */}
+<footer className="w-full border-t border-kumo-line bg-kumo-base py-10 mt-20 relative z-20">
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-kumo-subtle">
+    <div className="flex flex-col sm:flex-row items-center gap-3">
+      <div className="flex items-center gap-2">
+        <Hexagon size={16} className="text-kumo-brand" weight="bold" />
+        <span className="font-semibold text-kumo-default">Voltrix OS</span>
+      </div>
+      <span className="hidden sm:inline text-kumo-line">|</span>
+      <span>Lead Developer: Emmanuel Voltrix (&lt;emmanuelvoltrix24@gmail.com&gt;)</span>
+    </div>
+
+    <div className="flex items-center gap-5 flex-wrap justify-center">
+      <a href="/privacy.html" className="hover:text-kumo-default transition-colors underline font-medium">
+        Privacy Policy
+      </a>
+      <a href="/terms.html" className="hover:text-kumo-default transition-colors underline font-medium">
+        Terms of Service
+      </a>
+      <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener" className="hover:text-kumo-default transition-colors">
+        YouTube Terms
+      </a>
+      <a href="http://www.google.com/policies/privacy" target="_blank" rel="noopener" className="hover:text-kumo-default transition-colors">
+        Google Privacy Policy
+      </a>
+      <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" className="hover:text-kumo-default transition-colors">
+        Revoke Google Access
+      </a>
+    </div>
+  </div>
+</footer>
+</div>
+)
 }

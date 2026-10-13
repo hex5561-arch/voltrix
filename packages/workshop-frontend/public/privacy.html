@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Voltrix OS</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --brand: #6366f1;
+      --brand-light: #818cf8;
+      --accent: #10b981;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.7;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--brand-light);
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+    .effective-date {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 36px;
+      margin-bottom: 14px;
+      color: #ffffff;
+      border-left: 3px solid var(--brand);
+      padding-left: 12px;
+    }
+    p, li {
+      font-size: 15px;
+      color: #d1d5db;
+      margin-bottom: 14px;
+    }
+    ul, ol {
+      margin-left: 24px;
+      margin-bottom: 18px;
+    }
+    li {
+      margin-bottom: 8px;
+    }
+    a {
+      color: var(--brand-light);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    a:hover {
+      color: #ffffff;
+    }
+    .callout {
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 24px 0;
+    }
+    .callout-title {
+      font-weight: 700;
+      font-size: 16px;
+      color: #ffffff;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-links {
+      margin-top: 40px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">Legal Documentation</div>
+      <h1>Privacy Policy</h1>
+      <p class="effective-date">Last updated: October 13, 2026 | Effective Date: October 13, 2026</p>
+    </header>
+
+    <section>
+      <h2>1. Overview and Purpose</h2>
+      <p>
+        <strong>Voltrix OS</strong> ("Voltrix", "we", "us", or "our"), available at <a href="https://voltrix.stream">https://voltrix.stream</a>, is a distraction-free academic operating system engineered for students, educators, and academic researchers. Voltrix provides academic curriculum workspaces, Socratic AI tutoring, and an educational video theater (<strong>V-Tube</strong>).
+      </p>
+      <p>
+        This Privacy Policy explains how we collect, use, store, disclose, and safeguard your personal information when you use our platform, with specific emphasis on our integration with <strong>YouTube API Services</strong> and Google OAuth.
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Information We Collect</h2>
+      <p>We only collect information strictly required to deliver academic learning tools:</p>
+      <ul>
+        <li><strong>Account Information:</strong> When you register or authenticate, we collect your display name, username, and email address.</li>
+        <li><strong>Academic Profile Data:</strong> Enrolled courses, chosen discipline (e.g., Computer Science, Mathematics), academic year, institution name, and self-identified learning objectives.</li>
+        <li><strong>Google and YouTube Data (Voluntary Integration):</strong> If you choose to connect your Google account to enable live YouTube synchronization in V-Tube, we receive an OAuth 2.0 access token and refresh token granted under your explicit consent for the <code>https://www.googleapis.com/auth/youtube.force-ssl</code> scope. We do <em>not</em> access your private emails, Google Drive files, personal search history, or personal YouTube watch history.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>3. How We Use YouTube API Services</h2>
+      <p>
+        Voltrix OS uses <strong>YouTube API Services</strong> to provide students with distraction-free educational lecture viewing. By using these features, you agree to be bound by the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a> and the <a href="http://www.google.com/policies/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>.
+      </p>
+      <p>
+        Specifically, our application requests the <code>https://www.googleapis.com/auth/youtube.force-ssl</code> scope for the following explicit educational actions initiated solely by you:
+      </p>
+      <ul>
+        <li><strong>Liking Educational Videos:</strong> When you click the "Like" button on an academic lecture in V-Tube, the YouTube Data API (<code>videos.rate</code>) is called on your behalf to record your positive rating directly to YouTube.</li>
+        <li><strong>Subscribing to Academic Channels:</strong> When you click the "Subscribe" button on a lecture creator or university channel (e.g., MIT OpenCourseWare, 3Blue1Brown, Stanford Online), the YouTube Data API (<code>subscriptions.insert</code> or <code>subscriptions.delete</code>) is called on your behalf to manage that subscription on your YouTube account.</li>
+      </ul>
+    </section>
+
+    <div class="callout">
+      <div class="callout-title">
+        <span>🛡️</span> Google API Services User Data Policy Compliance
+      </div>
+      <p>
+        Voltrix's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the <strong>Limited Use</strong> requirements.
+      </p>
+      <p>
+        Specifically:
+      </p>
+      <ul style="margin-bottom: 0;">
+        <li>We only use Google/YouTube data to provide user-facing features (liking lectures and subscribing to channels at your instruction).</li>
+        <li>We <strong>do NOT transfer or sell</strong> Google user data to third parties, advertising platforms, data brokers, or information resellers.</li>
+        <li>We <strong>do NOT use</strong> Google user data for serving advertisements, including personalized, re-targeted, or interest-based advertising.</li>
+        <li>We <strong>do NOT use</strong> Google user data to train generalized artificial intelligence (AI) or machine learning (ML) models.</li>
+      </ul>
+    </div>
+
+    <section>
+      <h2>4. Data Storage, Security, and Token Retention</h2>
+      <p>
+        We implement industry-standard encryption protocols (including HTTPS/TLS in transit and encrypted key storage) to safeguard your data.
+      </p>
+      <ul>
+        <li>OAuth access tokens are used in real-time to execute authorized API calls and are stored securely in browser storage or encrypted sessions.</li>
+        <li>Tokens are never exposed in public repositories, client-facing logs, or unauthenticated endpoints.</li>
+        <li>Tokens are retained only as long as necessary to maintain your connected session or until you choose to disconnect.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. How to Revoke Access and Delete Data</h2>
+      <p>You have complete control over your Google and YouTube data at all times:</p>
+      <ul>
+        <li><strong>Within Voltrix:</strong> You can disconnect your YouTube account at any time by clicking the "Disconnect YouTube" option in your V-Tube theater dashboard. This instantly clears your access tokens from local storage.</li>
+        <li><strong>Via Google Security Settings:</strong> You can revoke Voltrix's access to your Google account at any time by visiting the official <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account Third-Party Permissions</a> page and clicking "Remove Access".</li>
+        <li><strong>Account Deletion:</strong> You can request full deletion of your Voltrix account and all associated profile data by emailing our support team at <a href="mailto:emmanuelvoltrix24@gmail.com">emmanuelvoltrix24@gmail.com</a>. All associated data will be permanently purged within 30 days.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>6. Third-Party Services and Links</h2>
+      <p>
+        Voltrix OS contains links to external educational content hosted on YouTube and university servers. We encourage you to review the privacy notices of all third-party sites you visit:
+      </p>
+      <ul>
+        <li><a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a></li>
+        <li><a href="http://www.google.com/policies/privacy" target="_blank" rel="noopener">Google Privacy Policy</a></li>
+        <li><a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account Permissions Manager</a></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>7. Children's Privacy</h2>
+      <p>
+        Voltrix OS is designed for university students, educators, and adult researchers. We do not knowingly collect personal identifiable information from children under the age of 13. If you believe a child under 13 has provided us with personal information, please contact us immediately.
+      </p>
+    </section>
+
+    <section>
+      <h2>8. Contact Information</h2>
+      <p>
+        If you have any questions, concerns, or requests regarding this Privacy Policy or your data, please contact the developer directly:
+      </p>
+      <p>
+        <strong>Voltrix OS Developer Team</strong><br>
+        Lead Developer: Emmanuel Voltrix<br>
+        Email: <a href="mailto:emmanuelvoltrix24@gmail.com">emmanuelvoltrix24@gmail.com</a><br>
+        Website: <a href="https://voltrix.stream">https://voltrix.stream</a>
+      </p>
+    </section>
+
+    <div class="nav-links">
+      <a href="/">&larr; Back to Voltrix OS Home</a>
+      <a href="/terms.html">Terms of Service &rarr;</a>
+    </div>
+  </div>
+</body>
+</html>
