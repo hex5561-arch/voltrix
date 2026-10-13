@@ -145,7 +145,7 @@ function VTubeDashboard() {
     const searchParams = new URLSearchParams(window.location.search);
     const code = searchParams.get('code');
     if (code) {
-      const redirectUri = window.location.origin + window.location.pathname;
+      const redirectUri = `${window.location.origin}/vtube`;
       fetch('/api/vtube/youtube/exchange-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -158,6 +158,15 @@ function VTubeDashboard() {
             setIsYtConnected(true);
             setYtFeedback('Connected to YouTube successfully!');
             setTimeout(() => setYtFeedback(null), 3500);
+
+            try {
+              const returnPath = sessionStorage.getItem('voltrix:yt_return_path');
+              if (returnPath && returnPath !== '/vtube') {
+                sessionStorage.removeItem('voltrix:yt_return_path');
+                window.location.href = returnPath;
+                return;
+              }
+            } catch {}
           }
         })
         .catch(() => {})

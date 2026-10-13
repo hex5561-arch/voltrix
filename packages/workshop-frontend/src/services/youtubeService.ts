@@ -65,8 +65,14 @@ export function removeStoredSubscriptionId(channelOrAuthor: string): void {
 /**
  * Initiates Google OAuth with YouTube scopes.
  */
-export async function startYouTubeOAuthConnect(redirectPath = '/vtube'): Promise<void> {
-  const redirectUri = `${window.location.origin}${redirectPath}`;
+export async function startYouTubeOAuthConnect(currentPath?: string): Promise<void> {
+  const returnPath = currentPath || window.location.pathname;
+  try {
+    sessionStorage.setItem('voltrix:yt_return_path', returnPath);
+  } catch {}
+
+  // Always use the registered, fixed redirect URI to prevent dynamic subpath mismatches
+  const redirectUri = `${window.location.origin}/vtube`;
   const res = await fetch(`/api/auth/oauth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
   const data = await res.json() as { enabled?: boolean; url?: string };
   if (data?.url) {
