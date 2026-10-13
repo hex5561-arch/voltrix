@@ -34,6 +34,14 @@ import { handleYouTubeSearchRequest, handleYouTubeIngestRequest, handleVTubeFeed
 import { executeYouTubeLike, executeYouTubeSubscribe, resolveChannelId } from "./youtube-actions.js";
 import { submitPesapalOrder, getPesapalTransactionStatus } from "./pesapal.js";
 import { searchOpenAlex, formatOpenAlexResults, searchWikibooks, readWikibookPage, searchOpenStax } from "./scholarly.js";
+import {
+  publishSiteToStorage,
+  getSiteFromStorage,
+  getSiteMetadata,
+  getUserSites,
+  deleteSiteFromStorage,
+  renderSiteNotFoundHtml,
+} from "./sites.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1387,9 +1395,131 @@ async function finalizeOrderPayment(
   return invoice;
 }
 
+async function handleSitesRequest(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  // 1. Serving public website: GET /s/:slug or /s/:slug.html
+  if (url.pathname.startsWith("/s/") || url.pathname === "/s") {
+    const rawSlug = url.pathname.slice("/s/".length).replace(/\.html$/i, "").trim();
+    if (!rawSlug) {
+      return new Response(renderSiteNotFoundHtml(), {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    const site = await getSiteFromStorage(env.BLUEPRINT_CONTENT, rawSlug);
+    if (!site) {
+      return new Response(renderSiteNotFoundHtml(rawSlug), {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    return new Response(site.content, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Frame-Options": "ALLOWALL",
+        "Cache-Control": "public, max-age=60",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+
+  // 2. Publish: POST /api/sites/publish
+  if (url.pathname === "/api/sites/publish" && req.method === "POST") {
+    try {
+      const body = await req.json() as any;
+      if (!body.html || typeof body.html !== "string" || !body.html.trim()) {
+        return Response.json({ success: false, error: "html is required" }, { status: 400, headers: corsHeaders });
+      }
+
+      const result = await publishSiteToStorage(env.BLUEPRINT_CONTENT, {
+        html: body.html,
+        title: body.title,
+        slug: body.slug,
+        userId: body.userId,
+        authorName: body.authorName,
+        description: body.description,
+        origin: url.origin,
+      });
+
+      return Response.json(result, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to publish site" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 3. User's sites: GET /api/sites/my-sites
+  if (url.pathname === "/api/sites/my-sites" && req.method === "GET") {
+    const userId = url.searchParams.get("userId") || "anon";
+    const sites = await getUserSites(env.BLUEPRINT_CONTENT, userId);
+    return Response.json({ success: true, sites }, { headers: corsHeaders });
+  }
+
+  // 4. Site metadata: GET /api/sites/meta
+  if (url.pathname === "/api/sites/meta" && req.method === "GET") {
+    const slug = url.searchParams.get("slug") || "";
+    if (!slug) {
+      return Response.json({ success: false, error: "slug is required" }, { status: 400, headers: corsHeaders });
+    }
+    const meta = await getSiteMetadata(env.BLUEPRINT_CONTENT, slug);
+    if (!meta) {
+      return Response.json({ success: false, error: "Site not found" }, { status: 404, headers: corsHeaders });
+    }
+    return Response.json({ success: true, metadata: meta }, { headers: corsHeaders });
+  }
+
+  // 5. Direct content: GET /api/sites/content
+  if (url.pathname === "/api/sites/content" && req.method === "GET") {
+    const slug = url.searchParams.get("slug") || "";
+    if (!slug) {
+      return Response.json({ success: false, error: "slug is required" }, { status: 400, headers: corsHeaders });
+    }
+    const site = await getSiteFromStorage(env.BLUEPRINT_CONTENT, slug);
+    if (!site) {
+      return Response.json({ success: false, error: "Not found" }, { status: 404, headers: corsHeaders });
+    }
+    return new Response(site.content, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "public, max-age=60",
+        ...corsHeaders,
+      },
+    });
+  }
+
+  // 6. Delete / Unpublish: DELETE /api/sites/delete or POST /api/sites/delete or POST /api/sites/unpublish
+  if ((url.pathname === "/api/sites/delete" || url.pathname === "/api/sites/unpublish") && (req.method === "DELETE" || req.method === "POST")) {
+    const body = await req.json().catch(() => ({})) as any;
+    const slug = body.slug || url.searchParams.get("slug") || "";
+    const userId = body.userId || url.searchParams.get("userId") || "anon";
+    if (!slug) {
+      return Response.json({ success: false, error: "slug is required" }, { status: 400, headers: corsHeaders });
+    }
+    await deleteSiteFromStorage(env.BLUEPRINT_CONTENT, slug, userId);
+    return Response.json({ success: true, message: `Site ${slug} unpublished` }, { headers: corsHeaders });
+  }
+
+  return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
+
+    if (url.pathname.startsWith("/s/") || url.pathname === "/s" || url.pathname.startsWith("/api/sites")) {
+      return handleSitesRequest(req, env);
+    }
 
     if (url.pathname === SITE_LOGO_PATH) {
       return serveSiteLogo(req, env.BLUEPRINT_CONTENT);

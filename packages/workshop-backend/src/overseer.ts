@@ -3070,6 +3070,11 @@ class OverseerImpl implements AgentHooks {
     return this.storage.ownerId.get() ?? null;
   }
 
+  // Returns the R2 bucket for web hosting and blueprint content. Null when absent.
+  getBlueprintContentBucket(): R2Bucket | null {
+    return this.env.BLUEPRINT_CONTENT ?? null;
+  }
+
   // Queue a shareDocument card proposal for the current step.
   proposeDocumentShare(chatId: number, proposal: {
     documentKey: string;

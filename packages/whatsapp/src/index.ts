@@ -314,7 +314,11 @@ Topic focus this session: ${topTopics || "General"}
    • Assignment Title & Course Unit Code/Name
    • Student Author Name (${session.contactName}) & Degree Program (${p?.degree ?? "Scholar"})
    • Current Date
-   • Follow with a clean separator (━━━━━━━━━━━━━━━━━━━━━━━━) before the introduction.`;
+   • Follow with a clean separator (━━━━━━━━━━━━━━━━━━━━━━━━) before the introduction.
+8. WEB APPLICATION & SIMULATOR CREATION:
+   When the student asks to build, create, or host a website, interactive simulator, calculator, portfolio, or tool:
+   Provide an explanation, followed by the complete, standalone HTML5 source code inside a \`\`\`html ... \`\`\` code block (with Tailwind CSS CDN, Lucide, and interactive JS).
+   Voltrix will automatically deploy it to Cloudflare Global Edge at https://voltrix.stream/s/<slug> and deliver their live URL!`;
 }
 
 // ── Command handlers ──────────────────────────────────────────────────────────
@@ -594,7 +598,35 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
 
   await sessionFetch<{ ok: boolean }>(stub, "/message", { role: "assistant", content: aiReply });
 
-  await sendTextMessage(env, from, formatForWhatsApp(aiReply));
+  // ── Auto-publish HTML Apps to Edge Hosting ───────────────────────────────
+  let extraSiteLink = "";
+  const htmlMatch = aiReply.match(/```(?:html|web)\s*([\s\S]*?)```/i);
+  if (htmlMatch && htmlMatch[1] && htmlMatch[1].length > 250) {
+    try {
+      const titleMatch = htmlMatch[1].match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const siteTitle = titleMatch ? titleMatch[1].trim() : (contactName ? `${contactName}'s Web App` : "Interactive Web Application");
+      const pubRes = await fetch("https://voltrix.stream/api/sites/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          html: htmlMatch[1],
+          title: siteTitle,
+          userId: session.linkedUserId || from,
+          authorName: contactName,
+        }),
+      });
+      if (pubRes.ok) {
+        const pubData = await pubRes.json() as any;
+        if (pubData.success && pubData.liveUrl) {
+          extraSiteLink = `\n\n🌐 *Your Web App is Live on Global Edge!*\n🔗 ${pubData.liveUrl}\n_Sub-50ms TTFB worldwide. Open to test directly on your phone!_`;
+        }
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+
+  await sendTextMessage(env, from, formatForWhatsApp(aiReply + extraSiteLink));
 }
 
 // ── Main Worker ───────────────────────────────────────────────────────────────

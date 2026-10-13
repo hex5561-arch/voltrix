@@ -24,6 +24,7 @@ import {
   searchWikibooks as searchWikibooksImpl, readWikibookPage as readWikibookPageImpl,
   searchOpenStax as searchOpenStaxImpl,
 } from "./scholarly.js";
+import { publishSiteToStorage } from "./sites.js";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { AgentCatalogSnapshot, formatAlwaysAvailableResourcesPrompt } from "./agent-catalog";
@@ -408,6 +409,12 @@ export interface AgentHooks {
    * Null when not determinable.
    */
   getCurrentUserId(): string | null;
+
+  /**
+   * Returns the R2 bucket for web hosting and blueprint content.
+   * Null when not available.
+   */
+  getBlueprintContentBucket(): R2Bucket | null;
 
   /**
    * Queue a "shareDocument" card to be appended to the chat log after the current step.
@@ -850,6 +857,21 @@ UNLESS the student explicitly states otherwise (e.g. "no cover page", "anonymous
    - Horizontal divider (\`---\`) before beginning Section 1 / Introduction.
 2. Group Work: If keywords "group", "team", "members", "we are" appear, generate a formatted Group Members Roster table with columns (#, Name, Reg/ID, Role).
 3. Citation & Rigor: Follow their institutional citation style (IEEE, APA, MLA, Harvard, Chicago) with rigorous inline citations, LaTeX formulas ($$...$$), and academic bibliography.
+
+# Public Web Hosting & Edge Site Publishing
+You have the ability to instantly publish and host standalone web applications, STEM simulators, landing pages, calculators, portfolios, course portals, and interactive tools on the public internet using the \`publishWebsite\` tool.
+
+When the user asks to:
+- "Build me and host my app accessible over the net"
+- "Publish this web app" / "Deploy this simulator"
+- "Give me a public URL / link I can share with others"
+- "Create a landing page / portfolio / simulator that anyone can open"
+
+1. DO NOT tell the user they need to drag a file to Netlify Drop, Vercel, or configure GitHub Pages.
+2. Generate the complete, self-contained HTML5 application with modern styling (Tailwind CSS CDN, Lucide Icons, interactive Vanilla JS state, responsive mobile drawer, and toasts).
+3. Call the \`publishWebsite\` tool with \`{ title, html, slug, description }\`.
+4. It instantly deploys the application to Cloudflare Global Edge at \`https://voltrix.stream/s/<slug>\` with sub-50ms TTFB worldwide and zero deploy friction.
+5. Present the live link as a clickable markdown link in your response.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `
@@ -953,6 +975,20 @@ Returns book title, subject tags, web reader link, and direct full-text PDF down
 
 Use this tool when:
 - The user asks for college textbooks, syllabus references, or direct textbook download links.
+`.trim();
+
+let PUBLISH_WEBSITE_TOOL_DESCRIPTION = `
+Publishes and hosts a standalone HTML5 website, interactive simulator, dashboard, portfolio, or web tool to global Cloudflare Edge hosting at https://voltrix.stream/s/<slug>.
+The website is live immediately worldwide over HTTPS with sub-50ms TTFB and no login required.
+
+Parameters:
+- title: The public title of the application or website.
+- html: The complete HTML5 source code (including inline styles, Tailwind CDN, Lucide CDN, scripts, and canvas/DOM logic).
+- slug: (Optional) Desired URL slug, e.g. "fluid-mechanics-toolkit" -> https://voltrix.stream/s/fluid-mechanics-toolkit.
+- description: (Optional) Brief description of the website or application.
+
+Use this tool when:
+- The user asks: "Build me and host my app accessible over the net", "Create a website for X", "Deploy this simulator", "Give me a public URL / shareable link", or "Publish this web page".
 `.trim();
 
 let OBSERVE_USER_CHANGES_TOOL_DESCRIPTION = `
@@ -3089,6 +3125,53 @@ export async function runAgent(
           });
           let lines = books.map(b => `• **${b.title}**\n  - Subjects: ${b.subjects.join(", ")}\n  - Web Reader: ${b.url}\n  - Direct PDF: ${b.pdfUrl}`);
           let formatted = `### OpenStax College Textbooks for "${query}":\n\n` + (lines.join("\n\n") || "No textbooks matched.");
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    publishWebsite: defineTool({
+      name: "publishWebsite",
+      label: "Publish and host website at edge",
+      description: PUBLISH_WEBSITE_TOOL_DESCRIPTION,
+      parameters: Type.Object({
+        title: Type.String({description: "Public title of the web application or site."}),
+        html: Type.String({description: "Complete HTML5 source code to host at the edge."}),
+        slug: Type.Optional(Type.String({description: "Optional custom URL slug (e.g. 'flight-simulator', 'calculus-grapher')."})),
+        description: Type.Optional(Type.String({description: "Optional brief summary of what the app does."})),
+      }),
+      execute: async (toolCallId, {title, html, slug, description}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+          const userId = hooks.getCurrentUserId() || "scholar";
+          const res = await publishSiteToStorage(bucket, {
+            title,
+            html,
+            slug,
+            description,
+            userId,
+            origin: "https://voltrix.stream",
+          });
+
+          await hooks.recordAgentObservation(chatId, `Edge site published: ${res.title}`, res.liveUrl, {
+            title: `Web Application Edge Deployment`,
+            description: `Published "${res.title}" (v${res.version}) to ${res.liveUrl}`,
+          });
+
+          const formatted = `🎉 **Website Successfully Published and Live on Global Edge!**\n\n` +
+            `• **Title:** ${res.title}\n` +
+            `• **Live URL:** [${res.liveUrl}](${res.liveUrl})\n` +
+            `• **Version:** v${res.version}\n` +
+            `• **Size:** ${(res.sizeBytes / 1024).toFixed(1)} KB\n` +
+            `• **Global Edge:** Sub-50ms TTFB via Cloudflare Workers & R2\n\n` +
+            `*Anyone on the internet can open this link now over HTTPS.*`;
+
           return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
         } catch (error) {
           toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
