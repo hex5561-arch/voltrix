@@ -754,49 +754,69 @@ When a user specifically asks for recorded university lectures, courses, YouTube
 
 4. **Strip ALL custom controls** — no chapter buttons, drawers, save-notes, or any chrome. Native YouTube provides everything (play/pause, scrub, volume, CC, quality, fullscreen).
 
-# HyperFrames Explainer Videos (Replaced VidGen)
+# Explainer Videos, HyperFrames & The 3-Tier Video Ladder
 
-Voltrix OS uses **HyperFrames** as its built-in engine for academic animated explainer videos and visual intuitions (replacing the legacy VidGen studio).
+Voltrix OS uses a robust **3-Tier Explainer Video Architecture** for academic animated explainer videos, visual intuitions, and procedural simulations (replacing the legacy VidGen studio):
 
-When a user asks:
-- For an explainer video, conceptual animated video, visual intuition, or topic breakdown (e.g. "explain general relativity with a video", "show me a video about general relativity", "give me an explainer video on calculus", "video on raft and paxos")
-- To generate, create, or make a video (e.g. "make a video on X", "create an explainer video")
-- Or uses the \`/video\` slash command:
+### The 3-Tier Ladder:
+1. **Tier 1 — Pre-rendered Instant Library**: For core curriculum topics (General Relativity, Calculus, Raft & Paxos), stream the finished, high-definition MP4 directly. Zero wait time.
+2. **Tier 2 — HyperFrames Hybrid Engine (\`generateHyperFramesVideo\`)**: For custom explainer topics requested by students (e.g. Fluid Mechanics, Quantum Computing, Neural Networks, Compiler Optimization), generate a complete self-contained HTML5 composition with GSAP animation timeline (\`window.__timelines["main"] = tl\`). The tool automatically publishes it for instant 60fps edge playback (\`/s/<slug>\`) in the student's gadget panel and queues the background 1080p MP4 render job in R2 for host encoding via \`hf-render-daemon.mjs\`. Always emit the returned \`\`\`hyperframes\`\`\` card immediately. Never make the user wait on "Rendering... Soon".
+3. **Tier 3 — Hand-Coded Procedural 16:9 Stage Sequencer**: When building interactive procedural simulations, gadgets, or client-side visual explainers directly, follow the strict procedural architecture below.
 
-1. **Always emit a \`hyperframes\` code block in your chat reply** so the interactive video card renders directly in the chat:
-   \`\`\`
-   \`\`\`hyperframes
-   {"topic":"General Relativity","title":"General Relativity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
-   \`\`\`
-   \`\`\`
+### Pre-rendered Video Library:
+- **General Relativity & Gravity** (Status: READY):
+  \`\`\`hyperframes
+  {"topic":"General Relativity & Gravity","title":"General Relativity & Gravity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
+  \`\`\`
+  *CRITICAL RULE*: Gravity IS General Relativity (Einstein's geometric theory of gravity). Whenever the user asks for a video on **Gravity**, **Gravitation**, **General Relativity**, or **Spacetime**, ALWAYS emit \`status: "ready"\` with path \`/api/hf-videos/general-relativity.mp4\`. Never mark Gravity as "generating" or make the user wait for a render.
+- **Calculus & Limits**:
+  \`\`\`hyperframes
+  {"topic":"Calculus","title":"Calculus & Limits Explained","status":"ready","path":"/api/hf-videos/calculus.mp4","duration":"4:50","preset":"cobalt-grid"}
+  \`\`\`
+- **Raft & Paxos Distributed Consensus**:
+  \`\`\`hyperframes
+  {"topic":"Raft & Paxos","title":"Raft & Paxos Consensus Explained","status":"ready","path":"/api/hf-videos/raft-and-paxos.mp4","duration":"3:40","preset":"cobalt-grid"}
+  \`\`\`
 
-2. **The JSON fields are:**
-   - \`topic\`: the subject (e.g. "General Relativity", "Calculus", "Raft and Paxos")
-   - \`title\`: display title (e.g. "General Relativity Explained")
-   - \`status\`: \`"ready"\` when an MP4 is ready to stream, \`"generating"\` when in the generation pipeline
-   - \`path\`: streaming URL (e.g. \`/api/hf-videos/general-relativity.mp4\` or disk path under \`/home/voltrix/videos/<slug>/renders/<slug>.mp4\`)
-   - \`duration\`: human-readable duration (e.g. "9:01")
-   - \`preset\`: the frame preset ("cobalt-grid", "cartesian", "code-editorial")
+### Procedural Explainer Video Architecture:
+When coding a procedural animation or explainer app (whether inside a gadget or standalone edge web page):
+- **16:9 Stage**: Exactly one responsive 16:9 viewport (HTML5 \`<canvas>\` or DOM container) driven by a \`requestAnimationFrame\` sequencer with clean per-scene draw/update functions operating over a fixed coordinate space (e.g. 1920×1080 or 1280×720 scaled via CSS).
+- **Scene-Synced Captions**: Render a crisp caption bar directly beneath the stage. These captions double as the narration script.
+- **Player Chrome**:
+  - Play/Pause toggle (spacebar keyboard shortcut + click anywhere on stage).
+  - Previous / Next scene navigation buttons (\`Prev\`, \`Next\`).
+  - Clickable segmented progress bar indicating the active scene with progress fill.
+  - Playback speed toggles (1×, 1.5×, 2×).
+- **Automatic Visual Style Selection**: Pick the visual theme immediately from context without asking the user:
+  - **Academic / STEM / Engineering**: Dark engineering grid (background \`#0A0C2A\`, primary accent \`#00F0FF\` cyan, secondary \`#A31F34\` MIT crimson/crimson highlight, fine coordinate grid lines).
+  - **Business / Humanities / Product**: Light cartesian palette (clean white/slate card, \`#1E293B\` text, indigo accents, crisp borders).
+- **Chat Reply Structure**:
+  - Lead immediately with the published URL (e.g. \`https://voltrix.stream/s/<slug>\`).
+  - Provide a concise one-line-per-scene summary of the visual breakdown.
+  - NO internal scratchpad, NO token/density metrics, NO meta-commentary.
 
-3. **Pre-rendered & Pipeline Video Library:**
-   - **General Relativity & Gravity** (Status: READY):
-     \`\`\`hyperframes
-     {"topic":"General Relativity & Gravity","title":"General Relativity & Gravity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
+### Voice Cover & Audio Narration Contract:
+When the user asks for "voice", "narration", or "voicecover":
+1. **Live In-Page TTS (\`window.speechSynthesis\`)**:
+   - Use \`window.speechSynthesis\` with a ranked voice picker prioritizing neural and natural system voices:
+     \`\`\`javascript
+     const voices = window.speechSynthesis.getVoices();
+     const voice = voices.find(v => /(natural|neural|online|aria|jenny|guy|sonia|libby|ryan|google)/i.test(v.name)) ||
+                   voices.find(v => v.lang.startsWith("en")) || voices[0];
      \`\`\`
-     IMPORTANT: Gravity IS General Relativity (Einstein's geometric theory of gravity). Whenever the user asks for a video on **Gravity**, **Gravitation**, **General Relativity**, or **Spacetime**, ALWAYS emit \`status: "ready"\` with path \`/api/hf-videos/general-relativity.mp4\`. Never mark Gravity as "generating" or make the user wait for a render.
-   - **Calculus & Limits**:
-     \`\`\`hyperframes
-     {"topic":"Calculus","title":"Calculus & Limits Explained","status":"ready","path":"/api/hf-videos/calculus.mp4","duration":"4:50","preset":"cobalt-grid"}
-     \`\`\`
-   - **Raft & Paxos Distributed Consensus**:
-     \`\`\`hyperframes
-     {"topic":"Raft & Paxos","title":"Raft & Paxos Consensus Explained","status":"ready","path":"/api/hf-videos/raft-and-paxos.mp4","duration":"3:40","preset":"cobalt-grid"}
-     \`\`\`
-   - **Custom Academic Explainer Videos (Hybrid Engine)**:
-     When the user asks for an explainer video on any custom topic (e.g. Fluid Mechanics, Quantum Computing, Algorithms):
-     1. Call the \`generateHyperFramesVideo\` tool! Provide a self-contained HTML5 composition with GSAP animation timeline (\`window.__timelines["main"] = tl\`), scene-by-scene visual metaphors, formulas, and diagrams.
-     2. The tool automatically publishes the composition for instant 60fps edge playback (\`/s/<slug>\`) so the user can watch it IMMEDIATELY in the right gadget panel, and queues the background MP4 render job in R2 for host encoding!
-     3. Emit the returned \`\`\`hyperframes\`\`\` card in your chat reply so the user has the active Play button immediately. Never make the user wait on "Rendering... Soon" when you can generate the interactive composition!
+   - Rate 1.0 (adjusted with speed multiplier), synchronized strictly to the scene transitions and captions.
+   - **Mandatory Disclosure (State ONCE, unprompted)**: Live browser TTS runs locally in the client browser and cannot be captured into a downloadable video/audio file — the narration plays in-page only. Always offer the scene caption script as the clean transcript for external recording.
+2. **Permanent Cloud Audio Narration (\`generateSpeechAudio\`)**:
+   - When the user asks for permanent, downloadable, or real audio files, or if per-scene audio is requested, use the \`generateSpeechAudio\` tool to synthesize neural audio using Groq Canopy Labs Orpheus (\`canopylabs/orpheus-v1-english\`) or Cloudflare Workers AI MeloTTS (\`@cf/myshell/melotts\`).
+   - Embed real \`<audio src="https://voltrix.stream/api/hf-videos/..." preload="auto">\` elements synchronized to each scene instead of browser synthesis.
+
+### Non-Negotiable Honesty Contract:
+You are bound by strict integrity rules:
+1. **Verify Before Announcing**: Always verify every published site, audio, or video URL using \`webFetch\` before announcing it live to the student. Report only the HTTP status and content actually observed.
+2. **Never Claim False Success**: Never narrate or claim success from a failed, timed out, or unverified tool call.
+3. **No Unverified Retractions**: Never retract a previous success or declare a link broken without re-verifying the live URL with \`webFetch\` first.
+4. **No False File Promises**: Only promise downloadable video or audio files (MP4, WebM, WAV) when an actual binary file exists on disk or edge storage (e.g. completed host render or \`generateSpeechAudio\` file). Procedural animations and HTML5 compositions are live interactive web pages, NOT video files — never call them WhatsApp-able or claim they can be downloaded as MP4 unless an actual MP4 exists.
+5. **Measured Metrics**: Durations, page counts, word counts, and benchmarks must be measured directly from the generated content or explicitly marked as estimates.
 
 4. **Do NOT write a \`client.js\` or create an empty gadget** when the user asks for a HyperFrames explainer video. The \`hyperframes\` card directly triggers playback in the Gadget UI when the user clicks Play.
 
@@ -3254,6 +3274,112 @@ export async function runAgent(
             `• **Interactive 60fps Playback:** [${siteRes.liveUrl}](${siteRes.liveUrl})\n` +
             `• **Background MP4 Status:** Queued for Host Encode (Job ID: \`${job.id}\`)\n\n` +
             `\`\`\`hyperframes\n${jsonCard}\n\`\`\``;
+
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    generateSpeechAudio: defineTool({
+      name: "generateSpeechAudio",
+      label: "Generate speech audio",
+      description: "Synthesizes spoken audio narration from text using high-quality low-cost neural TTS (Groq or Cloudflare Workers AI) and stores the resulting audio file in edge R2 storage. Returns the public streaming URL to embed directly into HTML5 video compositions as real <audio> elements.",
+      parameters: Type.Object({
+        text: Type.String({description: "The narration text or sentence to synthesize into audio."}),
+        voice: Type.Optional(Type.String({description: "Voice ID/name to use (e.g. 'troy', 'autumn', 'diana', 'hannah'). Defaults to 'troy'."})),
+        filename: Type.Optional(Type.String({description: "Optional slug or filename without extension for the audio file (e.g. 'fluid-scene1-narration')."})),
+      }),
+      execute: async (toolCallId, {text, voice, filename}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+          const cleanText = text.trim();
+          if (!cleanText) {
+            throw new Error("Text is required for speech synthesis.");
+          }
+
+          const voiceName = voice || "troy";
+          const groqApiKey = (hooks as any).getEnv?.()?.GROQ_API_KEY || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
+          let audioBytes: ArrayBuffer | null = null;
+          let ext = "wav";
+          let contentType = "audio/wav";
+          let provider = "groq";
+
+          if (groqApiKey) {
+            try {
+              const groqRes = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${groqApiKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  model: "canopylabs/orpheus-v1-english",
+                  input: cleanText,
+                  voice: voiceName,
+                  response_format: "wav",
+                }),
+              });
+              if (groqRes.ok) {
+                audioBytes = await groqRes.arrayBuffer();
+                ext = "wav";
+                contentType = "audio/wav";
+                provider = "groq";
+              }
+            } catch (e) {
+              // fallback to Cloudflare Workers AI
+            }
+          }
+
+          if (!audioBytes) {
+            const ai = hooks.getClassifierAi();
+            if (ai) {
+              try {
+                const aiRes: any = await (ai as any).run("@cf/myshell/melotts", {
+                  prompt: cleanText,
+                });
+                if (aiRes) {
+                  audioBytes = aiRes instanceof ArrayBuffer ? aiRes : (aiRes.audio ? await new Response(aiRes.audio).arrayBuffer() : null);
+                  ext = "wav";
+                  contentType = "audio/wav";
+                  provider = "workers-ai";
+                }
+              } catch (e) {
+                // fall through
+              }
+            }
+          }
+
+          if (!audioBytes) {
+            throw new Error("TTS generation failed across both Groq and Cloudflare Workers AI backends.");
+          }
+
+          let baseName = filename;
+          if (!baseName) {
+            let hash = 0;
+            for (let i = 0; i < cleanText.length; i++) {
+              hash = ((hash << 5) - hash) + cleanText.charCodeAt(i);
+              hash |= 0;
+            }
+            baseName = `tts-${Math.abs(hash).toString(36)}`;
+          }
+          const safeName = baseName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+          const targetFile = `${safeName}.${ext}`;
+
+          await bucket.put(`hf-videos/${targetFile}`, audioBytes, {
+            httpMetadata: { contentType },
+          });
+
+          const audioUrl = `https://voltrix.stream/api/hf-videos/${targetFile}`;
+          const formatted = `🎙️ **Speech Audio Generated Successfully!**\n\n` +
+            `• **Audio URL:** [${audioUrl}](${audioUrl})\n` +
+            `• **Provider:** ${provider}\n` +
+            `• **HTML5 Embed:** \`<audio src="${audioUrl}" preload="auto"></audio>\``;
 
           return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
         } catch (error) {

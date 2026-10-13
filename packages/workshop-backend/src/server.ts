@@ -1822,28 +1822,36 @@ export default {
       }
     }
 
-    // ── HyperFrames Video Serving ──
-    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload")) {
+    // ── HyperFrames Video & Audio Serving ──
+    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload" || url.pathname === "/api/tts/generate")) {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Range",
+          "Access-Control-Allow-Headers": "Content-Type, Range, Authorization",
         },
       });
     }
 
-    // GET /api/hf-videos/:name  — serves an MP4 stored in R2 under the key `hf-videos/<name>`
+    // GET /api/hf-videos/:name  — serves an MP4 or audio stored in R2 under `hf-videos/<name>`
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/api/hf-videos/")) {
       const name = url.pathname.slice("/api/hf-videos/".length);
-      if (!name || name.includes("..") || !name.endsWith(".mp4")) {
+      if (!name || name.includes("..")) {
         return new Response("Not Found", { status: 404 });
       }
+      let contentType = "application/octet-stream";
+      if (name.endsWith(".mp4")) contentType = "video/mp4";
+      else if (name.endsWith(".mp3")) contentType = "audio/mpeg";
+      else if (name.endsWith(".wav")) contentType = "audio/wav";
+      else if (name.endsWith(".webm")) contentType = "video/webm";
+      else if (name.endsWith(".ogg")) contentType = "audio/ogg";
+      else if (name.endsWith(".m4a")) contentType = "audio/mp4";
+
       const obj = await env.BLUEPRINT_CONTENT.get(`hf-videos/${name}`);
       if (!obj) return new Response("Not Found", { status: 404 });
       return new Response(req.method === "HEAD" ? null : obj.body, {
         headers: {
-          "Content-Type": "video/mp4",
+          "Content-Type": contentType,
           "Cache-Control": "public, max-age=86400",
           "Accept-Ranges": "bytes",
           "Access-Control-Allow-Origin": "*",
@@ -1856,11 +1864,16 @@ export default {
       const form = await req.formData();
       const name = String(form.get("name") ?? "");
       const file = form.get("file") as File | null;
-      if (!name || !name.endsWith(".mp4") || !file) {
+      if (!name || file === null) {
         return new Response("Bad Request", { status: 400 });
       }
+      let contentType = "application/octet-stream";
+      if (name.endsWith(".mp4")) contentType = "video/mp4";
+      else if (name.endsWith(".mp3")) contentType = "audio/mpeg";
+      else if (name.endsWith(".wav")) contentType = "audio/wav";
+
       await env.BLUEPRINT_CONTENT.put(`hf-videos/${name}`, file.stream(), {
-        httpMetadata: { contentType: "video/mp4" },
+        httpMetadata: { contentType },
       });
       return new Response(JSON.stringify({ ok: true, url: `/api/hf-videos/${name}` }), {
         headers: {
@@ -1868,6 +1881,106 @@ export default {
           "Access-Control-Allow-Origin": "*",
         },
       });
+    }
+
+    // POST /api/tts/generate — Text-to-Speech synthesis via Groq or Cloudflare Workers AI
+    if (req.method === "POST" && url.pathname === "/api/tts/generate") {
+      try {
+        const body = (await req.json()) as { text?: string; voice?: string; model?: string; apiKey?: string };
+        const text = (body.text || "").trim();
+        if (!text) {
+          return new Response(JSON.stringify({ ok: false, error: "text is required" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const voice = body.voice || "troy";
+        const groqApiKey = body.apiKey || (env as any).GROQ_API_KEY || "";
+        let audioBytes: ArrayBuffer | null = null;
+        let ext = "wav";
+        let contentType = "audio/wav";
+        let provider = "groq";
+
+        if (groqApiKey) {
+          try {
+            const groqRes = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${groqApiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: body.model || "canopylabs/orpheus-v1-english",
+                voice,
+                input: text,
+                response_format: "wav",
+              }),
+            });
+            if (groqRes.ok) {
+              audioBytes = await groqRes.arrayBuffer();
+            } else {
+              const errText = await groqRes.text();
+              console.warn("Groq TTS returned non-200:", errText);
+            }
+          } catch (e: any) {
+            console.warn("Groq TTS failed:", e.message);
+          }
+        }
+
+        // Fallback to Cloudflare Workers AI if Groq fails or terms pending
+        if (!audioBytes && env.WORKERS_AI) {
+          try {
+            const aiRes: any = await (env.WORKERS_AI as any).run("@cf/myshell/melotts", {
+              prompt: text,
+            });
+            if (aiRes) {
+              provider = "workers-ai";
+              ext = "wav";
+              contentType = "audio/wav";
+              if (aiRes instanceof ArrayBuffer) {
+                audioBytes = aiRes;
+              } else if (aiRes.audio) {
+                audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer;
+              }
+            }
+          } catch (e: any) {
+            console.warn("Workers AI TTS failed:", e.message);
+          }
+        }
+
+        if (!audioBytes) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "Cloud TTS service requires model terms approval or key. Fall back to client window.speechSynthesis.",
+          }), {
+            status: 503,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+
+        const textHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text + voice))))
+          .map(b => b.toString(16).padStart(2, "0")).slice(0, 10).join("");
+        const fileName = `tts-${textHash}.${ext}`;
+
+        await env.BLUEPRINT_CONTENT.put(`hf-videos/${fileName}`, audioBytes, {
+          httpMetadata: { contentType },
+        });
+
+        return new Response(JSON.stringify({
+          ok: true,
+          provider,
+          url: `/api/hf-videos/${fileName}`,
+          fullUrl: `https://voltrix.stream/api/hf-videos/${fileName}`,
+        }), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ ok: false, error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      }
     }
 
     // ── TEMP: Admin endpoint to force Google reconnect with full scopes ──
