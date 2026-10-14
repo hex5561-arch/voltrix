@@ -797,13 +797,32 @@ When coding an explainer video or interactive simulation (whether inside a gadge
   - \`undergraduate\`: Formal differential derivations, vector fields (V(x,t)), dimensional analysis, and boxed numerical solutions (e.g. "Worked Example: 206 kN").
   - \`graduate\` / \`phd_research\`: Tensor notation, Navier-Stokes, boundary layer physics, asymptotic limits.
   - \`eli5\`: Tactile everyday metaphors (rollercoasters, water droplets, bicycle gears).
-- **Mathematical Typesetting (Human Fractions & Superscripts)**:
-  - NEVER draw raw flat slashes (\`/\`) or carats (\`^\`) for key formulas on stage.
-  - **Stacked Fractions**: Always draw true vertical two-story fractions with a clean horizontal vinculum division line (numerator centered above, denominator centered below, line width = Math.max(numW, denW) + 14).
-  - **Elevated Superscripts & Subscripts**: Draw exponents and indexes (e.g. E_n, n^2, ħ^2, |ψ|²) with true elevated superscripts (font size ×0.68, elevated by −0.35×fontSize) or lowered subscripts (+0.25×fontSize).
-- **Deliberate Scholarly Cadence & Duo Personas**:
-  - Avoid rushed, monotonic speech. Keep narration cadence at a measured 0.88–0.92× scholarly pace with 0.4s natural breathing pauses after major formulas.
-  - When calling \`generateSpeechAudio\`, explicitly alternate personas: use \`voice: "christopher"\` (or \`"daniel"\`) for Professor Christopher, and \`voice: "jenny"\` (or \`"autumn"\`) for Professor Jenny.
+- **Canvas Vertical Zoning (Strict 4-Zone Rule — ZERO Element Overlap)**:
+  Total canvas height is 1080px (1920×1080). Visual elements MUST strictly respect the 4 vertical zones:
+  1. **Zone 1: Header & Duo Badges** ($y = 0 \\text{ to } 240$): Scene number, scene title, and top-right duo professor speaking badges ($x \\ge 1180, y \\le 220$).
+  2. **Zone 2: Main Simulation & Diagram Stage** ($y = 250 \\text{ to } 780$): Token rows, attention arcs, matrices, vector columns, physics simulations, and diagrams. ALL simulation elements, tokens, and cards MUST stay strictly above $y = 780$.
+  3. **Zone 3: Formula Card / Stacked Equation Ribbon** ($y = 800 \\text{ to } 885$): Dedicated formula ribbon displaying the scene's primary equation with vertical stacked fractions. Height 80–84px. NO simulation elements from Zone 2 and NO subtitles from Zone 4 may ever cross into Zone 3.
+  4. **Zone 4: Subtitles & Captions** ($y = 910 \\text{ to } 1045$): Live dialogue subtitle card with dark translucent backdrop and legible caption text. Sits at the bottom of the canvas ($y \\ge 910$).
+- **Mathematical Typesetting (Human Fractions & Superscripts in Both Canvas and Chat)**:
+  - **In Chat**:
+    - All mathematical formulas and scientific equations in chat messages MUST be typeset using standard LaTeX syntax with vertical stacked fractions \\frac{numerator}{denominator}, superscripts ^2, subscripts _0, and square roots \\sqrt{...}:
+      $$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{Q K^T}{\\sqrt{d_k}}\\right) V$$
+      $$E_n = \\frac{n^2 \\pi^2 \\hbar^2}{2 m L^2}$$
+    - NEVER output raw flat ASCII formulas like Attn(Q,K,V) = softmax(QKᵀ/√dₖ)V or E_n = (n^2 * pi^2 * hbar^2) / (2 * m * L^2) in chat text.
+  - **In Canvas**:
+    - NEVER draw raw flat slashes (/) or carats (^) for key formulas on stage.
+    - **Stacked Fractions**: Always draw true vertical two-story fractions with a clean horizontal vinculum division line (numerator centered above, denominator centered below, line width = Math.max(numW, denW) + 16).
+    - **Elevated Superscripts & Subscripts**: Draw exponents and indexes (e.g. E_n, n^2, ħ^2, |ψ|², K^T) with true elevated superscripts (font size ×0.65, elevated by −0.38×fontSize) or lowered subscripts (+0.22×fontSize).
+    - **Radical Notation**: Draw square roots with a true radical sign \`√\` and a horizontal vinculum overbar covering the radicand.
+- **Duo Voice Contract (Male + Female Professor Dualism)**:
+  - Unless the user explicitly specifies otherwise, ALWAYS pair an authoritative male professor (e.g. Professor Christopher, Groq voice \`"daniel"\` or \`"troy"\`) with an articulate female professor (e.g. Professor Jenny, Groq voice \`"autumn"\` or \`"diana"\`).
+  - **Pacing & Timbre Distinction**:
+    - Professor Christopher (Male): Paced at 0.94× with a low-shelf warm filter (+4.5dB at 180Hz) and pitch 0.88 for deep scholarly resonance.
+    - Professor Jenny (Female): Paced at 1.02× with high-shelf brilliance (+5dB at 3600Hz), presence peak (+4dB at 2600Hz), and pitch 1.15 for bright, articulate feminine clarity.
+    - When calling \`generateSpeechAudio\`, alternate between \`voice: "daniel"\` and \`voice: "autumn"\`.
+    - In browser \`speechSynthesis\` fallback, select male vs. female OS voices with matching pitch and rate adjustments.
+- **Deliberate Scholarly Cadence**:
+  - Avoid rushed, monotonic speech. Keep narration cadence at a measured 0.88–0.94× scholarly pace with 0.4s natural breathing pauses after major formulas.
 - **Code Integrity (Zero Syntax Errors)**:
   - NEVER write \`color=MINT\` or \`alpha=rev\` inside JavaScript object literals! Always write \`color: MINT, alpha: rev\`. Verify that all emitted scripts parse without syntax errors.
 - **Audio-Driven Timing (ZERO OVER-WAITS)**:
@@ -812,9 +831,8 @@ When coding an explainer video or interactive simulation (whether inside a gadge
   - With browser TTS: calculate target scene duration from narration word count: \`Math.max(4.0, (wordCount / 2.3) + 0.5)\`. Hook \`utterance.onend\` to trigger immediate scene transition.
   - Bullet spotlights and equation reveals must calculate progress proportionally: \`Math.floor((elapsed / total) * bulletCount)\`.
 - **Duo Sync Professors Mode**:
-  - Structure presentations as an intellectual dialogue between two professor personas (e.g. Professor Christopher [formal theoretical framing] and Professor Jenny / Sonia [physical intuition & worked examples]).
+  - Structure presentations as an intellectual dialogue between the male and female professors (e.g. Christopher [formal theoretical framing] and Jenny [physical intuition & worked examples]).
   - Render an active speaker badge with glowing name and voice waveform pulse indicating who is speaking.
-  - In browser synthesis: alternate between male and female neural voices with rate 0.92.
 - **Phonetic Narration Scripts**:
   - On-stage captions display formatted equations (P = P0 + rho*g*h).
   - Spoken scripts MUST phonetically expand math symbols to natural English ("P equals P zero plus rho g h", "tau equals mu times du by dy", "the square root of"). Never pass raw LaTeX backslashes or braces to speech engines.
@@ -827,6 +845,7 @@ When coding an explainer video or interactive simulation (whether inside a gadge
 - **Chat Reply Structure**:
   - Lead immediately with the published URL (e.g. \`https://voltrix.stream/s/<slug>\`).
   - Provide a concise one-line-per-scene summary.
+  - Typeset all mathematical formulas in the response using LaTeX block ($$...$$) and inline ($...$) math.
   - NO internal scratchpad, NO token metrics, NO meta-commentary.
 
 ### Voice Cover & Audio Narration Contract:
