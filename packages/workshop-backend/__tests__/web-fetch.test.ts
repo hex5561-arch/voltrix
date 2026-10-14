@@ -12,7 +12,12 @@ import { AiGatewayConfig } from "../src/ai-gateway.js";
 // in webFetch, so the stub mirrors only that branch.
 type ToMarkdownStub = ReturnType<typeof vi.fn>;
 
-function makeEnv(toMarkdown?: ToMarkdownStub, gateway: AiGatewayConfig | null = null): WebFetchEnv {
+function makeEnv(
+  toMarkdown?: ToMarkdownStub,
+  gateway: AiGatewayConfig | null = null,
+  blueprintContent: R2Bucket | null = null,
+  publicBaseUrl?: string,
+): WebFetchEnv {
   const stub =
     toMarkdown ??
     vi.fn(async (doc: { name: string; blob: Blob }) => ({
@@ -29,6 +34,8 @@ function makeEnv(toMarkdown?: ToMarkdownStub, gateway: AiGatewayConfig | null = 
   return {
     ai: { toMarkdown: stub } as unknown as Ai,
     gateway,
+    blueprintContent,
+    publicBaseUrl,
   };
 }
 
@@ -313,5 +320,70 @@ describe("formatWebFetchResult", () => {
       truncated: false,
     });
     expect(out).toContain("content-type: (unspecified)");
+  });
+});
+
+describe("same-zone edge site resolution", () => {
+  it("resolves published site HTML directly from R2 without network fetch", async () => {
+    const fakeHtml = "<!DOCTYPE html><html><body><h1>Neural Networks</h1></body></html>";
+    const mockR2 = {
+      get: vi.fn(async (key: string) => {
+        if (key === "sites/neural-networks-explainer.html") {
+          return {
+            text: async () => fakeHtml,
+          };
+        }
+        return null;
+      }),
+    } as unknown as R2Bucket;
+
+    const env = makeEnv(undefined, null, mockR2, "https://voltrix.stream");
+    const result = await webFetch(
+      env,
+      { url: "https://voltrix.stream/s/neural-networks-explainer" },
+      new AbortController().signal,
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.finalUrl).toBe("https://voltrix.stream/s/neural-networks-explainer");
+    expect(mockR2.get).toHaveBeenCalledWith("sites/neural-networks-explainer.html");
+  });
+
+  it("returns 404 when site slug is not found in R2", async () => {
+    const mockR2 = {
+      get: vi.fn(async () => null),
+    } as unknown as R2Bucket;
+
+    const env = makeEnv(undefined, null, mockR2, "https://voltrix.stream");
+    const result = await webFetch(
+      env,
+      { url: "https://voltrix.stream/s/nonexistent-site" },
+      new AbortController().signal,
+    );
+
+    expect(result.status).toBe(404);
+    expect(result.body).toContain("not published");
+  });
+
+  it("resolves media streams under /api/hf-videos/ from R2", async () => {
+    const mockR2 = {
+      get: vi.fn(async (key: string) => {
+        if (key === "hf-videos/explainer.mp4") {
+          return { size: 1048576 };
+        }
+        return null;
+      }),
+    } as unknown as R2Bucket;
+
+    const env = makeEnv(undefined, null, mockR2, "https://voltrix.stream");
+    const result = await webFetch(
+      env,
+      { url: "https://voltrix.stream/api/hf-videos/explainer.mp4" },
+      new AbortController().signal,
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.contentType).toBe("video/mp4");
+    expect(result.body).toContain("1048576 bytes");
   });
 });

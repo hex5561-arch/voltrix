@@ -19,6 +19,7 @@
 // only takes effect in production -- an acceptable tradeoff for dev.
 
 import type { AiGatewayConfig } from "./ai-gateway";
+import { getSiteFromStorage } from "./sites.js";
 
 /**
  * The bits of the Workers AI binding and gateway config that `webFetch` needs. Kept narrow
@@ -27,6 +28,8 @@ import type { AiGatewayConfig } from "./ai-gateway";
 export type WebFetchEnv = {
   ai: Ai;
   gateway: AiGatewayConfig | null;
+  blueprintContent?: R2Bucket | null;
+  publicBaseUrl?: string;
 };
 
 export type WebFetchInput = {
@@ -270,6 +273,88 @@ export async function webFetch(
   input: WebFetchInput,
 ): Promise<WebFetchResult> {
   const parsed = validateWebFetchUrl(input.url);
+
+  // Handle same-zone loopback fetching (e.g. https://voltrix.stream/s/<slug> or /api/hf-videos/<name>).
+  // In Cloudflare Workers, a fetch() subrequest to the worker's own zone bypasses the worker entrypoint
+  // and targets the origin server directly. When no origin server exists behind the zone, Cloudflare
+  // returns "500 Internal Server Error (no body)". To verify published sites accurately, we serve
+  // same-zone sites and media directly from edge storage (R2).
+  const isSameZone = parsed.hostname === "voltrix.stream" ||
+                     parsed.hostname.endsWith(".voltrix.stream") ||
+                     (env.publicBaseUrl ? parsed.hostname === new URL(env.publicBaseUrl).hostname : false);
+
+  if (isSameZone && env.blueprintContent) {
+    if (parsed.pathname.startsWith("/s/") || parsed.pathname === "/s") {
+      const rawSlug = parsed.pathname.slice("/s/".length).replace(/\.html$/i, "").trim();
+      if (!rawSlug) {
+        return {
+          status: 404,
+          finalUrl: parsed.toString(),
+          contentType: "text/html; charset=utf-8",
+          body: "404 Not Found: missing site slug",
+          truncated: false,
+        };
+      }
+      const site = await getSiteFromStorage(env.blueprintContent, rawSlug);
+      if (!site) {
+        return {
+          status: 404,
+          finalUrl: parsed.toString(),
+          contentType: "text/html; charset=utf-8",
+          body: `404 Not Found: site "${rawSlug}" is not published`,
+          truncated: false,
+        };
+      }
+
+      const contentType = "text/html; charset=utf-8";
+      let body: string;
+      if (input.raw) {
+        body = site.content;
+      } else {
+        try {
+          const bytes = new TextEncoder().encode(site.content);
+          const md = await convertToMarkdown(env, bytes, contentType, parsed);
+          body = md !== null ? md : site.content;
+        } catch {
+          body = site.content;
+        }
+      }
+
+      return {
+        status: 200,
+        finalUrl: parsed.toString(),
+        contentType,
+        body,
+        truncated: false,
+      };
+    }
+
+    if (parsed.pathname.startsWith("/api/hf-videos/")) {
+      const name = parsed.pathname.slice("/api/hf-videos/".length).trim();
+      const obj = await env.blueprintContent.get(`hf-videos/${name}`);
+      if (!obj) {
+        return {
+          status: 404,
+          finalUrl: parsed.toString(),
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Media file not found", name }),
+          truncated: false,
+        };
+      }
+      let contentType = "application/octet-stream";
+      if (name.endsWith(".mp4")) contentType = "video/mp4";
+      else if (name.endsWith(".mp3")) contentType = "audio/mpeg";
+      else if (name.endsWith(".wav")) contentType = "audio/wav";
+
+      return {
+        status: 200,
+        finalUrl: parsed.toString(),
+        contentType,
+        body: `[Binary media stream: ${name}, size: ${obj.size} bytes]`,
+        truncated: false,
+      };
+    }
+  }
 
   const requestedMax = input.maxBytes ?? DEFAULT_MAX_BYTES;
   const maxBytes = Math.min(

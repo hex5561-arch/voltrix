@@ -3031,6 +3031,8 @@ class OverseerImpl implements AgentHooks {
     return {
       ai: this.env.WORKERS_AI,
       gateway: getAiGatewayConfig(this.env),
+      blueprintContent: this.env.BLUEPRINT_CONTENT ?? null,
+      publicBaseUrl: this.env.PUBLIC_BASE_URL || "https://voltrix.stream",
     };
   }
 
