@@ -2334,6 +2334,13 @@ export default {
             university: "University of Nairobi",
             degree: "B.Sc. Computer Science",
           },
+          reviewer: {
+            username: "reviewer",
+            name: "Google Verification Reviewer",
+            discipline: "computer_science",
+            university: "Google Verification Review Team",
+            degree: "OAuth Compliance Auditor",
+          },
         };
         const selected = demoProfiles[id] || demoProfiles.elena;
         const userId = ctx.exports.UserDurableObject.idFromName(selected.username);
