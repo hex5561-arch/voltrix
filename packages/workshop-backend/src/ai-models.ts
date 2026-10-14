@@ -258,9 +258,9 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         api: "openai-completions",
         provider: "groq",
         baseUrl: `${gatewayUrl}/groq/openai/v1`,
-        reasoning: catalog?.reasoning ?? true,
+        reasoning: catalog?.reasoning ?? false,
         input: catalog?.input ?? ["text"],
-        cost: catalog?.cost ?? ZERO_COST,
+        cost: catalog?.cost ?? GROQ_MODEL_COSTS[config.model] ?? ZERO_COST,
         ...window,
         thinkingLevelMap: catalog?.thinkingLevelMap,
         compat: catalog?.compat,
@@ -554,6 +554,19 @@ const THEHIVE_MODEL_COSTS: Record<string, ModelCost> = {
   "deepseek-ai/deepseek-v4.1-flash": { input: 0.15e-6,  output: 0.60e-6, cacheRead: 0.003e-6, cacheWrite: 0 },
 };
 
+// Groq developer-plan pricing per 1M tokens (Oct 2026).
+// Enterprise models (Llama 3.1 8B, Llama 3.3 70B, MiniMax M2.7) are contact-sales; zero until negotiated.
+// GPT OSS 20B: $0.075 input / $0.30 output. GPT OSS 120B: $0.15 input / $0.60 output.
+// Qwen 3.8 27B: $0.80 input / $4.00 output.
+const GROQ_MODEL_COSTS: Record<string, ModelCost> = {
+  "llama-3.1-8b-instant":            { input: 0,        output: 0,        cacheRead: 0, cacheWrite: 0 },
+  "llama-3.3-70b-versatile":         { input: 0,        output: 0,        cacheRead: 0, cacheWrite: 0 },
+  "openai/gpt-oss-20b":              { input: 0.075e-6, output: 0.30e-6,  cacheRead: 0, cacheWrite: 0 },
+  "openai/gpt-oss-120b":             { input: 0.15e-6,  output: 0.60e-6,  cacheRead: 0, cacheWrite: 0 },
+  "qwen/qwen3.8-27b":                { input: 0.80e-6,  output: 4.00e-6,  cacheRead: 0, cacheWrite: 0 },
+  "minimaxai/minimax-m2.7":          { input: 0,        output: 0,        cacheRead: 0, cacheWrite: 0 },
+};
+
 // Direct TheHive access — bypasses the AI Gateway entirely.
 // CF's Gateway custom-provider response validator rejects TheHive's non-standard fields
 // (reasoning_content, reasoning, content:null, extra usage keys), so we call the provider
@@ -814,21 +827,25 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
       // unusable — see gatewayNativeModel). Without a platform gateway, the config's own API
       // token is used (BYOK-style).
       return getModelViaThehiveDirect(config, undefined, config.apiToken);
-    case "groq":
+    case "groq": {
+      const groqCatalog = SUGGESTED_MODELS["groq"]?.[config.model];
       return makeHandle({
         model: {
           id: config.model,
-          name: config.model,
+          name: groqCatalog?.name ?? config.model,
           api: "openai-completions",
           provider: "groq",
           baseUrl: config.apiUrl ?? "https://api.groq.com/openai/v1",
-          reasoning: true,
+          reasoning: false,
           input: ["text"],
-          cost: ZERO_COST,
+          cost: GROQ_MODEL_COSTS[config.model] ?? ZERO_COST,
+          contextWindow: groqCatalog?.contextWindow ?? 131072,
+          maxTokens: groqCatalog?.outputLimit ?? 32768,
         },
         apiKey: config.apiToken,
         sessionAffinity,
       });
+    }
     default:
       config.provider satisfies never;
       throw new Error(`Unknown provider "${config.provider}".`);

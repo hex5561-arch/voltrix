@@ -1319,9 +1319,14 @@ export const SUGGESTED_MODELS: Record<
     "zai-org/glm-5.3-flash": {name: "GLM 5.3 Flash (TheHive) — text, image, video", contextWindow: 1_000_000},
   },
   "groq": {
-    "llama-3.3-70b-versatile": {name: "Llama 3.3 70B Versatile (Groq)", contextWindow: 131072},
-    "qwen/qwen3.8-27b": {name: "Qwen 3.8 27B (Groq)", contextWindow: 131072},
-    "openai/gpt-oss-120b": {name: "GPT OSS 120B (Groq)", contextWindow: 131072},
+    // Groq production models (Oct 2026). Enterprise models (Llama 3.1 8B, Llama 3.3 70B,
+    // MiniMax M2.7) are contact-sales pricing; cost tracking lives in ai-models.ts.
+    "llama-3.1-8b-instant":      {name: "Llama 3.1 8B Instant (Groq)",    contextWindow: 131072},
+    "llama-3.3-70b-versatile":   {name: "Llama 3.3 70B Versatile (Groq)", contextWindow: 131072},
+    "openai/gpt-oss-20b":        {name: "GPT OSS 20B (Groq)",             contextWindow: 131072},
+    "openai/gpt-oss-120b":       {name: "GPT OSS 120B (Groq)",            contextWindow: 131072},
+    "qwen/qwen3.8-27b":          {name: "Qwen 3.8 27B (Groq)",            contextWindow: 131072},
+    "minimaxai/minimax-m2.7":    {name: "MiniMax M2.7 (Groq)",            contextWindow: 196608},
   },
   "ollama": {
   },
