@@ -418,6 +418,11 @@ export interface AgentHooks {
   getBlueprintContentBucket(): R2Bucket | null;
 
   /**
+   * Returns the Groq API key for high-definition neural speech synthesis.
+   */
+  getGroqApiKey?(): string;
+
+  /**
    * Queue a "shareDocument" card to be appended to the chat log after the current step.
    */
   proposeDocumentShare(chatId: number, proposal: {
@@ -792,15 +797,24 @@ When coding an explainer video or interactive simulation (whether inside a gadge
   - \`undergraduate\`: Formal differential derivations, vector fields (V(x,t)), dimensional analysis, and boxed numerical solutions (e.g. "Worked Example: 206 kN").
   - \`graduate\` / \`phd_research\`: Tensor notation, Navier-Stokes, boundary layer physics, asymptotic limits.
   - \`eli5\`: Tactile everyday metaphors (rollercoasters, water droplets, bicycle gears).
+- **Mathematical Typesetting (Human Fractions & Superscripts)**:
+  - NEVER draw raw flat slashes (\`/\`) or carats (\`^\`) for key formulas on stage.
+  - **Stacked Fractions**: Always draw true vertical two-story fractions with a clean horizontal vinculum division line (numerator centered above, denominator centered below, line width = Math.max(numW, denW) + 14).
+  - **Elevated Superscripts & Subscripts**: Draw exponents and indexes (e.g. E_n, n^2, ħ^2, |ψ|²) with true elevated superscripts (font size ×0.68, elevated by −0.35×fontSize) or lowered subscripts (+0.25×fontSize).
+- **Deliberate Scholarly Cadence & Duo Personas**:
+  - Avoid rushed, monotonic speech. Keep narration cadence at a measured 0.88–0.92× scholarly pace with 0.4s natural breathing pauses after major formulas.
+  - When calling \`generateSpeechAudio\`, explicitly alternate personas: use \`voice: "christopher"\` (or \`"daniel"\`) for Professor Christopher, and \`voice: "jenny"\` (or \`"autumn"\`) for Professor Jenny.
+- **Code Integrity (Zero Syntax Errors)**:
+  - NEVER write \`color=MINT\` or \`alpha=rev\` inside JavaScript object literals! Always write \`color: MINT, alpha: rev\`. Verify that all emitted scripts parse without syntax errors.
 - **Audio-Driven Timing (ZERO OVER-WAITS)**:
   - NEVER hardcode fixed scene durations (\`SCENE = 30\`). Fixed timers leave 15–20 seconds of dead silence after short audio clips.
   - With audio narration files: set each scene's duration to \`audio.duration + 0.4s\` (rhetorical breath). Hook \`audio.onended\` to instantly advance to the next scene without dead pauses.
   - With browser TTS: calculate target scene duration from narration word count: \`Math.max(4.0, (wordCount / 2.3) + 0.5)\`. Hook \`utterance.onend\` to trigger immediate scene transition.
   - Bullet spotlights and equation reveals must calculate progress proportionally: \`Math.floor((elapsed / total) * bulletCount)\`.
 - **Duo Sync Professors Mode**:
-  - When alternating speakers or dual-perspective dialogue is suitable, support two professor personas (e.g. Professor Christopher [formal theoretical framing] and Professor Jenny / Sonia [physical intuition & worked examples]).
+  - Structure presentations as an intellectual dialogue between two professor personas (e.g. Professor Christopher [formal theoretical framing] and Professor Jenny / Sonia [physical intuition & worked examples]).
   - Render an active speaker badge with glowing name and voice waveform pulse indicating who is speaking.
-  - In browser synthesis: alternate between male and female neural voices.
+  - In browser synthesis: alternate between male and female neural voices with rate 0.92.
 - **Phonetic Narration Scripts**:
   - On-stage captions display formatted equations (P = P0 + rho*g*h).
   - Spoken scripts MUST phonetically expand math symbols to natural English ("P equals P zero plus rho g h", "tau equals mu times du by dy", "the square root of"). Never pass raw LaTeX backslashes or braces to speech engines.
@@ -3323,8 +3337,24 @@ export async function runAgent(
             throw new Error("Text is required for speech synthesis.");
           }
 
-          const voiceName = voice || "autumn";
-          const groqApiKey = (hooks as any).getEnv?.()?.GROQ_API_KEY || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
+          const rawVoice = (voice || "autumn").toLowerCase().trim();
+          const VOICE_MAP: Record<string, string> = {
+            christopher: "daniel",
+            ryan: "troy",
+            guy: "austin",
+            jenny: "autumn",
+            sonia: "diana",
+            aria: "hannah",
+            daniel: "daniel",
+            troy: "troy",
+            austin: "austin",
+            autumn: "autumn",
+            diana: "diana",
+            hannah: "hannah",
+          };
+          const groqVoice = VOICE_MAP[rawVoice] || (rawVoice.includes("jenny") || rawVoice.includes("sonia") || rawVoice.includes("female") ? "autumn" : "daniel");
+
+          const groqApiKey = hooks.getGroqApiKey?.() || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
           let audioBytes: ArrayBuffer | null = null;
           let ext = "mp3";
           let contentType = "audio/mpeg";
@@ -3339,6 +3369,7 @@ export async function runAgent(
 
           if (groqApiKey) {
             try {
+              const pacedInput = cleanText.startsWith("[") ? cleanText : `[calm, clear] ${cleanText}`;
               const groqRes = await fetch(groqUrl, {
                 method: "POST",
                 headers: {
@@ -3347,8 +3378,8 @@ export async function runAgent(
                 },
                 body: JSON.stringify({
                   model: "canopylabs/orpheus-v1-english",
-                  input: cleanText,
-                  voice: voiceName,
+                  input: pacedInput,
+                  voice: groqVoice,
                   response_format: "wav",
                 }),
               });

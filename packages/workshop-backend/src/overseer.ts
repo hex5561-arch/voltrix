@@ -3077,6 +3077,11 @@ class OverseerImpl implements AgentHooks {
     return this.env.BLUEPRINT_CONTENT ?? null;
   }
 
+  // Returns the Groq API key for high-definition neural speech synthesis.
+  getGroqApiKey(): string {
+    return this.env.GROQ_API_KEY || "";
+  }
+
   // Queue a shareDocument card proposal for the current step.
   proposeDocumentShare(chatId: number, proposal: {
     documentKey: string;

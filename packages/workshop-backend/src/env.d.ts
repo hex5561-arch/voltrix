@@ -89,6 +89,7 @@ declare global {
       PESAPAL_CONSUMER_SECRET?: string;
       PESAPAL_ENV?: string;
       PESAPAL_IPN_ID?: string;
+      GROQ_API_KEY?: string;
     }
   }
 }
