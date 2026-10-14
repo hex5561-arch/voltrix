@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react'
 import UserMenu from './UserMenu'
 import TopBarNotice from '../TopBarNotice'
 import SiteLogo from './SiteLogo'
+import VoltrixLogo from './VoltrixLogo'
 import InboxModal from './InboxModal'
 import { InteractiveExamGadget } from './academic/InteractiveExamGadget'
 import { TimetableVelocityWidget } from './academic/TimetableVelocityWidget'
@@ -74,7 +75,7 @@ export default function Header() {
         <div className="flex items-center gap-6">
           <Link to="/" className="flex items-center gap-2">
             <SiteLogo size={22} className="shrink-0">
-              <Hexagon size={22} className="text-kumo-brand" weight="bold" />
+              <VoltrixLogo size={22} className="shrink-0" />
             </SiteLogo>
             <span className="text-base font-semibold tracking-tight text-kumo-default">
               {siteName}

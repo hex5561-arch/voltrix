@@ -26,6 +26,7 @@ import { useDocumentTitle } from './useDocumentTitle'
 import { useConnectionLost } from './RpcContext'
 import OAuthButtons from './components/auth/OAuthButtons'
 import SiteLogo from './components/SiteLogo'
+import VoltrixLogo from './components/VoltrixLogo'
 import { saveStudentProfile } from './services/studentProfile'
 
 export interface LoginPageProps {
@@ -329,9 +330,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <SiteLogo size={34}>
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-kumo-brand shadow-md shadow-kumo-brand/20">
-                <Hexagon size={18} className="text-white" weight="bold" />
-              </div>
+              <VoltrixLogo size={34} />
             </SiteLogo>
             <div className="flex items-center gap-2">
               <span className="font-bold text-base text-kumo-default tracking-tight">{siteName}</span>
@@ -448,9 +447,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
         {/* Branding & Logo */}
         <div className="flex flex-col items-center mb-6 text-center">
           <SiteLogo size={42} className="mb-3">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-kumo-brand shadow-lg shadow-kumo-brand/20 mb-3">
-              <Hexagon size={22} className="text-white" weight="bold" />
-            </div>
+            <VoltrixLogo size={42} className="mb-3" />
           </SiteLogo>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-kumo-default tracking-tight">{siteName}</h1>

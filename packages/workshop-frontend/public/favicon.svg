@@ -1,9 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cloudflare OS">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Voltrix">
+  <defs>
+    <linearGradient id="voltrix-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#00f0ff" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="voltrix-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc" />
+      <stop offset="50%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+    <linearGradient id="voltrix-core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+    <filter id="voltrix-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Obsidian squircle background -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#070913" stroke="#1e2238" stroke-width="1.5" />
+
+  <!-- Ambient background glow -->
+  <circle cx="32" cy="34" r="18" fill="#38bdf8" opacity="0.12" filter="url(#voltrix-glow)" />
+  <circle cx="44" cy="24" r="14" fill="#a855f7" opacity="0.15" filter="url(#voltrix-glow)" />
+
+  <!-- Right Wing (Cosmic Violet / Purple) -->
   <path
-    d="M32 8 52.8 20v24L32 56 11.2 44V20L32 8Z"
-    fill="none"
-    stroke="#ff4801"
-    stroke-width="7"
-    stroke-linejoin="round"
+    d="M32 50 L48 18 C48.5 17 51 17 51.5 18 C52 19 50.5 21 49.5 23 L35 52 C34 54 32 54 31 52 Z"
+    fill="url(#voltrix-purple)"
+    filter="url(#voltrix-glow)"
   />
+
+  <!-- Left Wing (Electric Cyan) -->
+  <path
+    d="M14.5 18 C14 17 16.5 17 17 18 L32 50 C32.5 51 31.5 53 30 51 L13 22 C12 20 13.5 18 14.5 18 Z"
+    fill="url(#voltrix-cyan)"
+    filter="url(#voltrix-glow)"
+  />
+
+  <!-- High-tech angular central facet -->
+  <polygon
+    points="32,24 41,17 32,46 23,17"
+    fill="#0b0f19"
+    opacity="0.9"
+  />
+
+  <!-- Inner Chevron Core -->
+  <path
+    d="M21 20 L32 44 L43 20 L37 20 L32 32 L27 20 Z"
+    fill="url(#voltrix-core)"
+    opacity="0.95"
+  />
+
+  <!-- Nexus energy pulse node -->
+  <circle cx="32" cy="44" r="2.5" fill="#ffffff" filter="url(#voltrix-glow)" />
 </svg>
