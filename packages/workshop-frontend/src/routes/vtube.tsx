@@ -34,6 +34,7 @@ import {
 } from '../services/youtubeService';
 import { YouTubeConnectModal } from '../components/vtube/YouTubeConnectModal';
 import { ACADEMIC_DISCOVERY_CATALOG, AcademicLecture } from '../components/video/YouTubePlayerCard';
+import { useServerConfig } from '../ServerConfigContext';
 
 interface RecommendedLecture extends AcademicLecture {
   recommendationReason?: string;
@@ -47,6 +48,8 @@ export const Route = createFileRoute('/vtube')({
 });
 
 function VTubeDashboard() {
+  const serverConfig = useServerConfig();
+  const googleSyncEnabled = serverConfig?.googleYouTubeSyncEnabled ?? false;
   const [profile, setProfile] = useState<StudentProfile | null>(() => getStudentProfile());
   const [search, setSearch] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -219,18 +222,23 @@ function VTubeDashboard() {
       willLike ? [...prev, videoId] : prev.filter((id) => id !== videoId)
     );
 
-    if (isYouTubeConnected()) {
-      const res = await executeLiveYouTubeLike(videoId, willLike);
-      if (res.requiresAuth) {
+    if (googleSyncEnabled) {
+      if (isYouTubeConnected()) {
+        const res = await executeLiveYouTubeLike(videoId, willLike);
+        if (res.requiresAuth) {
+          setPendingAction({ type: 'like', videoId });
+          setConnectModalOpen(true);
+        } else if (res.message) {
+          setYtFeedback(res.message);
+          setTimeout(() => setYtFeedback(null), 3000);
+        }
+      } else {
         setPendingAction({ type: 'like', videoId });
         setConnectModalOpen(true);
-      } else if (res.message) {
-        setYtFeedback(res.message);
-        setTimeout(() => setYtFeedback(null), 3000);
       }
     } else {
-      setPendingAction({ type: 'like', videoId });
-      setConnectModalOpen(true);
+      setYtFeedback(willLike ? 'Saved to your Voltrix Liked Videos' : 'Removed from your Voltrix Liked Videos');
+      setTimeout(() => setYtFeedback(null), 2500);
     }
   };
 
@@ -245,18 +253,23 @@ function VTubeDashboard() {
     // Refresh feed with new subscribed preference
     loadFeed(weaknesses, updated);
 
-    if (isYouTubeConnected()) {
-      const res = await executeLiveYouTubeSubscribe({ author, videoId, willSubscribe: willSub });
-      if (res.requiresAuth) {
+    if (googleSyncEnabled) {
+      if (isYouTubeConnected()) {
+        const res = await executeLiveYouTubeSubscribe({ author, videoId, willSubscribe: willSub });
+        if (res.requiresAuth) {
+          setPendingAction({ type: 'subscribe', author, videoId });
+          setConnectModalOpen(true);
+        } else if (res.message) {
+          setYtFeedback(res.message);
+          setTimeout(() => setYtFeedback(null), 3000);
+        }
+      } else {
         setPendingAction({ type: 'subscribe', author, videoId });
         setConnectModalOpen(true);
-      } else if (res.message) {
-        setYtFeedback(res.message);
-        setTimeout(() => setYtFeedback(null), 3000);
       }
     } else {
-      setPendingAction({ type: 'subscribe', author, videoId });
-      setConnectModalOpen(true);
+      setYtFeedback(willSub ? `Subscribed to ${author} in Voltrix` : `Unsubscribed from ${author} in Voltrix`);
+      setTimeout(() => setYtFeedback(null), 2500);
     }
   };
 
@@ -303,24 +316,26 @@ function VTubeDashboard() {
             <span className="font-mono text-xs uppercase tracking-wider font-semibold">Academic Stream Layer</span>
           </div>
           <div className="flex items-center gap-2">
-            {isYtConnected ? (
-              <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 font-semibold">
-                <YoutubeLogo size={15} weight="fill" />
-                <span>YouTube Synced</span>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingAction(null);
-                  setConnectModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-red-500/40 bg-red-600/10 text-red-400 hover:bg-red-600/20 cursor-pointer transition-colors"
-                title="Connect your Google account to sync likes & subscriptions directly to YouTube"
-              >
-                <YoutubeLogo size={15} weight="fill" />
-                <span>Connect YouTube</span>
-              </button>
+            {googleSyncEnabled && (
+              isYtConnected ? (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 font-semibold">
+                  <YoutubeLogo size={15} weight="fill" />
+                  <span>YouTube Synced</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingAction(null);
+                    setConnectModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-red-500/40 bg-red-600/10 text-red-400 hover:bg-red-600/20 cursor-pointer transition-colors"
+                  title="Connect your Google account to sync likes & subscriptions directly to YouTube"
+                >
+                  <YoutubeLogo size={15} weight="fill" />
+                  <span>Connect YouTube</span>
+                </button>
+              )
             )}
             <button
               type="button"

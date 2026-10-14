@@ -52,6 +52,7 @@ export async function getServerConfig(env: Cloudflare.Env): Promise<ServerConfig
     passwordAuthEnabled: isPasswordAuthEnabled(env),
     cloudflareLimitsEnabled: isCloudflareLimitsEnabled(env),
     signupsEnabled: config.signupsEnabled,
+    googleYouTubeSyncEnabled: config.googleYouTubeSyncEnabled ?? false,
     siteName: config.siteName,
     siteLogo: siteLogoImage(config.siteLogoConfigured),
     announcement: config.announcement,

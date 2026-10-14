@@ -19,6 +19,8 @@ export type AdminConfig = {
    * env-driven (see auth/config.ts).
    */
   signupsEnabled: boolean;
+  /** Whether live Google YouTube sync (likes & subscriptions) is active deployment-wide (default false). */
+  googleYouTubeSyncEnabled: boolean;
   /**
    * Site name shown next to the top-bar logo, or "" to use DEFAULT_SITE_NAME. Resolve it for
    * display with `resolveSiteName()`.
@@ -97,6 +99,7 @@ export type FormatCuration = {
 
 export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   signupsEnabled: true,
+  googleYouTubeSyncEnabled: false,
   siteName: "",
   siteLogoConfigured: false,
   instanceInstructions: "",
@@ -335,6 +338,7 @@ export function parseAdminConfig(raw: string | null): AdminConfig {
     }
     return {
       signupsEnabled: typeof p.signupsEnabled === "boolean" ? p.signupsEnabled : true,
+      googleYouTubeSyncEnabled: typeof p.googleYouTubeSyncEnabled === "boolean" ? p.googleYouTubeSyncEnabled : false,
       siteName: typeof p.siteName === "string" ? p.siteName : "",
       siteLogoConfigured: typeof p.siteLogoConfigured === "boolean" ? p.siteLogoConfigured : false,
       instanceInstructions: typeof p.instanceInstructions === "string" ? p.instanceInstructions : "",

@@ -6,6 +6,9 @@
 
 const DEFAULT_SANDBOX_KEY = "TDpigBOOhs+zAl8cwH2Fl82jJGyD8xev";
 const DEFAULT_SANDBOX_SECRET = "1KpqkfsMaihIcOlhnBo/gBZ5smw=";
+const DEFAULT_LIVE_KEY = "07jhBEpo2McFLwab/ZItzDU+7vktjazS";
+const DEFAULT_LIVE_SECRET = "wzO4328MhAN82hfNY3xDCj5L+zg=";
+const DEFAULT_LIVE_IPN_ID = "e08ffc3a-5dc1-48c9-843b-d9da2a73fff3";
 const SANDBOX_BASE = "https://cybqa.pesapal.com/pesapalv3";
 const LIVE_BASE = "https://pay.pesapal.com/v3";
 
@@ -61,10 +64,16 @@ export interface PesapalTransactionStatus {
 }
 
 export function getPesapalConfig(env?: Cloudflare.Env): PesapalConfig {
-  const envMode = ((env as any)?.PESAPAL_ENV || "sandbox").toLowerCase();
+  const envMode = ((env as any)?.PESAPAL_ENV || "live").toLowerCase();
   const isLive = envMode === "live" || envMode === "production";
-  const key = (env as any)?.PESAPAL_CONSUMER_KEY || DEFAULT_SANDBOX_KEY;
-  const secret = (env as any)?.PESAPAL_CONSUMER_SECRET || DEFAULT_SANDBOX_SECRET;
+  const key =
+    (env as any)?.PESAPAL_CONSUMER_KEY ||
+    (env as any)?.consumer_key ||
+    (isLive ? DEFAULT_LIVE_KEY : DEFAULT_SANDBOX_KEY);
+  const secret =
+    (env as any)?.PESAPAL_CONSUMER_SECRET ||
+    (env as any)?.secret_key ||
+    (isLive ? DEFAULT_LIVE_SECRET : DEFAULT_SANDBOX_SECRET);
   const baseUrl = isLive ? LIVE_BASE : SANDBOX_BASE;
   return { key, secret, baseUrl, envMode };
 }
@@ -160,6 +169,12 @@ export async function getPesapalNotificationId(
     return envIpn;
   }
 
+  const cfg = getPesapalConfig(env);
+  if (cfg.baseUrl === LIVE_BASE) {
+    inMemoryIpnId = DEFAULT_LIVE_IPN_ID;
+    return DEFAULT_LIVE_IPN_ID;
+  }
+
   try {
     const cachedKv = (await env.BLUEPRINTS.get("sys:pesapal_ipn", "json")) as {
       notification_id?: string;
@@ -170,7 +185,6 @@ export async function getPesapalNotificationId(
     }
   } catch {}
 
-  const cfg = getPesapalConfig(env);
   const ipnUrl = `${callbackBase.replace(/\/+$/, "")}/api/payments/ipn`;
 
   const res = await fetch(`${cfg.baseUrl}/api/URLSetup/RegisterIPN`, {
@@ -288,7 +302,18 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
       status: "PENDING",
     };
   } catch (err: any) {
-    // If running in dev/offline or sandbox network issues, provide simulation fallback
+    const isLive = cfg.envMode === "live" || cfg.envMode === "production";
+    const allowSim =
+      (env as any)?.PESAPAL_SIMULATE === "true" ||
+      cfg.envMode === "sandbox" ||
+      cfg.envMode === "test";
+
+    if (!allowSim || isLive) {
+      console.error("[Pesapal] Live order submission failed:", err?.message);
+      throw err;
+    }
+
+    // If running in dev/offline or sandbox simulation mode, provide fallback
     console.warn("[Pesapal] Real submit failed, using simulation mode:", err?.message);
     const mockTrackId = `trk_sim_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     return {

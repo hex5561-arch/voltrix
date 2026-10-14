@@ -312,6 +312,7 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
     let config = this.#config();
     return {
       signupsEnabled: config.signupsEnabled,
+      googleYouTubeSyncEnabled: Boolean(config.googleYouTubeSyncEnabled),
       siteName: config.siteName,
       siteLogo: siteLogoImage(config.siteLogoConfigured),
       instanceInstructions: config.instanceInstructions,
@@ -638,6 +639,10 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
 
   async setSignupsEnabled(enabled: boolean): Promise<void> {
     await this.admin.updateAdminConfig({ signupsEnabled: enabled });
+  }
+
+  async setGoogleYouTubeSyncEnabled(enabled: boolean): Promise<void> {
+    await this.admin.updateAdminConfig({ googleYouTubeSyncEnabled: Boolean(enabled) });
   }
 
   async setSiteName(name: string): Promise<void> {

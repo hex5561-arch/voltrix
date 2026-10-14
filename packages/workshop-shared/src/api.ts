@@ -888,6 +888,8 @@ export const MAX_SITE_LOGO_DIMENSION = 512;
 export type AdminSettingsView = {
   /** Whether new account signups are allowed. */
   signupsEnabled: boolean;
+  /** Whether live Google YouTube sync (likes & subscriptions) is active deployment-wide. */
+  googleYouTubeSyncEnabled: boolean;
   /** Site name shown next to the top-bar logo ("" falls back to DEFAULT_SITE_NAME). */
   siteName: string;
   /** Custom deployment logo, or undefined to use the default Cloudflare OS mark. */
@@ -975,6 +977,9 @@ export interface AdminApi {
 
   /** Enable or disable new account signups. Existing users can still log in while signups are closed. */
   setSignupsEnabled(enabled: boolean): Promise<void>;
+
+  /** Enable or disable live Google YouTube sync (likes & subscriptions). */
+  setGoogleYouTubeSyncEnabled(enabled: boolean): Promise<void>;
 
   /**
    * Set the site name shown next to the top-bar logo. Pass "" to reset to DEFAULT_SITE_NAME.
@@ -1179,6 +1184,9 @@ export type ServerConfig = {
    * hides the create-account form when false.
    */
   signupsEnabled: boolean;
+
+  /** Whether live Google YouTube sync is enabled deployment-wide (admin-configurable, default false). */
+  googleYouTubeSyncEnabled?: boolean;
 
   /**
    * Site name shown next to the top-bar logo (admin-configurable). Empty falls back to

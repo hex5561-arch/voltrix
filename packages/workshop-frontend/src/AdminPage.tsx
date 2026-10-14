@@ -17,6 +17,7 @@ import {
   ArrowSquareOut,
   ShieldCheck,
   Plus,
+  YoutubeLogo,
 } from '@phosphor-icons/react'
 import CommandCenterView from './CommandCenterView'
 import { useAuthenticatedApi } from './AuthContext'
@@ -93,6 +94,10 @@ export default function AdminPage() {
   // Whether new account signups are allowed.
   const [signupsEnabled, setSignupsEnabled] = useState(true)
   const [savingSignups, setSavingSignups] = useState(false)
+
+  // Whether live Google YouTube sync is enabled deployment-wide.
+  const [googleYouTubeSyncEnabled, setGoogleYouTubeSyncEnabled] = useState(false)
+  const [savingGoogleSync, setSavingGoogleSync] = useState(false)
 
   // Clef model routing pool: which TheHive models Clef may choose between pre-turn.
   const [clefModelPool, setClefModelPool] = useState<string[]>(Object.keys(SUGGESTED_MODELS['thehive']))
@@ -206,6 +211,7 @@ export default function AdminPage() {
   // Populate all editor state from a freshly-fetched settings view.
   const applySettings = (view: Awaited<ReturnType<RpcStub<AdminApi>['getSettings']>>) => {
     setSignupsEnabled(view.signupsEnabled)
+    setGoogleYouTubeSyncEnabled(view.googleYouTubeSyncEnabled ?? false)
     setSavedSiteName(view.siteName)
     setSiteNameDraft(view.siteName)
     setSiteLogoUrl(view.siteLogo?.url ?? null)
@@ -417,6 +423,27 @@ export default function AdminPage() {
       toasts.add({ title: message, variant: 'error' })
     } finally {
       setSavingSignups(false)
+    }
+  }
+
+  const handleGoogleSyncToggle = async (enabled: boolean) => {
+    if (!admin) return
+    setSavingGoogleSync(true)
+    setGoogleYouTubeSyncEnabled(enabled) // optimistic
+    try {
+      await admin.api.setGoogleYouTubeSyncEnabled(enabled)
+      toasts.add({
+        title: enabled
+          ? 'Google YouTube live sync enabled'
+          : 'Google YouTube sync disabled (Voltrix native mode active)',
+        variant: 'success',
+      })
+    } catch (err) {
+      setGoogleYouTubeSyncEnabled(!enabled) // revert
+      const message = err instanceof Error ? err.message : 'Update failed'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setSavingGoogleSync(false)
     }
   }
 
@@ -1071,24 +1098,56 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Sign-ups */}
+      {/* Sign-ups & Integrations Access */}
       {activeTab === 'access' && (
-        <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center bg-kumo-tint">
-              <UserPlus size={18} className="text-kumo-subtle" />
+        <div className="space-y-6">
+          <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center bg-kumo-tint">
+                <UserPlus size={18} className="text-kumo-subtle" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold text-kumo-strong">Allow new sign-ups</h2>
+                <p className="text-sm text-kumo-subtle mt-0.5">
+                  When off, existing users can still log in but no new accounts can be created.
+                </p>
+              </div>
+              <Switch
+                checked={signupsEnabled}
+                disabled={savingSignups}
+                onCheckedChange={handleSignupsToggle}
+              />
             </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-semibold text-kumo-strong">Allow new sign-ups</h2>
-              <p className="text-sm text-kumo-subtle mt-0.5">
-                When off, existing users can still log in but no new accounts can be created.
-              </p>
+          </div>
+
+          <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center bg-red-500/10 text-red-500">
+                <YoutubeLogo size={20} weight="fill" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-kumo-strong">Google YouTube Live Sync</h2>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded uppercase font-semibold ${
+                      googleYouTubeSyncEnabled
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                    }`}
+                  >
+                    {googleYouTubeSyncEnabled ? 'Live Sync Active' : 'Voltrix Native Mode'}
+                  </span>
+                </div>
+                <p className="text-sm text-kumo-subtle mt-0.5">
+                  When enabled, video likes and channel subscriptions in V-Tube attempt live synchronization with the user&rsquo;s Google/YouTube account (<code className="text-xs bg-kumo-tint px-1 py-0.5 rounded font-mono">youtube.force-ssl</code>). When disabled (recommended until Google verification is approved), likes and subscriptions are preserved natively within the student&rsquo;s local Voltrix profile without requiring a Google sign-in prompt.
+                </p>
+              </div>
+              <Switch
+                checked={googleYouTubeSyncEnabled}
+                disabled={savingGoogleSync}
+                onCheckedChange={handleGoogleSyncToggle}
+              />
             </div>
-            <Switch
-              checked={signupsEnabled}
-              disabled={savingSignups}
-              onCheckedChange={handleSignupsToggle}
-            />
           </div>
         </div>
       )}

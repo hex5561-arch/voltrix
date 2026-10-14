@@ -13,18 +13,20 @@ describe("Pesapal Service Unit Tests", () => {
     _resetInMemoryPesapalState();
   });
 
-  it("resolves default sandbox config when env vars are not set", () => {
+  it("resolves default live config when env vars are not set", () => {
     const cfg = getPesapalConfig({} as any);
+    expect(cfg.envMode).toBe("live");
+    expect(cfg.baseUrl).toBe("https://pay.pesapal.com/v3");
+    expect(cfg.key).toBe("07jhBEpo2McFLwab/ZItzDU+7vktjazS");
+    expect(cfg.secret).toBe("wzO4328MhAN82hfNY3xDCj5L+zg=");
+  });
+
+  it("resolves sandbox URL when PESAPAL_ENV is sandbox", () => {
+    const cfg = getPesapalConfig({ PESAPAL_ENV: "sandbox" } as any);
     expect(cfg.envMode).toBe("sandbox");
     expect(cfg.baseUrl).toBe("https://cybqa.pesapal.com/pesapalv3");
     expect(cfg.key).toBe("TDpigBOOhs+zAl8cwH2Fl82jJGyD8xev");
     expect(cfg.secret).toBe("1KpqkfsMaihIcOlhnBo/gBZ5smw=");
-  });
-
-  it("resolves live URL when PESAPAL_ENV is live", () => {
-    const cfg = getPesapalConfig({ PESAPAL_ENV: "live" } as any);
-    expect(cfg.envMode).toBe("live");
-    expect(cfg.baseUrl).toBe("https://pay.pesapal.com/v3");
   });
 
   it("parses simulated transaction status correctly", async () => {
@@ -35,8 +37,10 @@ describe("Pesapal Service Unit Tests", () => {
     expect(status.paymentMethod).toContain("Simulated");
   });
 
-  it("submits order and falls back to simulation gracefully if network fetch fails", async () => {
+  it("submits order and falls back to simulation gracefully if network fetch fails in sandbox mode", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network offline"));
     const mockEnv = {
+      PESAPAL_ENV: "sandbox",
       BLUEPRINTS: {
         get: vi.fn().mockResolvedValue(null),
         put: vi.fn().mockResolvedValue(undefined),
@@ -61,6 +65,29 @@ describe("Pesapal Service Unit Tests", () => {
     expect(result.merchant_reference).toBe("ORD-TEST-999");
     expect(result.order_tracking_id).toBeDefined();
     expect(result.redirect_url).toBeDefined();
+  });
+
+  it("rethrows error in live mode when submit fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Connection refused"));
+    const mockEnv = {
+      PESAPAL_ENV: "live",
+      BLUEPRINTS: {
+        get: vi.fn().mockResolvedValue(null),
+        put: vi.fn().mockResolvedValue(undefined),
+      },
+    } as any;
+
+    await expect(
+      submitPesapalOrder({
+        env: mockEnv,
+        origin: "https://voltrix.stream",
+        merchantRef: "ORD-LIVE-ERR",
+        currency: "UGX",
+        amount: 35000,
+        description: "Live Test",
+        email: "scholar@voltrix.stream",
+      })
+    ).rejects.toThrow("Connection refused");
   });
 
   it("handles successful status response parsing", async () => {
