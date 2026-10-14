@@ -1823,13 +1823,77 @@ export default {
     }
 
     // ── HyperFrames Video & Audio Serving ──
-    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload" || url.pathname === "/api/tts/generate")) {
+    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload" || url.pathname === "/api/tts/generate" || url.pathname === "/api/tts/status")) {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Range, Authorization",
         },
+      });
+    }
+
+    // GET /api/tts/status — Diagnostic health probe for Groq and Cloudflare Workers AI TTS
+    if (req.method === "GET" && url.pathname === "/api/tts/status") {
+      const probeResults: Record<string, any> = {
+        groq: { configured: false, status: "unknown" },
+        workersAi: { configured: false, status: "unknown" },
+      };
+
+      const groqApiKey = (env as any).GROQ_API_KEY || "";
+      if (groqApiKey) {
+        probeResults.groq.configured = true;
+        try {
+          const res = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${groqApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "canopylabs/orpheus-v1-english",
+              voice: "autumn",
+              input: "Voltrix health check",
+              response_format: "wav",
+            }),
+          });
+          if (res.ok) {
+            probeResults.groq.status = "ready";
+          } else {
+            const errJson = await res.json().catch(() => ({})) as any;
+            probeResults.groq.status = errJson?.error?.code || "http_error";
+            probeResults.groq.details = errJson?.error?.message || (await res.text().catch(() => ""));
+          }
+        } catch (e: any) {
+          probeResults.groq.status = "network_error";
+          probeResults.groq.details = e.message;
+        }
+      } else {
+        probeResults.groq.details = "GROQ_API_KEY secret not found in env";
+      }
+
+      if (env.WORKERS_AI) {
+        probeResults.workersAi.configured = true;
+        try {
+          const aiRes: any = await (env.WORKERS_AI as any).run("@cf/myshell-ai/melotts", {
+            prompt: "Voltrix health check",
+            lang: "en",
+          });
+          if (aiRes) {
+            probeResults.workersAi.status = "ready";
+          } else {
+            probeResults.workersAi.status = "empty_response";
+          }
+        } catch (e: any) {
+          probeResults.workersAi.status = "inference_error";
+          probeResults.workersAi.details = e.message;
+        }
+      } else {
+        probeResults.workersAi.details = "WORKERS_AI binding not available on env";
+      }
+
+      return new Response(JSON.stringify({ ok: true, providers: probeResults }), {
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       });
     }
 
@@ -1895,13 +1959,15 @@ export default {
           });
         }
 
-        const voice = body.voice || "troy";
+        const voice = body.voice || "autumn";
         const groqApiKey = body.apiKey || (env as any).GROQ_API_KEY || "";
         let audioBytes: ArrayBuffer | null = null;
-        let ext = "wav";
-        let contentType = "audio/wav";
-        let provider = "groq";
+        let ext = "mp3";
+        let contentType = "audio/mpeg";
+        let provider = "workers-ai";
+        const attempts: Array<{ provider: string; status?: number; error?: string }> = [];
 
+        // 1. Attempt Groq Canopy Labs Orpheus
         if (groqApiKey) {
           try {
             const groqRes = await fetch("https://api.groq.com/openai/v1/audio/speech", {
@@ -1919,42 +1985,55 @@ export default {
             });
             if (groqRes.ok) {
               audioBytes = await groqRes.arrayBuffer();
+              ext = "wav";
+              contentType = "audio/wav";
+              provider = "groq";
             } else {
-              const errText = await groqRes.text();
-              console.warn("Groq TTS returned non-200:", errText);
+              const errText = await groqRes.text().catch(() => "");
+              attempts.push({ provider: "groq", status: groqRes.status, error: errText });
             }
           } catch (e: any) {
-            console.warn("Groq TTS failed:", e.message);
+            attempts.push({ provider: "groq", error: e.message || String(e) });
           }
+        } else {
+          attempts.push({ provider: "groq", error: "GROQ_API_KEY secret not found in environment." });
         }
 
-        // Fallback to Cloudflare Workers AI if Groq fails or terms pending
+        // 2. Fallback to Cloudflare Workers AI MeloTTS (@cf/myshell-ai/melotts)
         if (!audioBytes && env.WORKERS_AI) {
           try {
-            const aiRes: any = await (env.WORKERS_AI as any).run("@cf/myshell/melotts", {
+            const aiRes: any = await (env.WORKERS_AI as any).run("@cf/myshell-ai/melotts", {
               prompt: text,
+              lang: "en",
             });
             if (aiRes) {
               provider = "workers-ai";
-              ext = "wav";
-              contentType = "audio/wav";
+              ext = "mp3";
+              contentType = "audio/mpeg";
               if (aiRes instanceof ArrayBuffer) {
                 audioBytes = aiRes;
-              } else if (aiRes.audio) {
+              } else if (aiRes instanceof Uint8Array) {
+                audioBytes = aiRes.buffer;
+              } else if (typeof aiRes === "object" && aiRes !== null && "audio" in aiRes) {
                 audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer;
+              } else {
+                audioBytes = await new Response(aiRes).arrayBuffer();
               }
+            } else {
+              attempts.push({ provider: "workers-ai", error: "Empty response from @cf/myshell-ai/melotts" });
             }
           } catch (e: any) {
-            console.warn("Workers AI TTS failed:", e.message);
+            attempts.push({ provider: "workers-ai", error: e.message || String(e) });
           }
         }
 
         if (!audioBytes) {
           return new Response(JSON.stringify({
             ok: false,
-            error: "Cloud TTS service requires model terms approval or key. Fall back to client window.speechSynthesis.",
+            error: "TTS generation failed across all backends.",
+            attempts,
           }), {
-            status: 503,
+            status: 502,
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
         }
@@ -1972,6 +2051,7 @@ export default {
           provider,
           url: `/api/hf-videos/${fileName}`,
           fullUrl: `https://voltrix.stream/api/hf-videos/${fileName}`,
+          attempts,
         }), {
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });

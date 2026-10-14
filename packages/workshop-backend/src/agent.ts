@@ -3303,12 +3303,13 @@ export async function runAgent(
             throw new Error("Text is required for speech synthesis.");
           }
 
-          const voiceName = voice || "troy";
+          const voiceName = voice || "autumn";
           const groqApiKey = (hooks as any).getEnv?.()?.GROQ_API_KEY || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
           let audioBytes: ArrayBuffer | null = null;
-          let ext = "wav";
-          let contentType = "audio/wav";
-          let provider = "groq";
+          let ext = "mp3";
+          let contentType = "audio/mpeg";
+          let provider = "workers-ai";
+          const attempts: Array<{ provider: string; status?: number; error?: string }> = [];
 
           if (groqApiKey) {
             try {
@@ -3330,33 +3331,51 @@ export async function runAgent(
                 ext = "wav";
                 contentType = "audio/wav";
                 provider = "groq";
+              } else {
+                const errText = await groqRes.text().catch(() => "");
+                attempts.push({ provider: "groq", status: groqRes.status, error: errText });
               }
-            } catch (e) {
-              // fallback to Cloudflare Workers AI
+            } catch (e: any) {
+              attempts.push({ provider: "groq", error: e.message || String(e) });
             }
+          } else {
+            attempts.push({ provider: "groq", error: "GROQ_API_KEY secret not found in environment." });
           }
 
           if (!audioBytes) {
             const ai = hooks.getClassifierAi();
             if (ai) {
               try {
-                const aiRes: any = await (ai as any).run("@cf/myshell/melotts", {
+                const aiRes: any = await (ai as any).run("@cf/myshell-ai/melotts", {
                   prompt: cleanText,
+                  lang: "en",
                 });
                 if (aiRes) {
-                  audioBytes = aiRes instanceof ArrayBuffer ? aiRes : (aiRes.audio ? await new Response(aiRes.audio).arrayBuffer() : null);
-                  ext = "wav";
-                  contentType = "audio/wav";
                   provider = "workers-ai";
+                  ext = "mp3";
+                  contentType = "audio/mpeg";
+                  if (aiRes instanceof ArrayBuffer) {
+                    audioBytes = aiRes;
+                  } else if (aiRes instanceof Uint8Array) {
+                    audioBytes = aiRes.buffer;
+                  } else if (typeof aiRes === "object" && aiRes !== null && "audio" in aiRes) {
+                    audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer;
+                  } else {
+                    audioBytes = await new Response(aiRes).arrayBuffer();
+                  }
+                } else {
+                  attempts.push({ provider: "workers-ai", error: "Empty response from @cf/myshell-ai/melotts" });
                 }
-              } catch (e) {
-                // fall through
+              } catch (e: any) {
+                attempts.push({ provider: "workers-ai", error: e.message || String(e) });
               }
+            } else {
+              attempts.push({ provider: "workers-ai", error: "WORKERS_AI binding not available." });
             }
           }
 
           if (!audioBytes) {
-            throw new Error("TTS generation failed across both Groq and Cloudflare Workers AI backends.");
+            throw new Error(`TTS generation failed across all backends:\n${JSON.stringify(attempts, null, 2)}`);
           }
 
           let baseName = filename;
