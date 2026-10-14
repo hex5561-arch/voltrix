@@ -20,7 +20,7 @@ const QUICK_MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
  * is absent only because this deployment has no such provider.
  * https://github.com/earendil-works/pi/blob/v0.84.2/packages/ai/src/api/google-vertex.ts#L98
  */
-const HTTPS_ONLY_PROVIDERS = new Set(["google"]);
+const HTTPS_ONLY_PROVIDERS = new Set(["google", "groq"]);
 
 export class AiGatewayConfig {
   readonly gateway: string;

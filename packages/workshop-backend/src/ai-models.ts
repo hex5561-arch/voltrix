@@ -251,6 +251,20 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
       // worker; see getModelViaThehiveDirect(). Returning undefined signals the caller to take
       // the direct path.
       return undefined;
+    case "groq":
+      return {
+        id: config.model,
+        name: catalog?.name ?? config.model,
+        api: "openai-completions",
+        provider: "groq",
+        baseUrl: `${gatewayUrl}/groq/openai/v1`,
+        reasoning: catalog?.reasoning ?? true,
+        input: catalog?.input ?? ["text"],
+        cost: catalog?.cost ?? ZERO_COST,
+        ...window,
+        thinkingLevelMap: catalog?.thinkingLevelMap,
+        compat: catalog?.compat,
+      };
     default:
       return undefined;
   }
@@ -800,6 +814,21 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
       // unusable — see gatewayNativeModel). Without a platform gateway, the config's own API
       // token is used (BYOK-style).
       return getModelViaThehiveDirect(config, undefined, config.apiToken);
+    case "groq":
+      return makeHandle({
+        model: {
+          id: config.model,
+          name: config.model,
+          api: "openai-completions",
+          provider: "groq",
+          baseUrl: config.apiUrl ?? "https://api.groq.com/openai/v1",
+          reasoning: true,
+          input: ["text"],
+          cost: ZERO_COST,
+        },
+        apiKey: config.apiToken,
+        sessionAffinity,
+      });
     default:
       config.provider satisfies never;
       throw new Error(`Unknown provider "${config.provider}".`);

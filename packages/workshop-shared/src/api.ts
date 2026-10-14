@@ -1240,7 +1240,7 @@ export type CloudflareAccountOption = {
 };
 
 /** Supported AI providers. */
-export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama" | "thehive";
+export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama" | "thehive" | "groq";
 
 /** Information about the AI gateway configuration. Returned by `AuthenticatedApi.getAiConfig()`. */
 export type AiGatewayInfo = {
@@ -1317,6 +1317,11 @@ export const SUGGESTED_MODELS: Record<
   "thehive": {
     "deepseek-ai/deepseek-v4.1-flash": {name: "DeepSeek 4.1 Flash (TheHive)", contextWindow: 1000000},
     "zai-org/glm-5.3-flash": {name: "GLM 5.3 Flash (TheHive) — text, image, video", contextWindow: 1_000_000},
+  },
+  "groq": {
+    "llama-3.3-70b-versatile": {name: "Llama 3.3 70B Versatile (Groq)", contextWindow: 131072},
+    "qwen/qwen3.8-27b": {name: "Qwen 3.8 27B (Groq)", contextWindow: 131072},
+    "openai/gpt-oss-120b": {name: "GPT OSS 120B (Groq)", contextWindow: 131072},
   },
   "ollama": {
   },

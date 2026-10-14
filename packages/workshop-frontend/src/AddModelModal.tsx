@@ -23,6 +23,7 @@ const PROVIDER_LABELS: Record<AiModelProvider, string> = {
   cloudflare: 'Cloudflare Workers AI',
   ollama: 'Ollama',
   thehive: 'TheHive AI',
+  groq: 'Groq (via Cloudflare AI Gateway)',
 }
 
 // Placeholder hinting at the shape of each provider's API token.
@@ -33,6 +34,7 @@ const API_TOKEN_PLACEHOLDERS: Record<AiModelProvider, string> = {
   cloudflare: 'Cloudflare API token',
   ollama: '(optional)',
   thehive: 'TheHive Secret Key',
+  groq: 'gsk_...',
 }
 
 // Example used in the custom-model placeholders for providers that have no suggested models

@@ -1841,10 +1841,17 @@ export default {
       };
 
       const groqApiKey = (env as any).GROQ_API_KEY || "";
+      const cfGateway = (env as any).CF_AI_GATEWAY || "voltrix-ai";
+      const cfAccountId = (env as any).CF_AI_GATEWAY_ACCOUNT_ID || "84f114e1b747a07d247ceb17b0c1dc14";
+      const groqUrl = cfGateway && cfAccountId
+        ? `https://gateway.ai.cloudflare.com/v1/${cfAccountId}/${cfGateway}/groq/openai/v1/audio/speech`
+        : "https://api.groq.com/openai/v1/audio/speech";
+
       if (groqApiKey) {
         probeResults.groq.configured = true;
+        probeResults.groq.viaGateway = Boolean(cfGateway && cfAccountId);
         try {
-          const res = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+          const res = await fetch(groqUrl, {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${groqApiKey}`,
@@ -1947,7 +1954,7 @@ export default {
       });
     }
 
-    // POST /api/tts/generate — Text-to-Speech synthesis via Groq or Cloudflare Workers AI
+    // POST /api/tts/generate — Text-to-Speech synthesis via Groq (Cloudflare AI Gateway) or Cloudflare Workers AI
     if (req.method === "POST" && url.pathname === "/api/tts/generate") {
       try {
         const body = (await req.json()) as { text?: string; voice?: string; model?: string; apiKey?: string };
@@ -1961,16 +1968,22 @@ export default {
 
         const voice = body.voice || "autumn";
         const groqApiKey = body.apiKey || (env as any).GROQ_API_KEY || "";
+        const cfGateway = (env as any).CF_AI_GATEWAY || "voltrix-ai";
+        const cfAccountId = (env as any).CF_AI_GATEWAY_ACCOUNT_ID || "84f114e1b747a07d247ceb17b0c1dc14";
+        const groqUrl = cfGateway && cfAccountId
+          ? `https://gateway.ai.cloudflare.com/v1/${cfAccountId}/${cfGateway}/groq/openai/v1/audio/speech`
+          : "https://api.groq.com/openai/v1/audio/speech";
+
         let audioBytes: ArrayBuffer | null = null;
         let ext = "mp3";
         let contentType = "audio/mpeg";
         let provider = "workers-ai";
         const attempts: Array<{ provider: string; status?: number; error?: string }> = [];
 
-        // 1. Attempt Groq Canopy Labs Orpheus
+        // 1. Attempt Groq Canopy Labs Orpheus via Cloudflare AI Gateway
         if (groqApiKey) {
           try {
-            const groqRes = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+            const groqRes = await fetch(groqUrl, {
               method: "POST",
               headers: {
                 "Authorization": `Bearer ${groqApiKey}`,
@@ -1987,16 +2000,16 @@ export default {
               audioBytes = await groqRes.arrayBuffer();
               ext = "wav";
               contentType = "audio/wav";
-              provider = "groq";
+              provider = "groq-via-cloudflare";
             } else {
               const errText = await groqRes.text().catch(() => "");
-              attempts.push({ provider: "groq", status: groqRes.status, error: errText });
+              attempts.push({ provider: "groq-via-cloudflare", status: groqRes.status, error: errText });
             }
           } catch (e: any) {
-            attempts.push({ provider: "groq", error: e.message || String(e) });
+            attempts.push({ provider: "groq-via-cloudflare", error: e.message || String(e) });
           }
         } else {
-          attempts.push({ provider: "groq", error: "GROQ_API_KEY secret not found in environment." });
+          attempts.push({ provider: "groq-via-cloudflare", error: "GROQ_API_KEY secret not found in environment." });
         }
 
         // 2. Fallback to Cloudflare Workers AI MeloTTS (@cf/myshell-ai/melotts)

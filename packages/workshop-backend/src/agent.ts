@@ -3311,9 +3311,15 @@ export async function runAgent(
           let provider = "workers-ai";
           const attempts: Array<{ provider: string; status?: number; error?: string }> = [];
 
+          const cfGateway = "voltrix-ai";
+          const cfAccountId = "84f114e1b747a07d247ceb17b0c1dc14";
+          const groqUrl = cfGateway && cfAccountId
+            ? `https://gateway.ai.cloudflare.com/v1/${cfAccountId}/${cfGateway}/groq/openai/v1/audio/speech`
+            : "https://api.groq.com/openai/v1/audio/speech";
+
           if (groqApiKey) {
             try {
-              const groqRes = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+              const groqRes = await fetch(groqUrl, {
                 method: "POST",
                 headers: {
                   "Authorization": `Bearer ${groqApiKey}`,
@@ -3330,7 +3336,7 @@ export async function runAgent(
                 audioBytes = await groqRes.arrayBuffer();
                 ext = "wav";
                 contentType = "audio/wav";
-                provider = "groq";
+                provider = "groq-via-cloudflare";
               } else {
                 const errText = await groqRes.text().catch(() => "");
                 attempts.push({ provider: "groq", status: groqRes.status, error: errText });
