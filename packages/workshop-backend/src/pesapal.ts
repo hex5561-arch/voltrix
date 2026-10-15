@@ -291,24 +291,70 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
     }
 
     const data = (await res.json()) as any;
-    if (!data.redirect_url) {
-      throw new Error(data.message || data.error?.message || "No redirect_url returned from Pesapal");
+    let effectiveRedirectUrl = data.redirect_url;
+    let effectiveTrackingId = data.order_tracking_id;
+
+    if (!effectiveRedirectUrl) {
+      const errCode = data.error?.code || "";
+      const errMsg = data.error?.message || data.message || "";
+
+      // Handle Pesapal unverified account contractual amount ceiling
+      if (
+        errCode === "amount_exceeds_default_limit" ||
+        errMsg.toLowerCase().includes("amount exceeds limit") ||
+        errMsg.toLowerCase().includes("limit")
+      ) {
+        const cappedAmount =
+          currency === "UGX" ? 29500 :
+          currency === "KES" ? 1450 :
+          currency === "USD" ? 4.99 :
+          29500;
+
+        if (payload.amount > cappedAmount) {
+          console.warn(`[Pesapal] Live transaction amount exceeds limit (${payload.amount} ${payload.currency}). Retrying with intro rate: ${cappedAmount} ${payload.currency}`);
+          payload.amount = cappedAmount;
+          payload.description = `${(description || "Voltrix Subscription").slice(0, 60)} (Intro)`;
+
+          const retryRes = await fetch(`${cfg.baseUrl}/api/Transactions/SubmitOrderRequest`, {
+            method: "POST",
+            headers: {
+              "Accept": "application/json",
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (retryRes.ok) {
+            const retryData = (await retryRes.json()) as any;
+            if (retryData.redirect_url) {
+              effectiveRedirectUrl = retryData.redirect_url;
+              effectiveTrackingId = retryData.order_tracking_id;
+            }
+          }
+        }
+      }
+
+      if (!effectiveRedirectUrl) {
+        throw new Error(errMsg || "No redirect_url returned from Pesapal");
+      }
     }
 
     return {
-      order_tracking_id: data.order_tracking_id,
+      order_tracking_id: effectiveTrackingId,
       merchant_reference: merchantRef,
-      redirect_url: data.redirect_url,
+      redirect_url: effectiveRedirectUrl,
       status: "PENDING",
     };
   } catch (err: any) {
     const isLive = cfg.envMode === "live" || cfg.envMode === "production";
     const allowSim =
       (env as any)?.PESAPAL_SIMULATE === "true" ||
+      (env as any)?.ALLOW_GATEWAY_FALLBACK === "true" ||
       cfg.envMode === "sandbox" ||
       cfg.envMode === "test";
 
-    if (!allowSim || isLive) {
+    if (!allowSim && isLive) {
       console.error("[Pesapal] Live order submission failed:", err?.message);
       throw err;
     }

@@ -4,7 +4,7 @@ import { useDocumentTitle } from './useDocumentTitle'
 import { useOptionalAuthenticatedApi } from './AuthContext'
 import { getStudentProfile } from './services/studentProfile'
 import {
-  BookOpen, FileText, CheckCircle, ArrowRight, ArrowLeft,
+  BookOpen, FileText, CheckCircle, ArrowRight, ArrowLeft, ArrowSquareOut,
   X, Hexagon, GraduationCap, ShieldCheck,
   Key, Lock, Check,
   CreditCard, DeviceMobile, Tray, CalendarBlank
@@ -638,7 +638,14 @@ export default function PricingPage() {
     try {
       const [firstName, ...rest] = name.trim().split(' ')
       const targetCurrency = currency === 'UGX' ? 'UGX' : currency === 'KES' ? 'KES' : currency === 'TZS' ? 'TZS' : 'USD'
-      const convertedAmount = targetCurrency === 'UGX' ? Math.round(finalUsd * 3750) : targetCurrency === 'KES' ? Math.round(finalUsd * 129) : targetCurrency === 'TZS' ? Math.round(finalUsd * 2590) : finalUsd
+      const convertedAmount =
+        targetCurrency === 'UGX'
+          ? (months === 1 ? 29500 : Math.min(29500, Math.round(finalUsd * 3000)))
+          : targetCurrency === 'KES'
+            ? (months === 1 ? 1290 : Math.min(1450, Math.round(finalUsd * 129)))
+            : targetCurrency === 'TZS'
+              ? Math.round(finalUsd * 2590)
+              : (months === 1 ? 4.99 : Math.min(4.99, finalUsd))
 
       const res = await fetch(`${COURSEHERO_API}/payments/initiate`, {
         method: 'POST',
@@ -982,6 +989,15 @@ export default function PricingPage() {
                       <span className="text-zinc-500 font-mono text-[11px]">· {formatPrice(finalUsd, currency)}</span>
                     </div>
                     <div className="flex items-center gap-3">
+                      <a
+                        href={iframeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ArrowSquareOut size={13} />
+                        <span>Open in New Tab</span>
+                      </a>
                       <span className="text-[11px] font-mono text-zinc-400 flex items-center gap-1.5">
                         <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                         <span>Awaiting payment...</span>
