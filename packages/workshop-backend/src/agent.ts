@@ -3433,9 +3433,9 @@ export async function runAgent(
                   if (aiRes instanceof ArrayBuffer) {
                     audioBytes = aiRes;
                   } else if (aiRes instanceof Uint8Array) {
-                    audioBytes = aiRes.buffer;
+                    audioBytes = aiRes.buffer as ArrayBuffer;
                   } else if (typeof aiRes === "object" && aiRes !== null && "audio" in aiRes) {
-                    audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer;
+                    audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer as ArrayBuffer;
                   } else {
                     audioBytes = await new Response(aiRes).arrayBuffer();
                   }
