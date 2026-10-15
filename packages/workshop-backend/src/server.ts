@@ -2116,10 +2116,20 @@ export default {
       const clientId = (env.GOOGLE_CLIENT_ID || "").trim();
       const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/`;
       const scopeParam = url.searchParams.get("scope");
-      const scope = scopeParam === "basic"
-        ? "openid email profile"
-        : "openid email profile https://www.googleapis.com/auth/youtube.force-ssl";
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=google`;
+      const adminConfig = await readAdminConfig(env);
+
+      // Clean authentication uses strictly standard, non-sensitive identity scopes (openid email profile).
+      // Sensitive/restricted scopes like youtube.force-ssl are ONLY attached if explicitly requested AND enabled in admin config.
+      const isYouTubeScope =
+        (scopeParam === "youtube" || scopeParam === "youtube.force-ssl") &&
+        Boolean(adminConfig.googleYouTubeSyncEnabled);
+
+      const scope = isYouTubeScope
+        ? "openid email profile https://www.googleapis.com/auth/youtube.force-ssl"
+        : "openid email profile";
+
+      const promptParam = isYouTubeScope ? "consent" : "select_account";
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri.replace(/\/$/, ""))}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=${promptParam}&state=google`;
       return Response.json({ enabled: true, url: authUrl, clientId });
     }
 

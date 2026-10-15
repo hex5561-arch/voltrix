@@ -167,7 +167,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
       const redirectUri = window.location.origin
       const endpoint =
         provider === 'google'
-          ? `/api/auth/oauth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`
+          ? `/api/auth/oauth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}&scope=basic`
           : `/api/auth/oauth/github/url?redirect_uri=${encodeURIComponent(redirectUri)}`
       const res = await fetch(endpoint)
       const data = await res.json() as { enabled?: boolean; url?: string }

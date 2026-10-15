@@ -73,7 +73,7 @@ export async function startYouTubeOAuthConnect(currentPath?: string): Promise<vo
 
   // Always use the registered, fixed redirect URI to prevent dynamic subpath mismatches
   const redirectUri = `${window.location.origin}/vtube`;
-  const res = await fetch(`/api/auth/oauth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
+  const res = await fetch(`/api/auth/oauth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}&scope=youtube`);
   const data = await res.json() as { enabled?: boolean; url?: string };
   if (data?.url) {
     window.location.href = data.url;
