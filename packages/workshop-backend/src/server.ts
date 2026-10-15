@@ -2115,14 +2115,19 @@ export default {
     if (req.method === "GET" && url.pathname === "/api/auth/oauth/google/url") {
       const clientId = (env.GOOGLE_CLIENT_ID || "").trim();
       const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/`;
-      const scopeParam = url.searchParams.get("scope");
-      const adminConfig = await readAdminConfig(env);
+      let googleYouTubeSyncEnabled = false;
+      try {
+        const adminConfig = await readAdminConfig(env);
+        googleYouTubeSyncEnabled = Boolean(adminConfig?.googleYouTubeSyncEnabled);
+      } catch {
+        googleYouTubeSyncEnabled = false;
+      }
 
       // Clean authentication uses strictly standard, non-sensitive identity scopes (openid email profile).
       // Sensitive/restricted scopes like youtube.force-ssl are ONLY attached if explicitly requested AND enabled in admin config.
       const isYouTubeScope =
         (scopeParam === "youtube" || scopeParam === "youtube.force-ssl") &&
-        Boolean(adminConfig.googleYouTubeSyncEnabled);
+        googleYouTubeSyncEnabled;
 
       const scope = isYouTubeScope
         ? "openid email profile https://www.googleapis.com/auth/youtube.force-ssl"
