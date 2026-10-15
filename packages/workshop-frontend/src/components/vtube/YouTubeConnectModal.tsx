@@ -1,5 +1,4 @@
-import React from 'react';
-import { X, YoutubeLogo, ArrowSquareOut, CheckCircle, WarningCircle } from '@phosphor-icons/react';
+import { X, YoutubeLogo, ArrowSquareOut, CheckCircle } from '@phosphor-icons/react';
 import { startYouTubeOAuthConnect } from '../../services/youtubeService';
 
 interface YouTubeConnectModalProps {

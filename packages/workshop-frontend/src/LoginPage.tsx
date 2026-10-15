@@ -2,7 +2,6 @@ import { useState, FormEvent } from 'react'
 import { RpcStub } from 'capnweb'
 import { PublicApi } from '@gadgets/workshop-shared/api'
 import {
-  Hexagon,
   SignIn,
   UserPlus,
   Lightning,

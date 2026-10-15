@@ -3,7 +3,6 @@ import {
   Blueprint,
   BookOpen,
   Compass,
-  Hexagon,
   House,
   MagnifyingGlass,
   SidebarSimple,

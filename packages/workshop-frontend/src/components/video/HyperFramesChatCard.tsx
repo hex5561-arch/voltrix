@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Play, FilmSlate, Clock, Lightning, Sparkle } from "@phosphor-icons/react";
+import { Play, FilmSlate, Clock, Lightning } from "@phosphor-icons/react";
 
 /** Shape of the JSON payload inside a ```hyperframes code block emitted by the agent. */
 export interface HyperFramesVideoMeta {

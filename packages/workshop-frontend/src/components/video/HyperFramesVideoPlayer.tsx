@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Play, Pause, ArrowsOut, Sparkle, FilmSlate, DownloadSimple, Lightning } from "@phosphor-icons/react";
+import { FilmSlate, DownloadSimple, Lightning } from "@phosphor-icons/react";
 
 interface HyperFramesVideoPlayerProps {
   /** Backend URL or Edge URL: /api/hf-videos/foo.mp4 or /s/slug */

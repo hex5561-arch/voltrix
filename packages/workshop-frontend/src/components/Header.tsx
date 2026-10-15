@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Hexagon, List, X, Sparkle, Tray, Calendar, GraduationCap } from '@phosphor-icons/react'
+import { List, X, Sparkle, Tray, Calendar, GraduationCap } from '@phosphor-icons/react'
 import { useOptionalAuthenticatedApi } from '../AuthContext'
 import { useGatekeeperApps } from '../useGatekeeperApps'
 import { useSiteName } from '../ServerConfigContext'
