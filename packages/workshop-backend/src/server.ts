@@ -3594,10 +3594,9 @@ ${catalog.map(c => `  <url>
     if (req.method === "GET" && url.pathname === "/api/payments/callback") {
       const trackId = url.searchParams.get("OrderTrackingId") || "";
       const merchantRef = url.searchParams.get("OrderMerchantReference") || "";
-      const origin = req.headers.get("origin") || url.origin || "https://voltrix.stream";
 
       if (!trackId) {
-        return Response.redirect(`${origin}/pricing?payment=failed`, 302);
+        return Response.json({ success: false, status: "failed", error: "Missing OrderTrackingId" }, { status: 400 });
       }
 
       try {
@@ -3611,16 +3610,21 @@ ${catalog.map(c => `  <url>
           if (ordData && ordData.status !== "PAID") {
             await finalizeOrderPayment(env, ctx, trackId, ordData, pesapalStatus);
           }
-          const tier = ordData?.tier || "pro";
-          return Response.redirect(`${origin}/pricing?payment=success&ref=${encodeURIComponent(trackId)}&tier=${encodeURIComponent(tier)}`, 302);
+          return Response.json({ success: true, status: "completed", order_tracking_id: trackId, tier: ordData?.tier || "pro" });
         } else if (pesapalStatus.isFailed) {
-          return Response.redirect(`${origin}/pricing?payment=failed&ref=${encodeURIComponent(trackId)}`, 302);
+          return Response.json({ success: false, status: "failed", order_tracking_id: trackId });
         } else {
-          return Response.redirect(`${origin}/pricing?payment=pending&ref=${encodeURIComponent(trackId)}`, 302);
+          return Response.json({ success: true, status: "pending", order_tracking_id: trackId });
         }
       } catch (err: any) {
-        return Response.redirect(`${origin}/pricing?payment=error&msg=${encodeURIComponent(err.message)}`, 302);
+        return Response.json({ success: false, status: "error", error: err.message }, { status: 500 });
       }
+    }
+
+    // SaaS Payments Cancellation: GET /api/payments/cancelled
+    if (req.method === "GET" && url.pathname === "/api/payments/cancelled") {
+      const trackId = url.searchParams.get("OrderTrackingId") || "";
+      return Response.json({ success: false, status: "cancelled", order_tracking_id: trackId });
     }
 
     // Inbox: GET /api/inbox — retrieve user notifications, receipts & announcements

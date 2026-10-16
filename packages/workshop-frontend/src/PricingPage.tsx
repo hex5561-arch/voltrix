@@ -422,7 +422,6 @@ export default function PricingPage() {
   const [name, setName] = useState(() => studentProfile?.name || currentUser?.name || '')
   const [institution, setInstitution] = useState(() => studentProfile?.university || '')
   const [phone, setPhone] = useState('')
-  const [iframeUrl, setIframeUrl] = useState('')
   const [trackId, setTrackId] = useState('')
   const [checkoutError, setCheckoutError] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -478,27 +477,6 @@ export default function PricingPage() {
         }
       })
       .catch(() => {})
-  }, [])
-
-  // Detect Pesapal return redirect (e.g. ?payment=success&ref=... or ?payment=failed)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    const pStatus = params.get('payment')
-    const cancelled = params.get('cancelled')
-    const ref = params.get('ref') || params.get('OrderTrackingId')
-    if (pStatus === 'success' && ref) {
-      setTrackId(ref)
-      setStep('success')
-      fetch(`${COURSEHERO_API}/payments/status/${ref}`).catch(() => {})
-    } else if (pStatus === 'failed' || cancelled === '1') {
-      setCheckoutError('The transaction was cancelled or declined. Please try again.')
-      setStep('form')
-    } else if (pStatus === 'pending' && ref) {
-      setTrackId(ref)
-      setStep('payment')
-      startPolling(ref)
-    }
   }, [])
 
   // Fetch live plans and promos from backend KV
@@ -644,15 +622,8 @@ export default function PricingPage() {
     setCheckoutError('')
     try {
       const [firstName, ...rest] = name.trim().split(' ')
-      const targetCurrency = currency === 'UGX' ? 'UGX' : currency === 'KES' ? 'KES' : currency === 'TZS' ? 'TZS' : 'USD'
-      const convertedAmount =
-        targetCurrency === 'UGX'
-          ? (months === 1 ? 29500 : Math.min(29500, Math.round(finalUsd * 3000)))
-          : targetCurrency === 'KES'
-            ? (months === 1 ? 1290 : Math.min(1450, Math.round(finalUsd * 129)))
-            : targetCurrency === 'TZS'
-              ? Math.round(finalUsd * 2590)
-              : (months === 1 ? 4.99 : Math.min(4.99, finalUsd))
+      const targetCurrency = ['UGX', 'KES', 'TZS', 'USD', 'RWF'].includes(currency) ? currency : 'USD'
+      const convertedAmount = localPrice(finalUsd, targetCurrency)
 
       const res = await fetch(`${COURSEHERO_API}/payments/initiate`, {
         method: 'POST',
@@ -682,16 +653,16 @@ export default function PricingPage() {
       if (!data.success) {
         throw new Error(data.error ?? 'Payment could not be processed')
       }
+      // Order completed immediately (simulation or zero-amount)
       if (data.completed) {
         setTrackId(data.order_tracking_id ?? `ORD-${Date.now().toString().slice(-6)}`)
         setStep('success')
-      } else if (data.redirect_url) {
-        setIframeUrl(data.redirect_url)
-        setTrackId(data.order_tracking_id ?? '')
+      } else {
+        // Pesapal order created — stay on page, start polling
+        const tid = data.order_tracking_id ?? ''
+        setTrackId(tid)
         setStep('payment')
-        startPolling(data.order_tracking_id ?? '')
-        // Direct top-level navigation to official Pesapal Payment Gateway
-        window.location.href = data.redirect_url
+        if (tid) startPolling(tid)
       }
       setIsSubmitting(false)
     } catch (err) {
@@ -933,7 +904,6 @@ export default function PricingPage() {
               type="button"
               onClick={() => {
                 setStep('idle')
-                setIframeUrl('')
               }}
               className="flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer"
             >
@@ -1003,17 +973,23 @@ export default function PricingPage() {
                     </Link>
                   </div>
                 </div>
-              ) : step === 'payment' && iframeUrl ? (
-                /* ── PESAPAL SECURE GATEWAY PORTAL ── */
+              ) : step === 'payment' ? (
+                /* ── IN-PAGE PAYMENT AUTHORISATION SCREEN ── */
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-6 text-center">
                   <div className="inline-flex p-4 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mb-1">
                     <ShieldCheck size={36} weight="duotone" className="text-indigo-400" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white mb-1">Pesapal Secure Gateway</h3>
-                    <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                      Redirecting to complete payment of <span className="text-white font-mono font-semibold">{formatPrice(finalUsd, currency)}</span> via Mobile Money or Card.
-                    </p>
+                    <h3 className="text-base font-bold text-white mb-1">Authorise Payment</h3>
+                    {paymentMethod === 'mobile_money' ? (
+                      <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                        A payment prompt has been sent to <span className="text-white font-mono font-semibold">{phone}</span>. Enter your {momoProvider === 'mpesa' ? 'M-Pesa' : momoProvider === 'airtel' ? 'Airtel Money' : 'MTN MoMo'} PIN on your phone to complete the transfer.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                        Processing your card payment of <span className="text-white font-mono font-semibold">{formatPrice(finalUsd, currency)}</span>. Please wait while we verify your transaction.
+                      </p>
+                    )}
                   </div>
 
                   {/* Payment provider badges */}
@@ -1027,39 +1003,36 @@ export default function PricingPage() {
                   <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2 text-left">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-zinc-400">Order Reference</span>
-                      <span className="font-mono text-white text-[11px]">{trackId || 'PESAPAL-SECURE'}</span>
+                      <span className="font-mono text-white text-[11px]">{trackId || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-zinc-400">Status</span>
                       <span className="flex items-center gap-1.5 text-amber-400 font-medium text-[11px]">
                         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                        <span>Awaiting Payment Authorization</span>
+                        <span>Waiting for authorisation…</span>
                       </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-400">Amount</span>
+                      <span className="font-mono text-white text-[11px] font-semibold">{formatPrice(finalUsd, currency)}</span>
                     </div>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => { window.location.href = iframeUrl }}
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <span>Click to Open Pesapal Payment Gateway</span>
-                      <ArrowRight size={14} weight="bold" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (pollRef.current) clearInterval(pollRef.current)
-                        setStep('form')
-                        setIframeUrl('')
-                      }}
-                      className="text-xs text-zinc-400 hover:text-white transition cursor-pointer"
-                    >
-                      Cancel and return to checkout details
-                    </button>
+                  <div className="w-full bg-zinc-800 rounded-full h-1 overflow-hidden">
+                    <div className="bg-indigo-500 h-1 rounded-full animate-pulse w-3/4" />
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pollRef.current) clearInterval(pollRef.current)
+                      setStep('form')
+                      setTrackId('')
+                    }}
+                    className="text-xs text-zinc-400 hover:text-white transition cursor-pointer"
+                  >
+                    Cancel and return to checkout details
+                  </button>
                 </div>
               ) : (
                 /* ── SCHOLAR DETAILS & CHATGPT PAYWALL ── */
@@ -1482,8 +1455,8 @@ export default function PricingPage() {
               {step !== 'success' && (
                 <button
                   type="button"
-                  disabled={!email || isSubmitting || (step === 'payment' && !iframeUrl)}
-                  onClick={step === 'payment' && iframeUrl ? () => { window.location.href = iframeUrl } : initiatePayment}
+                  disabled={!email || isSubmitting || step === 'payment'}
+                  onClick={initiatePayment}
                   className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
@@ -1493,8 +1466,8 @@ export default function PricingPage() {
                     </>
                   ) : step === 'payment' ? (
                     <>
-                      <span>Open Pesapal Secure Payment</span>
-                      <ArrowRight size={14} weight="bold" />
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Awaiting authorisation…</span>
                     </>
                   ) : (
                     <>

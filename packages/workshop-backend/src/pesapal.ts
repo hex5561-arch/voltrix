@@ -263,7 +263,7 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
       amount: parseFloat(Number(amount).toFixed(2)),
       description: (description || "Voltrix Subscription").slice(0, 100),
       callback_url: `${origin.replace(/\/+$/, "")}/api/payments/callback`,
-      cancellation_url: `${origin.replace(/\/+$/, "")}/pricing?cancelled=1`,
+      cancellation_url: `${origin.replace(/\/+$/, "")}/api/payments/cancelled`,
       notification_id: ipnId,
       redirect_mode: "TOP_WINDOW",
       billing_address: {
@@ -295,49 +295,8 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
     let effectiveTrackingId = data.order_tracking_id;
 
     if (!effectiveRedirectUrl) {
-      const errCode = data.error?.code || "";
-      const errMsg = data.error?.message || data.message || "";
-
-      // Handle Pesapal unverified account contractual amount ceiling
-      if (
-        errCode === "amount_exceeds_default_limit" ||
-        errMsg.toLowerCase().includes("amount exceeds limit") ||
-        errMsg.toLowerCase().includes("limit")
-      ) {
-        const cappedAmount =
-          currency === "UGX" ? 29500 :
-          currency === "KES" ? 1450 :
-          currency === "USD" ? 4.99 :
-          29500;
-
-        if (payload.amount > cappedAmount) {
-          console.warn(`[Pesapal] Live transaction amount exceeds limit (${payload.amount} ${payload.currency}). Retrying with intro rate: ${cappedAmount} ${payload.currency}`);
-          payload.amount = cappedAmount;
-          payload.description = `${(description || "Voltrix Subscription").slice(0, 60)} (Intro)`;
-
-          const retryRes = await fetch(`${cfg.baseUrl}/api/Transactions/SubmitOrderRequest`, {
-            method: "POST",
-            headers: {
-              "Accept": "application/json",
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`,
-            },
-            body: JSON.stringify(payload),
-          });
-
-          if (retryRes.ok) {
-            const retryData = (await retryRes.json()) as any;
-            if (retryData.redirect_url) {
-              effectiveRedirectUrl = retryData.redirect_url;
-              effectiveTrackingId = retryData.order_tracking_id;
-            }
-          }
-        }
-      }
-
-      if (!effectiveRedirectUrl) {
-        throw new Error(errMsg || "No redirect_url returned from Pesapal");
-      }
+      const errMsg = data.error?.message || data.message || "No redirect_url returned from Pesapal";
+      throw new Error(errMsg);
     }
 
     return {
