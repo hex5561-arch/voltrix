@@ -3082,6 +3082,97 @@ class OverseerImpl implements AgentHooks {
     return this.env.GROQ_API_KEY || "";
   }
 
+  // Returns user identity and student academic profile
+  async getUserAccountIdentity(): Promise<{
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    tier: string;
+    isPro: boolean;
+    studentProfile: import("@gadgets/workshop-shared/api").StudentProfile | null;
+    workspacesCount?: number;
+    overview?: any;
+  } | null> {
+    const ownerId = this.storage.ownerId.get();
+    if (!ownerId) return null;
+    try {
+      const userStub = this.users.get(this.users.idFromString(ownerId));
+      const [profile, authorInfo, overview] = await Promise.all([
+        userStub.getStudentProfile().catch(() => null),
+        userStub.whoami().catch(() => null),
+        userStub.getUserOverview().catch(() => null),
+      ]);
+      const tier = (profile as any)?.tier || (profile as any)?.isPro ? "pro" : "free";
+      return {
+        userId: ownerId,
+        name: profile?.name || authorInfo?.name || "Student Scholar",
+        email: authorInfo?.id && authorInfo.id.includes("@") ? authorInfo.id : null,
+        tier,
+        isPro: tier !== "free",
+        studentProfile: profile,
+        workspacesCount: overview?.workspacesCount ?? 0,
+        overview,
+      };
+    } catch {
+      return {
+        userId: ownerId,
+        name: "Student Scholar",
+        email: null,
+        tier: "free",
+        isPro: false,
+        studentProfile: null,
+        workspacesCount: 0,
+      };
+    }
+  }
+
+  // Updates student profile in UserDO
+  async updateStudentProfile(patch: Partial<import("@gadgets/workshop-shared/api").StudentProfile>): Promise<boolean> {
+    const ownerId = this.storage.ownerId.get();
+    if (!ownerId) return false;
+    try {
+      const userStub = this.users.get(this.users.idFromString(ownerId));
+      const existing = await userStub.getStudentProfile();
+      const updated = {
+        ...(existing || {
+          discipline: "Science",
+          disciplineTitle: "General Studies",
+          university: "University",
+          degreeProgram: "Undergraduate",
+          academicLevel: "Year 1",
+          academicYear: "2026",
+          semester: "Semester 1",
+          citationStyle: "APA 7th",
+          courses: [],
+          updatedAt: Date.now(),
+        }),
+        ...patch,
+        updatedAt: Date.now(),
+      };
+      await userStub.setStudentProfile(updated as any);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Returns YouTube access token for the current user if available
+  async getYouTubeAccessToken(): Promise<string | null> {
+    const ownerId = this.storage.ownerId.get();
+    if (!ownerId) return null;
+    try {
+      const userStub = this.users.get(this.users.idFromString(ownerId));
+      const googleAccount = await userStub.getConnectedAccountByVendor("google");
+      if (googleAccount) {
+        const token = await (googleAccount as any).getAccessToken?.();
+        if (typeof token === "string" && token) return token;
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  }
+
   // Queue a shareDocument card proposal for the current step.
   proposeDocumentShare(chatId: number, proposal: {
     documentKey: string;

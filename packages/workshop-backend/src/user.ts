@@ -764,6 +764,21 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     return null;
   }
 
+  /**
+   * Return a connected gatekeeper account stub by vendor ID (e.g. 'google', 'github', 'cloudflare').
+   */
+  async getConnectedAccountByVendor(vendorId: string): Promise<Fetcher<GatekeeperUser> | null> {
+    let nextAccountId = this.storage.nextAccountId.get();
+    for (let id = 0; id < nextAccountId; id++) {
+      let rec: ConnectedAccountRecord | undefined;
+      try { rec = this.storage.connectedAccounts.get(id); } catch { continue; }
+      if (rec && rec.vendorId.toLowerCase() === vendorId.toLowerCase()) {
+        return rec.account;
+      }
+    }
+    return null;
+  }
+
   /** The AI Gateway billing state (selected account + cached balance), or null if unset. */
   async getCloudflareBilling(): Promise<CloudflareBilling | null> {
     return this.storage.cloudflareBilling.get();

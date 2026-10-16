@@ -1,4 +1,4 @@
-import { AiChatMessage, AiChatAuthorInfo, AiToolCall, AiChatMessageBody, AgentSpawnerConfig, AiChatStreamEvent, BlueprintOutput, WorkpieceId, type AiModelConfig, isTextLikeAttachmentMimeType, validateBindingName } from '@gadgets/workshop-shared/api';
+import { AiChatMessage, AiChatAuthorInfo, AiToolCall, AiChatMessageBody, AgentSpawnerConfig, AiChatStreamEvent, BlueprintOutput, WorkpieceId, type AiModelConfig, isTextLikeAttachmentMimeType, validateBindingName, type StudentProfile } from '@gadgets/workshop-shared/api';
 import { PDF_MIME_TYPE, modelApiSupportsPdfAttachments } from './chat-attachment-pdf';
 import { extractTextFromPdf } from './pdf-extract';
 import { AgentCatalog, ObservationDescription } from '@gadgets/workshop-shared/gatekeeper';
@@ -428,6 +428,30 @@ export interface AgentHooks {
    * Returns the Groq API key for high-definition neural speech synthesis.
    */
   getGroqApiKey?(): string;
+
+  /**
+   * Retrieves the current user's authenticated account identity, student profile, and subscription tier.
+   */
+  getUserAccountIdentity?(): Promise<{
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    tier: string;
+    isPro: boolean;
+    studentProfile: StudentProfile | null;
+    workspacesCount?: number;
+    overview?: any;
+  } | null>;
+
+  /**
+   * Updates the student's academic profile in their durable user storage.
+   */
+  updateStudentProfile?(patch: Partial<StudentProfile>): Promise<boolean>;
+
+  /**
+   * Returns a YouTube OAuth access token for the current user if available.
+   */
+  getYouTubeAccessToken?(): Promise<string | null>;
 
   /**
    * Queue a "shareDocument" card to be appended to the chat log after the current step.
@@ -879,37 +903,28 @@ You are bound by strict integrity rules:
 5. **No Internal Scratchpad or Monologue in Chat:**
    Never output internal thoughts, density metrics, token estimations, prompt analysis, or meta-instructions (e.g. "Density field progress", "Should I mention...", "Keep tone warm"). Start your reply immediately with the friendly, direct answer to the student.
 
-# Publishing Videos to YouTube
+# Edge Media Storage & Catalog (Ending the 404 Era)
+Voltrix OS provides durable R2 object storage (\`voltrix-workshop-blueprint-content\`) served globally through \`https://voltrix.stream/api/hf-videos/<filename>\` and edge CDNs:
+- **\`uploadAsset\`**: Directly upload and persist any media file, video (.mp4, .webm), audio (.wav, .mp3), diagram (.svg, .png), PDF, HTML, or data JSON into edge storage. Returns permanent CDN streaming URL.
+- **\`listAssets\`**: Enumerate stored assets in the bucket to inspect existing videos and media, ensuring you never reference or promise a media URL that 404s.
 
+# Publishing Videos to YouTube
 When a user asks to publish, upload, or post a rendered video to YouTube, or uses the \`/publish\` slash command:
 
-1. **Check for a \`YOUTUBE\` binding** in your env via \`getAgentCatalog()\`. If present, the user has connected their YouTube channel.
+1. **Use \`uploadVideoToYouTube\` tool directly**:
+   Call \`uploadVideoToYouTube({ videoUrl: "https://voltrix.stream/api/hf-videos/general-relativity.mp4", title: "General Relativity Explained | Voltrix", privacyStatus: "unlisted", categoryId: "27" })\`.
+   - Privacy: always default to \`"unlisted"\` (safe default; user can make it public in YouTube Studio).
+   - Category: defaults to \`"27"\` (Education).
 
-2. **Upload via executeCode** using the \`YOUTUBE\` session:
-\`\`\`javascript
-const yt = await getSession("YOUTUBE");
-const result = await yt.uploadVideo(
-  "https://voltrix.stream/api/hf-videos/general-relativity.mp4",
-  "video/mp4",
-  {
-    title: "General Relativity Explained | Voltrix",
-    description: "An AI-generated visual explainer video from Voltrix — your academic AI copilot.\\n\\nvoltrix.stream",
-    tags: ["education", "explainer", "general relativity", "physics", "AI"],
-    privacyStatus: "unlisted",  // safe default; user can make public in YouTube Studio
-    categoryId: "27",           // Education
-  }
-);
-return { videoId: result.videoId, watchUrl: result.watchUrl };
-\`\`\`
+2. **If YouTube is not connected**:
+   If the tool indicates authorization is required, tell the user to open the Connections panel (plug icon in the navigation bar) or sign in with Google, and ensure YouTube Channel permissions are granted.
 
-3. **After upload**, present the YouTube watch URL as a clickable link: "Your video is live on YouTube: [Watch it here](https://www.youtube.com/watch?v=VIDEO_ID)"
-
-4. **If YOUTUBE is not connected**: Tell the user to go to the Connections panel (plug icon in the top bar), click "Connect" on Google, and select "YouTube Channel" as the resource to grant access to. Once connected, they can retry \`/publish\`.
-
-5. **Available rendered videos** (ready to upload):
+3. **Available verified videos** (ready to upload or play):
    - General Relativity: \`https://voltrix.stream/api/hf-videos/general-relativity.mp4\`
 
-6. **Privacy**: always default to \`"unlisted"\` — the user can promote to public in YouTube Studio after reviewing.
+# Identity & Multi-Tenant Academic Context
+- **\`getAccountIdentity\`**: Call this tool whenever you need to inspect the current student's identity, subscription tier (\`free\` vs \`pro\`), university, degree program, academic year, citation style, and session claims.
+- **\`updateStudentProfile\`**: Call this tool if the student asks you to update their degree, university, citation style, or enrolled courses.
 
 # Academic Submissions & Coursework Policy
 When a student asks you to write, draft, generate, or format a coursework, essay, lab report, research paper, dissertation chapter, problem set solution, or formal academic assignment:
@@ -3423,6 +3438,419 @@ export async function runAgent(
             `• **HTML5 Embed:** \`${result.htmlEmbed}\``;
 
           return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    uploadAsset: defineTool({
+      name: "uploadAsset",
+      label: "Upload asset to edge storage",
+      description: "Uploads and persists any asset (video, audio, image, PDF, HTML, markdown, or JSON) directly into durable R2 edge storage ('voltrix-workshop-blueprint-content'). Serves immediately via global CDN at 'https://voltrix.stream/api/hf-videos/<filename>' or public path. Returns durable streaming URL, byte size, and metadata.",
+      parameters: Type.Object({
+        filename: Type.String({description: "Target filename or key in storage (e.g. 'hf-videos/calculus.mp4', 'diagrams/circuit.svg', 'exports/paper.pdf', 'data/notes.json'). If no prefix is provided, defaults to storing under 'hf-videos/'."}),
+        content: Type.String({description: "Asset content as a UTF-8 text string, data URL ('data:...;base64,...'), or base64-encoded binary string."}),
+        contentType: Type.Optional(Type.String({description: "Optional MIME type (e.g. 'video/mp4', 'image/png', 'image/svg+xml', 'audio/wav', 'application/pdf', 'application/json'). If omitted, inferred automatically from filename extension."})),
+        isBase64: Type.Optional(Type.Boolean({description: "Explicitly indicate if content is base64-encoded. Auto-detected if omitted or if content starts with 'data:'."})),
+        cacheControl: Type.Optional(Type.String({description: "Optional HTTP Cache-Control header. Defaults to 'public, max-age=31536000, immutable'."})),
+      }),
+      execute: async (toolCallId, {filename, content, contentType, isBase64, cacheControl}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket ('voltrix-workshop-blueprint-content') is not configured on this instance.");
+          }
+
+          let cleanKey = filename.replace(/^\/+/, "");
+          if (!cleanKey.includes("/")) {
+            cleanKey = `hf-videos/${cleanKey}`;
+          }
+
+          let mime = contentType;
+          if (!mime) {
+            const ext = cleanKey.split(".").pop()?.toLowerCase();
+            const mimeMap: Record<string, string> = {
+              mp4: "video/mp4",
+              webm: "video/webm",
+              wav: "audio/wav",
+              mp3: "audio/mpeg",
+              png: "image/png",
+              jpg: "image/jpeg",
+              jpeg: "image/jpeg",
+              svg: "image/svg+xml",
+              pdf: "application/pdf",
+              json: "application/json",
+              html: "text/html",
+              css: "text/css",
+              js: "application/javascript",
+              md: "text/markdown",
+              txt: "text/plain",
+            };
+            mime = (ext && mimeMap[ext]) || "application/octet-stream";
+          }
+
+          let dataBytes: Uint8Array;
+          let shouldDecodeBase64 = isBase64;
+          let rawData = content;
+
+          if (rawData.startsWith("data:")) {
+            shouldDecodeBase64 = true;
+            const commaIdx = rawData.indexOf(",");
+            if (commaIdx !== -1) {
+              const header = rawData.slice(0, commaIdx);
+              if (!contentType && header.includes(";")) {
+                const matchMime = header.match(/^data:([^;]+)/);
+                if (matchMime) mime = matchMime[1];
+              }
+              rawData = rawData.slice(commaIdx + 1);
+            }
+          }
+
+          if (shouldDecodeBase64) {
+            const binary = atob(rawData.trim());
+            dataBytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              dataBytes[i] = binary.charCodeAt(i);
+            }
+          } else {
+            dataBytes = new TextEncoder().encode(rawData);
+          }
+
+          await bucket.put(cleanKey, dataBytes, {
+            httpMetadata: {
+              contentType: mime,
+              cacheControl: cacheControl || "public, max-age=31536000, immutable",
+            },
+            customMetadata: {
+              uploadedBy: "voltrix-agent",
+              uploadedAt: new Date().toISOString(),
+              size: String(dataBytes.byteLength),
+            },
+          });
+
+          const servedKey = cleanKey.startsWith("hf-videos/") ? cleanKey.slice("hf-videos/".length) : cleanKey;
+          const publicUrl = `https://voltrix.stream/api/hf-videos/${servedKey}`;
+
+          const formatted = `📦 **Asset Stored Successfully!**\n\n` +
+            `• **Bucket:** \`voltrix-workshop-blueprint-content\`\n` +
+            `• **Storage Key:** \`${cleanKey}\`\n` +
+            `• **Content-Type:** \`${mime}\`\n` +
+            `• **Size:** ${(dataBytes.byteLength / 1024).toFixed(2)} KB (${dataBytes.byteLength} bytes)\n` +
+            `• **Public CDN URL:** [${publicUrl}](${publicUrl})\n` +
+            `• **Markdown Embed:** \`![${servedKey}](${publicUrl})\``;
+
+          return toolResult(formatted, {
+            output: formatted,
+            url: publicUrl,
+            publicUrl,
+            key: cleanKey,
+            sizeBytes: dataBytes.byteLength,
+            contentType: mime,
+            status: "uploaded",
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    listAssets: defineTool({
+      name: "listAssets",
+      label: "List assets in edge storage",
+      description: "Lists persisted media and assets in durable edge storage ('voltrix-workshop-blueprint-content'). Use to inspect existing videos, audio files, images, and documents, preventing missing media or 404s.",
+      parameters: Type.Object({
+        prefix: Type.Optional(Type.String({description: "Optional key prefix to filter by (e.g. 'hf-videos/', 'diagrams/', or ''). Defaults to ''."})),
+        limit: Type.Optional(Type.Number({description: "Maximum number of assets to return (1 to 100). Defaults to 50."})),
+      }),
+      execute: async (toolCallId, {prefix = "", limit = 50}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+
+          const listing = await bucket.list({ prefix, limit: Math.min(100, Math.max(1, limit)) });
+          const items = listing.objects.map(obj => {
+            const servedKey = obj.key.startsWith("hf-videos/") ? obj.key.slice("hf-videos/".length) : obj.key;
+            return {
+              key: obj.key,
+              sizeBytes: obj.size,
+              uploadedAt: obj.uploaded.toISOString(),
+              publicUrl: `https://voltrix.stream/api/hf-videos/${servedKey}`,
+            };
+          });
+
+          const tableRows = items.map(i => `| \`${i.key}\` | ${(i.sizeBytes / 1024).toFixed(1)} KB | [Link](${i.publicUrl}) |`).join("\n");
+          const formatted = `📂 **Edge Storage Catalog (${items.length} items)**\n\n` +
+            `| Key | Size | URL |\n|---|---|---|\n` +
+            (tableRows || "| *(no items matching prefix)* | — | — |");
+
+          return toolResult(formatted, {
+            output: formatted,
+            count: items.length,
+            truncated: listing.truncated,
+            assets: items,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    uploadVideoToYouTube: defineTool({
+      name: "uploadVideoToYouTube",
+      label: "Upload video to YouTube",
+      description: "Publishes and uploads a rendered video (.mp4) directly to the user's connected YouTube channel via YouTube Data API v3 (resumable upload protocol). Accepts an edge storage URL (e.g. 'https://voltrix.stream/api/hf-videos/...'), relative path, or R2 key. Returns YouTube video ID and watch URL.",
+      parameters: Type.Object({
+        videoUrl: Type.String({description: "Stream URL or key of the video to upload (e.g. 'https://voltrix.stream/api/hf-videos/general-relativity.mp4', '/api/hf-videos/general-relativity.mp4', or 'hf-videos/general-relativity.mp4')."}),
+        title: Type.String({description: "Title for the YouTube video (up to 100 characters)."}),
+        description: Type.Optional(Type.String({description: "Detailed description for YouTube (supports markdown, links, timestamps)."})),
+        tags: Type.Optional(Type.Array(Type.String(), {description: "Array of topic tags/keywords for discoverability."})),
+        privacyStatus: Type.Optional(Type.Union([Type.Literal("unlisted"), Type.Literal("public"), Type.Literal("private")], {description: "Privacy status: 'unlisted' (default, safe for review in YouTube Studio), 'public', or 'private'."})),
+        categoryId: Type.Optional(Type.String({description: "YouTube category ID. Defaults to '27' (Education)."})),
+        accessToken: Type.Optional(Type.String({description: "Optional explicit Google OAuth access token with youtube.force-ssl scope."})),
+      }),
+      execute: async (toolCallId, {videoUrl, title, description, tags, privacyStatus = "unlisted", categoryId = "27", accessToken}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          let videoBytes: Uint8Array | null = null;
+
+          // 1. Resolve video bytes
+          const cleanUrl = videoUrl.trim();
+          let r2Key: string | null = null;
+
+          if (cleanUrl.startsWith("https://voltrix.stream/api/hf-videos/") || cleanUrl.startsWith("/api/hf-videos/")) {
+            const filename = cleanUrl.replace(/^https:\/\/voltrix\.stream/, "").replace(/^\/api\/hf-videos\//, "");
+            r2Key = `hf-videos/${filename}`;
+          } else if (cleanUrl.startsWith("hf-videos/")) {
+            r2Key = cleanUrl;
+          }
+
+          if (r2Key && bucket) {
+            const obj = await bucket.get(r2Key);
+            if (obj) {
+              videoBytes = new Uint8Array(await obj.arrayBuffer());
+            }
+          }
+
+          if (!videoBytes && (cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://"))) {
+            const fetchRes = await fetch(cleanUrl);
+            if (!fetchRes.ok) throw new Error(`Failed to fetch video stream from URL (${fetchRes.status})`);
+            videoBytes = new Uint8Array(await fetchRes.arrayBuffer());
+          }
+
+          if (!videoBytes) {
+            throw new Error(`Could not resolve video content from '${videoUrl}'. Please ensure the video exists in edge storage or provide a valid reachable URL.`);
+          }
+
+          // 2. Resolve access token
+          let effectiveToken = accessToken?.trim() || "";
+          if (!effectiveToken && hooks.getYouTubeAccessToken) {
+            effectiveToken = (await hooks.getYouTubeAccessToken()) || "";
+          }
+
+          if (!effectiveToken) {
+            const authHelp = `🔒 **YouTube Channel Authorization Required**\n\n` +
+              `To upload \`${title}\` directly to your YouTube channel:\n` +
+              `1. Open the **Connections** panel (plug icon in the navigation bar) or sign in with Google.\n` +
+              `2. Connect your Google account and ensure **YouTube** access is granted.\n` +
+              `3. Once connected, retry uploading or pass your access token.`;
+            return toolResult(authHelp, {
+              status: "auth_required",
+              error: "YOUTUBE_AUTH_REQUIRED",
+              title,
+              message: "Please connect your Google account with YouTube permissions in the Connections panel.",
+            } as Partial<AiToolCall>);
+          }
+
+          // 3. Resumable Upload to YouTube
+          const metadata = {
+            snippet: {
+              title: title.slice(0, 100),
+              description: (description || "").slice(0, 5000),
+              tags: tags || ["education", "explainer", "voltrix", "AI"],
+              categoryId: categoryId || "27",
+            },
+            status: {
+              privacyStatus: privacyStatus || "unlisted",
+            },
+          };
+
+          const initRes = await fetch(
+            "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${effectiveToken}`,
+                "Content-Type": "application/json",
+                "X-Upload-Content-Type": "video/mp4",
+                "X-Upload-Content-Length": String(videoBytes.byteLength),
+              },
+              body: JSON.stringify(metadata),
+            }
+          );
+
+          if (!initRes.ok) {
+            const errText = await initRes.text();
+            throw new Error(`YouTube upload initiation failed (${initRes.status}): ${errText}`);
+          }
+
+          const uploadUrl = initRes.headers.get("Location");
+          if (!uploadUrl) {
+            throw new Error("YouTube did not return a resumable upload location URL.");
+          }
+
+          const uploadRes = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "video/mp4",
+              "Content-Length": String(videoBytes.byteLength),
+            },
+            body: videoBytes,
+          });
+
+          if (!uploadRes.ok) {
+            const errText = await uploadRes.text();
+            throw new Error(`YouTube video upload failed (${uploadRes.status}): ${errText}`);
+          }
+
+          const resData = await uploadRes.json() as any;
+          const videoId = resData.id;
+          const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+          const formatted = `🎬 **Video Published to YouTube!**\n\n` +
+            `• **Title:** ${title}\n` +
+            `• **Video ID:** \`${videoId}\`\n` +
+            `• **Privacy:** \`${privacyStatus}\`\n` +
+            `• **Watch Live:** [${watchUrl}](${watchUrl})\n\n` +
+            `The video is unlisted by default so you can review and polish metadata in YouTube Studio before setting to public.`;
+
+          return toolResult(formatted, {
+            output: formatted,
+            videoId,
+            watchUrl,
+            title,
+            privacyStatus,
+            status: "uploaded",
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    getAccountIdentity: defineTool({
+      name: "getAccountIdentity",
+      label: "Get user account and student identity",
+      description: "Retrieves the authenticated user's identity, academic profile (university, degree program, academic year, citation style, enrolled courses, university crest), subscription tier ('free', 'pro', 'cohort', 'campus', 'enterprise'), session claims, and usage statistics.",
+      parameters: Type.Object({
+        includeOverview: Type.Optional(Type.Boolean({description: "Whether to include workspace and session overview counts. Defaults to true."})),
+      }),
+      execute: async (toolCallId, {includeOverview = true}) => {
+        try {
+          let identity = null;
+          if (hooks.getUserAccountIdentity) {
+            identity = await hooks.getUserAccountIdentity();
+          }
+
+          const userId = identity?.userId || hooks.getCurrentUserId() || "anonymous";
+          const studentProfile = identity?.studentProfile;
+          const plan = identity?.tier || (studentProfile as any)?.tier || "free";
+          const isPro = identity?.isPro ?? (plan !== "free");
+          const name = identity?.name || studentProfile?.name || "Student Scholar";
+
+          const formatted = `👤 **Authenticated User Identity & Academic Profile**\n\n` +
+            `• **User ID / Sub:** \`${userId}\`\n` +
+            `• **Student Name:** ${name}\n` +
+            `• **Email:** ${identity?.email || "*(account managed)*"}\n` +
+            `• **Subscription Plan:** **${plan.toUpperCase()}** ${isPro ? "⭐ (Pro Subscriber)" : "(Standard Tier)"}\n` +
+            (studentProfile ? (
+              `\n**Academic Context:**\n` +
+              `• **University:** ${studentProfile.university}\n` +
+              `• **Degree Program:** ${studentProfile.degreeProgram} (${studentProfile.academicYear || "Year 1"}, ${studentProfile.semester || "Sem 1"})\n` +
+              `• **Discipline:** ${studentProfile.disciplineTitle || studentProfile.discipline}\n` +
+              `• **Citation Style:** \`${studentProfile.citationStyle || "APA 7th"}\`\n` +
+              `• **Enrolled Units:** ${studentProfile.courses?.map(c => `${c.code} (${c.name})`).join(", ") || "None recorded"}\n`
+            ) : `\n*(Academic profile onboarding not yet completed)*\n`) +
+            `\n**Session Claims:**\n` +
+            `\`\`\`json\n` +
+            JSON.stringify({
+              sub: userId,
+              iss: "https://voltrix.stream",
+              aud: "voltrix-os",
+              name,
+              plan,
+              isPro,
+              tier: plan,
+              workspacesCount: identity?.workspacesCount ?? 0,
+            }, null, 2) + `\n\`\`\``;
+
+          return toolResult(formatted, {
+            output: formatted,
+            userId,
+            name,
+            email: identity?.email ?? null,
+            plan,
+            isPro,
+            tier: plan,
+            claims: {
+              sub: userId,
+              iss: "https://voltrix.stream",
+              aud: "voltrix-os",
+              name,
+              plan,
+              isPro,
+              tier: plan,
+            },
+            studentProfile,
+            workspacesCount: identity?.workspacesCount ?? 0,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    updateStudentProfile: defineTool({
+      name: "updateStudentProfile",
+      label: "Update student academic profile",
+      description: "Updates the student's academic profile in their durable account storage (e.g. university, degree program, academic year, citation style, discipline, or course list).",
+      parameters: Type.Object({
+        name: Type.Optional(Type.String({description: "Student display name."})),
+        university: Type.Optional(Type.String({description: "Institution or university name."})),
+        degreeProgram: Type.Optional(Type.String({description: "Degree or program of study."})),
+        academicLevel: Type.Optional(Type.String({description: "Academic level (e.g. 'Undergraduate', 'Postgraduate', 'High School')."})),
+        academicYear: Type.Optional(Type.String({description: "Academic year (e.g. 'Year 2', '2026')."})),
+        semester: Type.Optional(Type.String({description: "Current semester (e.g. 'Semester 1', 'Fall')."})),
+        discipline: Type.Optional(Type.String({description: "Discipline category (e.g. 'engineering', 'science', 'medicine', 'business')."})),
+        disciplineTitle: Type.Optional(Type.String({description: "Discipline title (e.g. 'Computer Science & Software Engineering')."})),
+        citationStyle: Type.Optional(Type.String({description: "Preferred citation format (e.g. 'IEEE', 'APA 7th', 'Harvard', 'Chicago')."})),
+        courses: Type.Optional(Type.Array(Type.Object({
+          code: Type.String({description: "Course code, e.g. 'CS301'"}),
+          name: Type.String({description: "Course name, e.g. 'Operating Systems'"})
+        }), {description: "Enrolled course list."})),
+      }),
+      execute: async (toolCallId, patch) => {
+        try {
+          if (!hooks.updateStudentProfile) {
+            throw new Error("Profile updates are not supported by the current overseer.");
+          }
+
+          const success = await hooks.updateStudentProfile(patch as any);
+          if (!success) {
+            throw new Error("Failed to update student profile in user storage.");
+          }
+
+          const formatted = `✅ **Student Profile Updated Successfully!**\n\n` +
+            `Changes saved to account storage. Future documents, research papers, and cover pages will automatically reflect these academic credentials.`;
+
+          return toolResult(formatted, {output: formatted, success: true, updated: patch} as Partial<AiToolCall>);
         } catch (error) {
           toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
           throw error;
