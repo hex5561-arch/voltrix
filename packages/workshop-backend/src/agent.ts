@@ -26,6 +26,7 @@ import {
 } from "./scholarly.js";
 import { publishSiteToStorage } from "./sites.js";
 import { createHyperFramesJob } from "./hf-jobs.js";
+import { runPython, formatPythonRunOutput } from "./python-runner.js";
 import {
   synthesizeSpeech as synthesizeSpeechImpl,
   listVoices,
@@ -34,6 +35,7 @@ import {
   type VoicePersona,
 } from "./tts-engine.js";
 import { generateImage as generateImageImpl } from "./image-engine.js";
+import { transcribeAudio as transcribeAudioImpl } from "./asr-engine.js";
 import { defineGitHubTools } from "./github";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
@@ -1022,6 +1024,12 @@ You can generate high-fidelity diagrams, schematics, illustrations, and visual a
 - Supports Flux Schnell (\`@cf/black-forest-labs/flux-1-schnell\`, fast 4-step) and SDXL (\`@cf/stabilityai/stable-diffusion-xl-base-1.0\`).
 - Generates images directly to durable edge R2 storage (\`voltrix-workshop-blueprint-content\`) and serves them via CDN at \`https://voltrix.stream/api/hf-videos/<filename>.png\`.
 - Embed images in responses using standard markdown: \`![Description](https://voltrix.stream/api/hf-videos/<filename>.png)\`.
+
+# Speech Transcription & Subtitle Intelligence (ASR)
+You can transcribe audio recordings and generate synchronized WebVTT (.vtt) and SubRip (.srt) subtitles using the \`transcribeAudio\` tool:
+- Powered by Cloudflare Workers AI Whisper (\`@cf/openai/whisper\` with automatic fallback to \`@cf/openai/whisper-large-v3-turbo\`).
+- Transcribes audio from edge R2 storage (\`hf-videos/\`), direct URLs, or raw bytes.
+- Automatically generates and saves synchronized \`.vtt\` and \`.srt\` subtitles to R2 (\`https://voltrix.stream/api/hf-videos/<filename>\`).
 
 # Learned Skills & Continuous Improvement Flywheel
 You possess an active skill learning and error prevention flywheel:
@@ -3542,6 +3550,43 @@ export async function runAgent(
       },
     }),
 
+    runPython: defineTool({
+      name: "runPython",
+      label: "Execute Scientific Python",
+      description: "Executes scientific Python code with pre-imported NumPy (as np), SciPy, SymPy (as sp), Pandas (as pd), and Matplotlib (as plt). Supports symbolic math, calculus, linear algebra, numerical analysis, dataframe operations, and headless plot visualization.",
+      parameters: Type.Object({
+        code: Type.String({
+          description: "Python code to execute. Can use np, sp, pd, scipy, and plt. Trailing expressions (e.g. sp.integrate(...) or matrix) will be evaluated and converted to LaTeX and string output automatically. Active plots will be captured and returned.",
+        }),
+        timeoutMs: Type.Optional(Type.Number({
+          description: "Timeout in milliseconds (default: 10000ms / 10s).",
+        })),
+      }),
+      execute: async (toolCallId, { code, timeoutMs = 10000 }) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket?.();
+          const userId = hooks.getCurrentUserId?.() || "scholar";
+
+          const result = await runPython({
+            code,
+            timeoutMs,
+            bucket,
+            userId,
+          });
+
+          const formatted = formatPythonRunOutput(result);
+
+          return toolResult(formatted, {
+            output: formatted,
+            pythonResult: result,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
     synthesizeSpeech: defineTool({
       name: "synthesizeSpeech",
       label: "Synthesize speech audio",
@@ -3701,6 +3746,67 @@ export async function runAgent(
       },
     }),
 
+    transcribeAudio: defineTool({
+      name: "transcribeAudio",
+      label: "Transcribe audio & generate subtitles",
+      description: "Transcribes speech audio into text and generates synchronized subtitles (WebVTT and SubRip SRT) using Cloudflare Workers AI Whisper (@cf/openai/whisper with fallback to @cf/openai/whisper-large-v3-turbo). Reads audio from edge R2 storage ('hf-videos/'), direct URLs, or raw bytes, and persists generated .vtt and .srt subtitle files to R2.",
+      parameters: Type.Object({
+        filename: Type.Optional(Type.String({
+          description: "Audio filename or storage key in R2 (e.g. 'hf-videos/lecture-01.mp3', 'speech.wav', or 'narration.mp3').",
+        })),
+        audioUrl: Type.Optional(Type.String({
+          description: "Direct public URL to fetch audio from if not already in R2.",
+        })),
+        language: Type.Optional(Type.String({
+          description: "Optional ISO language code hint (e.g. 'en', 'es', 'fr', 'sw', 'de').",
+        })),
+        generateSubtitles: Type.Optional(Type.Boolean({
+          description: "Whether to generate WebVTT (.vtt) and SubRip (.srt) subtitle files and persist them to R2. Defaults to true.",
+        })),
+      }),
+      execute: async (toolCallId, {filename, audioUrl, language, generateSubtitles = true}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket ('voltrix-workshop-blueprint-content') is not configured on this instance.");
+          }
+          const ai = hooks.getClassifierAi?.();
+          if (!ai) {
+            throw new Error("Cloudflare Workers AI binding ('env.WORKERS_AI') is not available on this instance.");
+          }
+
+          const result = await transcribeAudioImpl(
+            { filename, audioUrl, language, generateSubtitles },
+            {
+              BLUEPRINT_CONTENT: bucket,
+              WORKERS_AI: ai,
+              CF_AI_GATEWAY: "voltrix-ai",
+              CF_AI_GATEWAY_ACCOUNT_ID: "84f114e1b747a07d247ceb17b0c1dc14",
+            }
+          );
+
+          let formatted = `🎙️ **Audio Transcription Completed!**\n\n` +
+            `• **Words Count:** ${result.wordsCount}\n` +
+            (result.language ? `• **Language:** \`${result.language}\`\n` : "") +
+            (result.duration !== undefined ? `• **Duration:** ${result.duration.toFixed(1)}s\n` : "") +
+            `• **Segments:** ${result.segments.length}\n`;
+
+          if (result.vttUrl || result.srtUrl) {
+            formatted += `\n**Subtitles Generated:**\n` +
+              (result.vttUrl ? `• **WebVTT (.vtt):** [${result.vttUrl}](${result.vttUrl})\n` : "") +
+              (result.srtUrl ? `• **SubRip (.srt):** [${result.srtUrl}](${result.srtUrl})\n` : "");
+          }
+
+          formatted += `\n**Full Transcription:**\n> ${result.text.replace(/\n/g, "\n> ")}`;
+
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
     uploadAsset: defineTool({
       name: "uploadAsset",
       label: "Upload asset to edge storage",
@@ -3849,6 +3955,223 @@ export async function runAgent(
             count: items.length,
             truncated: listing.truncated,
             assets: items,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    readAsset: defineTool({
+      name: "readAsset",
+      label: "Read asset content from edge storage",
+      description: "Directly reads the contents or text/JSON of a file stored in edge R2 storage ('voltrix-workshop-blueprint-content'). Useful for inspecting job manifests ('hf-jobs/<jobId>.json'), generated subtitles (VTT/SRT), SVGs, HTML, and JSON data without burning webFetch calls.",
+      parameters: Type.Object({
+        filename: Type.String({description: "Storage key or filename in the bucket (e.g. 'hf-jobs/batch2-image-reel.json', 'hf-videos/badge.vtt', or filename without prefix)."}),
+      }),
+      execute: async (toolCallId, {filename}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+
+          let cleanKey = filename.trim().replace(/^\/+/, "");
+          let obj = await bucket.get(cleanKey);
+          if (!obj && !cleanKey.startsWith("hf-videos/") && !cleanKey.startsWith("hf-jobs/")) {
+            obj = await bucket.get(`hf-videos/${cleanKey}`);
+            if (obj) cleanKey = `hf-videos/${cleanKey}`;
+            else {
+              obj = await bucket.get(`hf-jobs/${cleanKey}`);
+              if (obj) cleanKey = `hf-jobs/${cleanKey}`;
+            }
+          }
+
+          if (!obj) {
+            throw new Error(`Asset '${filename}' not found in edge storage.`);
+          }
+
+          const text = await obj.text();
+          const contentType = obj.httpMetadata?.contentType || "text/plain";
+          const formatted = `📄 **Asset Content: \`${cleanKey}\`** (${(obj.size / 1024).toFixed(1)} KB, \`${contentType}\`)\n\n` +
+            (contentType.includes("json") ? `\`\`\`json\n${text}\n\`\`\`` : `\`\`\`\n${text}\n\`\`\``);
+
+          return toolResult(formatted, {
+            output: formatted,
+            key: cleanKey,
+            sizeBytes: obj.size,
+            contentType,
+            content: text,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    deleteAsset: defineTool({
+      name: "deleteAsset",
+      label: "Delete asset from edge storage",
+      description: "Deletes an asset from edge R2 storage ('voltrix-workshop-blueprint-content'). Used to clean up temporary test files, old renders, or obsolete media.",
+      parameters: Type.Object({
+        filename: Type.String({description: "Key or filename of the asset to delete (e.g. 'hf-videos/test-probe.png' or 'test-probe.png')."}),
+      }),
+      execute: async (toolCallId, {filename}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+
+          let cleanKey = filename.trim().replace(/^\/+/, "");
+          let obj = await bucket.head(cleanKey);
+          if (!obj && !cleanKey.startsWith("hf-videos/")) {
+            const altKey = `hf-videos/${cleanKey}`;
+            const altObj = await bucket.head(altKey);
+            if (altObj) cleanKey = altKey;
+          }
+
+          await bucket.delete(cleanKey);
+          const formatted = `🗑️ **Asset Deleted Successfully!**\n\n` +
+            `• **Key:** \`${cleanKey}\` removed from \`voltrix-workshop-blueprint-content\`.`;
+
+          return toolResult(formatted, {
+            output: formatted,
+            key: cleanKey,
+            deleted: true,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    getRenderJobStatus: defineTool({
+      name: "getRenderJobStatus",
+      label: "Get HyperFrames video render job status",
+      description: "Checks the real-time status, progress percentage, logs, and output video URL of a HyperFrames video render job directly from storage manifests.",
+      parameters: Type.Object({
+        jobId: Type.String({description: "HyperFrames render job ID (e.g. 'hf-batch2-image-reel-mvbbueny' or 'batch2-image-reel-mvbbueny')."}),
+      }),
+      execute: async (toolCallId, {jobId}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+
+          let cleanId = jobId.trim().replace(/^\/+/, "");
+          if (cleanId.endsWith(".json")) cleanId = cleanId.slice(0, -5);
+          if (cleanId.startsWith("hf-jobs/")) cleanId = cleanId.slice("hf-jobs/".length);
+
+          const jobKey = `hf-jobs/${cleanId}.json`;
+          const obj = await bucket.get(jobKey);
+          if (!obj) {
+            throw new Error(`Render job '${cleanId}' not found at '${jobKey}'.`);
+          }
+
+          const raw = await obj.text();
+          let jobData: any = {};
+          try {
+            jobData = JSON.parse(raw);
+          } catch {
+            jobData = { raw };
+          }
+
+          const status = (jobData.status || "queued").toUpperCase();
+          const progress = jobData.progress !== undefined ? `${jobData.progress}%` : "Pending";
+          const videoUrl = jobData.videoUrl || (jobData.status === "completed" ? `https://voltrix.stream/api/hf-videos/${cleanId}.mp4` : null);
+
+          let formatted = `🎬 **Render Job Status: \`${cleanId}\`**\n\n` +
+            `• **Status:** \`${status}\`\n` +
+            `• **Progress:** ${progress}\n` +
+            (jobData.durationSeconds ? `• **Duration:** ${jobData.durationSeconds}s\n` : "") +
+            (jobData.fps ? `• **FPS:** ${jobData.fps}\n` : "") +
+            (jobData.error ? `• **Error:** \`${jobData.error}\`\n` : "") +
+            (videoUrl ? `• **Video Output URL:** [${videoUrl}](${videoUrl})\n` : "") +
+            `• **Last Updated:** ${obj.uploaded.toISOString()}\n\n`;
+
+          if (videoUrl) {
+            formatted += `**Markdown Embed:**\n\`[Watch Video](${videoUrl})\``;
+          }
+
+          return toolResult(formatted, {
+            output: formatted,
+            jobId: cleanId,
+            status: jobData.status,
+            progress: jobData.progress,
+            videoUrl,
+            jobData,
+          } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    synthesizeSpeechBatch: defineTool({
+      name: "synthesizeSpeechBatch",
+      label: "Synthesize batch of speech narrations",
+      description: "Synthesizes multiple speech narration clips in parallel across any registered voices (Christopher, Jenny, Guy, Aria, Eric, Ana, Sonia, Ryan). Generates a complete audio manifest with per-scene durations and URLs for HyperFrames builds in a single turn.",
+      parameters: Type.Object({
+        clips: Type.Array(Type.Object({
+          id: Type.String({description: "Identifier for the scene/clip (e.g. 'scene-1', 'intro', 'conclusion')."}),
+          text: Type.String({description: "Script text to speak."}),
+          voice: Type.Optional(Type.String({description: "Voice persona (e.g. 'Christopher', 'Jenny', 'Ryan'). Defaults to Christopher."})),
+          filename: Type.Optional(Type.String({description: "Optional custom filename slug."})),
+        })),
+      }),
+      execute: async (toolCallId, {clips}) => {
+        try {
+          if (!clips || clips.length === 0) {
+            throw new Error("Batch requires at least one speech clip.");
+          }
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Storage bucket is not configured on this instance.");
+          }
+
+          const ai = hooks.getClassifierAi?.();
+          const groqApiKey = hooks.getGroqApiKey?.() || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
+
+          const results = await Promise.all(clips.map(async (clip) => {
+            const voice = clip.voice || "Christopher";
+            const customSlug = clip.filename || `narration-${clip.id.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}-${Date.now().toString(36)}`;
+            const res = await synthesizeSpeechImpl(
+              { text: clip.text, voice, filename: customSlug },
+              {
+                BLUEPRINT_CONTENT: bucket,
+                WORKERS_AI: ai,
+                GROQ_API_KEY: groqApiKey,
+              }
+            );
+            return {
+              id: clip.id,
+              voice: res.voice,
+              durationSeconds: res.durationEstimateSeconds,
+              audioUrl: res.audioUrl,
+              text: clip.text,
+            };
+          }));
+
+          const totalDuration = results.reduce((acc, r) => acc + r.durationSeconds, 0);
+          const manifestLines = results.map(r => `| \`${r.id}\` | \`${r.voice}\` | ${r.durationSeconds.toFixed(2)}s | [Audio](${r.audioUrl}) |`).join("\n");
+
+          const formatted = `🎙️ **Batch Speech Narration Manifest (${results.length} clips, ${totalDuration.toFixed(1)}s total)**\n\n` +
+            `| Scene ID | Voice | Duration | URL |\n|---|---|---|---|\n` +
+            manifestLines + `\n\n` +
+            `**HyperFrames Audio Manifest JSON:**\n\`\`\`json\n` +
+            JSON.stringify(results, null, 2) + `\n\`\`\``;
+
+          return toolResult(formatted, {
+            output: formatted,
+            totalDurationSeconds: totalDuration,
+            count: results.length,
+            clips: results,
           } as Partial<AiToolCall>);
         } catch (error) {
           toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
@@ -4599,6 +4922,7 @@ export async function runAgent(
     tools = {
       describeBinding: tools.describeBinding,
       executeCode: tools.executeCode,
+      ...(tools.runPython ? { runPython: tools.runPython } : {}),
       ...(callbackInitiated ? {giveUp: tools.giveUp} : {}),
     };
   }

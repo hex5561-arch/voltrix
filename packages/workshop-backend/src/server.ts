@@ -50,6 +50,14 @@ import {
   listRecentHyperFramesJobs,
 } from "./hf-jobs.js";
 import {
+  runPython,
+  createPythonJob,
+  getPythonJob,
+  updatePythonJob,
+  pollPendingPythonJobs,
+  listRecentPythonJobs,
+} from "./python-runner.js";
+import {
   getGrowthConfig,
   updateGrowthConfig,
   getUserReferralProfile,
@@ -63,6 +71,7 @@ import {
   renderSolutionHtml,
 } from "./solutions.js";
 import { synthesizeSpeech, listVoices, getVoice, registerVoice } from "./tts-engine.js";
+import { handleWhatsAppWebhookGet, handleWhatsAppWebhookPost } from "./whatsapp-webhook.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -106,6 +115,9 @@ type Env = Cloudflare.Env & {
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  WHATSAPP_VERIFY_TOKEN?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
 }
 
 // =======================================================================================
@@ -1620,6 +1632,103 @@ async function handleHyperFramesJobsRequest(req: Request, env: Env): Promise<Res
   return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
 }
 
+async function handlePythonRequest(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  // 1. Direct or forwarded run: POST /api/python/run
+  if (url.pathname === "/api/python/run" && req.method === "POST") {
+    try {
+      const body = (await req.json()) as any;
+      if (!body.code) {
+        return Response.json({ success: false, error: "code is required" }, { status: 400, headers: corsHeaders });
+      }
+      const result = await runPython({
+        code: body.code,
+        timeoutMs: body.timeoutMs,
+        bucket: env.BLUEPRINT_CONTENT,
+        userId: body.userId,
+      });
+      return Response.json(result, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Execution failed" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 2. Create queue job: POST /api/python-jobs/create
+  if (url.pathname === "/api/python-jobs/create" && req.method === "POST") {
+    try {
+      const body = (await req.json()) as any;
+      if (!body.code) {
+        return Response.json({ success: false, error: "code is required" }, { status: 400, headers: corsHeaders });
+      }
+      const job = await createPythonJob(env.BLUEPRINT_CONTENT, {
+        code: body.code,
+        timeoutMs: body.timeoutMs,
+        userId: body.userId,
+      });
+      return Response.json({ success: true, job }, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to create python job" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 3. Poll pending jobs: GET /api/python-jobs/poll
+  if (url.pathname === "/api/python-jobs/poll" && req.method === "GET") {
+    try {
+      const pending = await pollPendingPythonJobs(env.BLUEPRINT_CONTENT);
+      return Response.json({ success: true, jobs: pending }, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to poll python jobs" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 4. Update job: POST /api/python-jobs/update
+  if (url.pathname === "/api/python-jobs/update" && req.method === "POST") {
+    try {
+      const body = (await req.json()) as any;
+      if (!body.id) {
+        return Response.json({ success: false, error: "job id is required" }, { status: 400, headers: corsHeaders });
+      }
+      const updated = await updatePythonJob(env.BLUEPRINT_CONTENT, body.id, {
+        status: body.status,
+        result: body.result,
+        error: body.error,
+      });
+      if (!updated) {
+        return Response.json({ success: false, error: "Job not found" }, { status: 404, headers: corsHeaders });
+      }
+      return Response.json({ success: true, job: updated }, { headers: corsHeaders });
+    } catch (err: any) {
+      return Response.json({ success: false, error: err?.message || "Failed to update python job" }, { status: 500, headers: corsHeaders });
+    }
+  }
+
+  // 5. Get job: GET /api/python-jobs/:id or /api/python-jobs/recent
+  if (url.pathname.startsWith("/api/python-jobs/") && req.method === "GET") {
+    const jobId = url.pathname.slice("/api/python-jobs/".length).trim();
+    if (jobId === "recent" || jobId === "latest") {
+      const recent = await listRecentPythonJobs(env.BLUEPRINT_CONTENT);
+      return Response.json({ success: true, jobs: recent }, { headers: corsHeaders });
+    }
+    const job = await getPythonJob(env.BLUEPRINT_CONTENT, jobId);
+    if (!job) {
+      return Response.json({ success: false, error: "Job not found" }, { status: 404, headers: corsHeaders });
+    }
+    return Response.json({ success: true, job }, { headers: corsHeaders });
+  }
+
+  return Response.json({ error: "Endpoint not found" }, { status: 404, headers: corsHeaders });
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
@@ -1692,6 +1801,10 @@ ${catalog.map(c => `  <url>
       return handleHyperFramesJobsRequest(req, env);
     }
 
+    if (url.pathname.startsWith("/api/python")) {
+      return handlePythonRequest(req, env);
+    }
+
     if (url.pathname === SITE_LOGO_PATH) {
       return serveSiteLogo(req, env.BLUEPRINT_CONTENT);
     }
@@ -1735,6 +1848,17 @@ ${catalog.map(c => `  <url>
         logger.warn("whatsapp validate-link error", { event: "whatsapp.link.validate.failed", error: err });
         return Response.json({ success: false, error: "server_error" }, { status: 500 });
       }
+    }
+
+    // WhatsApp Cloud API Webhook
+    if (url.pathname === "/api/webhooks/whatsapp") {
+      if (req.method === "GET") {
+        return handleWhatsAppWebhookGet(req, env);
+      }
+      if (req.method === "POST") {
+        return handleWhatsAppWebhookPost(req, env);
+      }
+      return new Response("Method Not Allowed", { status: 405 });
     }
 
     if (req.method === "GET" && url.pathname === "/api/vtube/feed") {
@@ -2033,6 +2157,50 @@ ${catalog.map(c => `  <url>
           "Cache-Control": "public, max-age=86400",
           "Accept-Ranges": "bytes",
           "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // GET /api/assets/* — universal same-origin asset proxy for sandboxed gadget iframes and edge clients
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/api/assets/")) {
+      let key = decodeURIComponent(url.pathname.slice("/api/assets/".length)).trim().replace(/^\/+/, "");
+      if (!key || key.includes("..")) {
+        return new Response("Not Found", { status: 404 });
+      }
+
+      let obj = await env.BLUEPRINT_CONTENT.get(key);
+      if (!obj && !key.startsWith("hf-videos/")) {
+        obj = await env.BLUEPRINT_CONTENT.get(`hf-videos/${key}`);
+      }
+      if (!obj && !key.startsWith("hf-jobs/")) {
+        obj = await env.BLUEPRINT_CONTENT.get(`hf-jobs/${key}`);
+      }
+
+      if (!obj) return new Response("Asset Not Found", { status: 404 });
+
+      let contentType = obj.httpMetadata?.contentType || "application/octet-stream";
+      if (!obj.httpMetadata?.contentType) {
+        if (key.endsWith(".png")) contentType = "image/png";
+        else if (key.endsWith(".jpg") || key.endsWith(".jpeg")) contentType = "image/jpeg";
+        else if (key.endsWith(".webp")) contentType = "image/webp";
+        else if (key.endsWith(".svg")) contentType = "image/svg+xml";
+        else if (key.endsWith(".gif")) contentType = "image/gif";
+        else if (key.endsWith(".mp4")) contentType = "video/mp4";
+        else if (key.endsWith(".mp3")) contentType = "audio/mpeg";
+        else if (key.endsWith(".wav")) contentType = "audio/wav";
+        else if (key.endsWith(".vtt")) contentType = "text/vtt";
+        else if (key.endsWith(".srt") || key.endsWith(".txt")) contentType = "text/plain";
+        else if (key.endsWith(".json")) contentType = "application/json";
+      }
+
+      return new Response(req.method === "HEAD" ? null : obj.body, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=86400",
+          "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+          "Access-Control-Allow-Headers": "*",
         },
       });
     }
