@@ -1178,8 +1178,97 @@ type ReplayPendingEdit = {
   replacement: string;
 };
 
+interface TextMatchResult {
+  pos: number;
+  length: number;
+}
+
+// Resilient text search supporting exact match, newline normalization (\r\n vs \n),
+// and trailing-whitespace tolerance across lines.
+function findMatchInText(
+  content: string,
+  textToReplace: string
+): { success: true; match: TextMatchResult } | { success: false; reason: "not_found" | "multiple_matches" } {
+  // 1. Direct exact match
+  let firstPos = content.indexOf(textToReplace);
+  if (firstPos >= 0) {
+    if (content.indexOf(textToReplace, firstPos + 1) >= 0) {
+      return { success: false, reason: "multiple_matches" };
+    }
+    return { success: true, match: { pos: firstPos, length: textToReplace.length } };
+  }
+
+  // 2. Line ending normalization (\r\n vs \n)
+  let normContent = "";
+  let contentIndexMap: number[] = [];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\r" && i + 1 < content.length && content[i + 1] === "\n") {
+      continue;
+    }
+    contentIndexMap.push(i);
+    normContent += content[i];
+  }
+
+  let normTarget = textToReplace.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let normPos = normContent.indexOf(normTarget);
+  if (normPos >= 0) {
+    if (normContent.indexOf(normTarget, normPos + 1) >= 0) {
+      return { success: false, reason: "multiple_matches" };
+    }
+    let origStart = contentIndexMap[normPos];
+    let normEndIndex = normPos + normTarget.length - 1;
+    let origEnd = contentIndexMap[normEndIndex];
+    return { success: true, match: { pos: origStart, length: origEnd - origStart + 1 } };
+  }
+
+  // 3. Trailing-whitespace tolerance across lines
+  let targetEndsWithNewline = normTarget.endsWith("\n");
+  let rawLines = normTarget.split("\n");
+  if (targetEndsWithNewline && rawLines[rawLines.length - 1] === "") {
+    rawLines.pop();
+  }
+
+  if (rawLines.length > 0 && rawLines.some(l => l.trim().length > 0)) {
+    let escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let patternParts = rawLines.map((line, idx) => {
+      let escaped = escapeRegex(line.replace(/[ \t\r]+$/, ""));
+      let isLast = idx === rawLines.length - 1;
+      if (!isLast) {
+        return escaped + "[ \t]*\\r?\\n";
+      } else {
+        return targetEndsWithNewline ? escaped + "[ \t]*\\r?\\n" : escaped + "[ \t]*";
+      }
+    });
+
+    try {
+      let regex = new RegExp(patternParts.join(""), "g");
+      let matches: RegExpExecArray[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(content)) !== null) {
+        matches.push(m);
+        if (matches.length > 1) break;
+        if (regex.lastIndex === m.index) {
+          regex.lastIndex++;
+        }
+      }
+      if (matches.length === 1 && matches[0].index !== undefined) {
+        return {
+          success: true,
+          match: { pos: matches[0].index, length: matches[0][0].length }
+        };
+      } else if (matches.length > 1) {
+        return { success: false, reason: "multiple_matches" };
+      }
+    } catch {
+      // Ignore regex pattern compile failure
+    }
+  }
+
+  return { success: false, reason: "not_found" };
+}
+
 // Apply pending edit to a Y.Doc.
-function applyPendingEditToYdoc(ydoc: Y.Doc, edit: ReplayPendingEdit) {
+function applyPendingEditToYdoc(ydoc: Y.Doc, edit: ReplayPendingEdit, isReplay = false) {
   switch (edit.toolName) {
     case "writeFile":
       ydoc.transact(tr => {
@@ -1192,20 +1281,31 @@ function applyPendingEditToYdoc(ydoc: Y.Doc, edit: ReplayPendingEdit) {
     case "editFile": {
       let text = ydoc.getMap<Y.Text>(edit.rootName).get(edit.filename);
       if (!text) {
+        if (isReplay) {
+          logger.warn(`[agent] Replay warning: File ${edit.filename} does not exist in Y.Doc during editFile replay.`);
+          return;
+        }
         throw new Error("File does not exist.");
       }
 
       let content = text.toString();
-      let pos = content.indexOf(edit.textToReplace);
-      if (pos < 0) {
-        throw new Error("No matching text was found in the file.");
-      }
-      if (content.indexOf(edit.textToReplace, pos + 1) >= 0) {
-        throw new Error("Multiple matches were found. The text to match must be unique.");
+      let matchResult = findMatchInText(content, edit.textToReplace);
+      if (!matchResult.success) {
+        if (isReplay) {
+          logger.warn(`[agent] Replay warning: editFile could not match target text in ${edit.filename} (${matchResult.reason}). Skipping stale replay edit.`, {
+            textToReplace: edit.textToReplace.slice(0, 80),
+          });
+          return;
+        }
+        if (matchResult.reason === "multiple_matches") {
+          throw new Error("Multiple matches were found. The text to match must be unique.");
+        }
+        throw new Error("No matching text was found in the file. Ensure you read the file first and provide exact context lines.");
       }
 
+      let { pos, length } = matchResult.match;
       ydoc.transact(tr => {
-        text.delete(pos, edit.textToReplace.length);
+        text.delete(pos, length);
         text.insert(pos, edit.replacement);
       });
       break;
@@ -1227,18 +1327,19 @@ function applyPendingEditToText(content: string | null, edit: ReplayPendingEdit)
 
     case "editFile": {
       if (content === null) {
-        throw new Error("File does not exist.");
+        logger.warn(`[agent] Replay warning: cannot edit ${edit.filename} because content is null.`);
+        return null;
       }
 
-      let pos = content.indexOf(edit.textToReplace);
-      if (pos < 0) {
-        throw new Error("No matching text was found in the file.");
+      let matchResult = findMatchInText(content, edit.textToReplace);
+      if (!matchResult.success) {
+        logger.warn(`[agent] Replay warning: editFile could not match target text in ${edit.filename} (${matchResult.reason}). Retaining existing content.`);
+        return content;
       }
-      if (content.indexOf(edit.textToReplace, pos + 1) >= 0) {
-        throw new Error("Multiple matches were found. The text to match must be unique.");
-      }
+
+      let { pos, length } = matchResult.match;
       return content.slice(0, pos) + edit.replacement +
-          content.slice(pos + edit.textToReplace.length);
+          content.slice(pos + length);
     }
 
     default:
@@ -1405,13 +1506,14 @@ class CodePreviewManager {
     if (!ytext) return;
 
     let content = ytext.toString();
-    let pos = content.indexOf(textToReplace);
-    if (pos < 0) return;
-    if (content.indexOf(textToReplace, pos + 1) >= 0) return;
+    let matchResult = findMatchInText(content, textToReplace);
+    if (!matchResult.success) return;
+
+    let { pos, length } = matchResult.match;
 
     // Delete the matched text and insert replacement so far.
     this.#mutateAndEmit(() => {
-      ytext!.delete(pos, textToReplace.length);
+      ytext!.delete(pos, length);
       if (streamValue !== "") {
         ytext!.insert(pos, streamValue);
       }
@@ -2528,7 +2630,13 @@ export async function runAgent(
   if (pendingReplayEdits.length > 0) {
     let ydoc = getSessionYDoc();
     for (let edit of pendingReplayEdits) {
-      applyPendingEditToYdoc(ydoc, edit);
+      try {
+        applyPendingEditToYdoc(ydoc, edit, true);
+      } catch (err) {
+        logger.warn(`[agent] Error applying pending replay edit on turn startup for ${edit.filename}:`, {
+          error: err,
+        });
+      }
     }
 
     pendingReplayEdits = [];
