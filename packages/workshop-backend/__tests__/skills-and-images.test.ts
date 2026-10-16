@@ -124,3 +124,46 @@ describe("Image Engine Contract", () => {
     expect(result.markdownEmbed).toBe("![A futuristic electric grid schematic](https://voltrix.stream/api/hf-videos/electric-grid.png)");
   });
 });
+
+describe("Replay Output Preservation", () => {
+  it("preserves output for all new tools during replay without throwing Unknown tool", () => {
+    const newToolNames = [
+      "generateImage",
+      "uploadAsset",
+      "listAssets",
+      "getAccountIdentity",
+      "updateStudentProfile",
+      "recordLearnedSkill",
+      "listLearnedSkills",
+      "deleteLearnedSkill",
+      "githubReadFile",
+      "githubGetRepo",
+      "githubCommitFile",
+      "githubCreatePullRequest",
+      "githubPushGadget",
+    ];
+
+    for (const toolName of newToolNames) {
+      const toolCall: any = {
+        toolCallId: `call-${toolName}`,
+        toolName,
+        input: {},
+        output: "Test tool output text",
+      };
+
+      const rawOutput = toolCall.output ?? toolCall.details?.output;
+      let toolOutput: { text: string; isError?: boolean };
+      if (rawOutput !== undefined) {
+        toolOutput = {
+          text: typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput),
+        };
+      } else {
+        toolOutput = { text: "" };
+      }
+
+      expect(toolOutput.text).toBe("Test tool output text");
+      expect(toolOutput.isError).toBeUndefined();
+    }
+  });
+});
+

@@ -2416,11 +2416,22 @@ export async function runAgent(
                 case "listBlueprints":
                 case "listConnectableResources":
                 case "requestConnection":
-                  toolOutput = {text: toolCall.output ?? ""};
+                  toolOutput = {text: (toolCall as any).output ?? ""};
                   break;
-                default:
-                  toolCall satisfies never;
-                  throw new Error("Unknown tool.");
+                default: {
+                  // For all other tools (uploadAsset, listAssets, uploadVideoToYouTube, getAccountIdentity,
+                  // updateStudentProfile, generateImage, skills flywheel, github tools, webBrowse, scholarly,
+                  // tts, sites, hf-jobs, etc.), faithfully replay the persisted output from the tool execution.
+                  const rawOutput = (toolCall as any).output ?? (toolCall as any).details?.output;
+                  if (rawOutput !== undefined) {
+                    toolOutput = {
+                      text: typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput),
+                    };
+                  } else {
+                    toolOutput = {text: ""};
+                  }
+                  break;
+                }
               }
             } catch (err) {
               toolOutput = {text: `${err}`, isError: true};
