@@ -1,4 +1,4 @@
-import { AiChatMessage, AiChatAuthorInfo, AiToolCall, AiChatMessageBody, AgentSpawnerConfig, AiChatStreamEvent, BlueprintOutput, WorkpieceId, type AiModelConfig, isTextLikeAttachmentMimeType, validateBindingName, type StudentProfile } from '@gadgets/workshop-shared/api';
+import { AiChatMessage, AiChatAuthorInfo, AiToolCall, AiChatMessageBody, AgentSpawnerConfig, AiChatStreamEvent, BlueprintOutput, WorkpieceId, type AiModelConfig, isTextLikeAttachmentMimeType, validateBindingName, type StudentProfile, type LearnedSkill } from '@gadgets/workshop-shared/api';
 import { PDF_MIME_TYPE, modelApiSupportsPdfAttachments } from './chat-attachment-pdf';
 import { extractTextFromPdf } from './pdf-extract';
 import { AgentCatalog, ObservationDescription } from '@gadgets/workshop-shared/gatekeeper';
@@ -33,6 +33,8 @@ import {
   registerVoice,
   type VoicePersona,
 } from "./tts-engine.js";
+import { generateImage as generateImageImpl } from "./image-engine.js";
+import { defineGitHubTools } from "./github";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { AgentCatalogSnapshot, formatAlwaysAvailableResourcesPrompt } from "./agent-catalog";
@@ -452,6 +454,41 @@ export interface AgentHooks {
    * Returns a YouTube OAuth access token for the current user if available.
    */
   getYouTubeAccessToken?(): Promise<string | null>;
+
+  /**
+   * Returns a GitHub Personal Access Token or OAuth token for the current user/platform.
+   */
+  getGitHubAccessToken?(): Promise<string | null>;
+
+  /**
+   * Returns the user's default GitHub repository (e.g. "username/repo") if configured.
+   */
+  getGitHubDefaultRepo?(): Promise<string | null>;
+
+  /**
+   * Lists active learned skills for this user and verified platform rules.
+   */
+  listLearnedSkills?(): Promise<{ userSkills: LearnedSkill[]; globalSkills: LearnedSkill[] }>;
+
+  /**
+   * Records a new learned skill or behavioral rule captured from user feedback or error recovery.
+   */
+  recordLearnedSkill?(skill: Omit<LearnedSkill, "id" | "createdAt"> & { id?: string; createdAt?: number }): Promise<{ success: boolean; skill: LearnedSkill; message: string }>;
+
+  /**
+   * Deletes a learned skill by ID from user storage (or global storage if admin).
+   */
+  deleteLearnedSkill?(id: string, scope?: "user" | "global"): Promise<boolean>;
+
+  /**
+   * Returns a GitHub personal access token or OAuth token for the current user if available.
+   */
+  getGitHubAccessToken?(): Promise<string | null>;
+
+  /**
+   * Returns the user's configured default GitHub repository (e.g. 'owner/repo') if available.
+   */
+  getGitHubDefaultRepo?(): Promise<string | null>;
 
   /**
    * Queue a "shareDocument" card to be appended to the chat log after the current step.
@@ -967,6 +1004,31 @@ When the user asks to:
 3. Call the \`publishWebsite\` tool with \`{ title, html, slug, description }\`.
 4. It instantly deploys the application to Cloudflare Global Edge at \`https://voltrix.stream/s/<slug>\` with sub-50ms TTFB worldwide and zero deploy friction.
 5. Present the live link as a clickable markdown link in your response.
+
+# GitHub Version Control & Repository Integration
+You have built-in GitHub REST API tools enabling bidirectional git repository synchronization:
+- \`githubGetRepo({ owner?, repo? })\`: Inspect repository metadata, default branch, privacy, stars, and open issues.
+- \`githubReadFile({ owner?, repo?, path, branch? })\`: Read source code or list directories from GitHub with native UTF-8 decoding.
+- \`githubCommitFile({ owner?, repo?, path, content, message, branch?, sha? })\`: Commit or update individual files directly.
+- \`githubCreatePullRequest({ owner?, repo?, title, body?, head, base? })\`: Open a pull request against any branch.
+- \`githubPushGadget({ owner?, repo?, workpiece?, targetDir?, branch?, commitMessage? })\`: Export all files of an entire Gadget from active session storage and commit them atomically to GitHub.
+
+Hybrid Repository Routing:
+- If \`owner\` and \`repo\` are omitted, operations automatically target the user's configured repository (\`studentProfile.githubDefaultRepo\`), or the platform sandbox repository (\`hex5561-arch/voltrix-sandbox\`).
+- Authentication uses the user's GitHub token (configured via \`updateStudentProfile({ githubToken: '...' })\` or connected GitHub account). If omitted on write operations, prompt the user to provide or set their token.
+
+# Image Generation & Visual Diagrams
+You can generate high-fidelity diagrams, schematics, illustrations, and visual assets using the \`generateImage\` tool:
+- Supports Flux Schnell (\`@cf/black-forest-labs/flux-1-schnell\`, fast 4-step) and SDXL (\`@cf/stabilityai/stable-diffusion-xl-base-1.0\`).
+- Generates images directly to durable edge R2 storage (\`voltrix-workshop-blueprint-content\`) and serves them via CDN at \`https://voltrix.stream/api/hf-videos/<filename>.png\`.
+- Embed images in responses using standard markdown: \`![Description](https://voltrix.stream/api/hf-videos/<filename>.png)\`.
+
+# Learned Skills & Continuous Improvement Flywheel
+You possess an active skill learning and error prevention flywheel:
+- When a user corrects you, specifies a distinct preference (e.g. naming conventions, architectural patterns, UI styling, citation styles), or when recovering from a task mistake, use \`recordLearnedSkill({ trigger, rule, example?, scope: "user" })\`.
+- User skills are strictly scoped to the user's private account DO (\`scope: "user"\`). NEVER leak or apply one user's private customizations to other accounts.
+- Use \`listLearnedSkills()\` to view the active learned rules and platform guidelines.
+- Use \`deleteLearnedSkill({ id })\` if a rule is obsolete or explicitly revoked.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `
@@ -1282,7 +1344,9 @@ function applyPendingEditToYdoc(ydoc: Y.Doc, edit: ReplayPendingEdit, isReplay =
       let text = ydoc.getMap<Y.Text>(edit.rootName).get(edit.filename);
       if (!text) {
         if (isReplay) {
-          logger.warn(`[agent] Replay warning: File ${edit.filename} does not exist in Y.Doc during editFile replay.`);
+          logger.warn(`[agent] Replay warning: File ${edit.filename} does not exist in Y.Doc during editFile replay.`, {
+            event: "agent.replay.file_missing",
+          });
           return;
         }
         throw new Error("File does not exist.");
@@ -1293,7 +1357,7 @@ function applyPendingEditToYdoc(ydoc: Y.Doc, edit: ReplayPendingEdit, isReplay =
       if (!matchResult.success) {
         if (isReplay) {
           logger.warn(`[agent] Replay warning: editFile could not match target text in ${edit.filename} (${matchResult.reason}). Skipping stale replay edit.`, {
-            textToReplace: edit.textToReplace.slice(0, 80),
+            event: "agent.replay.text_mismatch",
           });
           return;
         }
@@ -1327,13 +1391,17 @@ function applyPendingEditToText(content: string | null, edit: ReplayPendingEdit)
 
     case "editFile": {
       if (content === null) {
-        logger.warn(`[agent] Replay warning: cannot edit ${edit.filename} because content is null.`);
+        logger.warn(`[agent] Replay warning: cannot edit ${edit.filename} because content is null.`, {
+          event: "agent.replay.null_content",
+        });
         return null;
       }
 
       let matchResult = findMatchInText(content, edit.textToReplace);
       if (!matchResult.success) {
-        logger.warn(`[agent] Replay warning: editFile could not match target text in ${edit.filename} (${matchResult.reason}). Retaining existing content.`);
+        logger.warn(`[agent] Replay warning: editFile could not match target text in ${edit.filename} (${matchResult.reason}). Retaining existing content.`, {
+          event: "agent.replay.text_mismatch_string",
+        });
         return content;
       }
 
@@ -2634,6 +2702,7 @@ export async function runAgent(
         applyPendingEditToYdoc(ydoc, edit, true);
       } catch (err) {
         logger.warn(`[agent] Error applying pending replay edit on turn startup for ${edit.filename}:`, {
+          event: "agent.replay.startup_pending_edit_failed",
           error: err,
         });
       }
@@ -3553,6 +3622,74 @@ export async function runAgent(
       },
     }),
 
+    generateImage: defineTool({
+      name: "generateImage",
+      label: "Generate image or diagram",
+      description: "Generates high-fidelity images, diagrams, schematics, illustrations, and visual assets using Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell or @cf/stabilityai/stable-diffusion-xl-base-1.0). Persists generated images directly into durable edge R2 storage ('voltrix-workshop-blueprint-content') and serves them immediately via global CDN at 'https://voltrix.stream/api/hf-videos/<filename>.png'.",
+      parameters: Type.Object({
+        prompt: Type.String({
+          description: "Detailed description of the image or diagram to generate (e.g. 'A photorealistic architectural diagram of a distributed KV store with edge replicas and raft consensus on dark background').",
+        }),
+        filename: Type.Optional(Type.String({
+          description: "Optional custom slug or filename without extension (e.g. 'distributed-kv-architecture'). Automatically saved under 'hf-videos/' with .png extension.",
+        })),
+        model: Type.Optional(Type.String({
+          description: "Workers AI model to use: '@cf/black-forest-labs/flux-1-schnell' (default, 12B rectified flow, fast 4-step) or '@cf/stabilityai/stable-diffusion-xl-base-1.0' (SDXL).",
+        })),
+        steps: Type.Optional(Type.Integer({
+          description: "Diffusion steps: 4-8 for Flux Schnell (default 4), 20-50 for SDXL.",
+        })),
+        guidance: Type.Optional(Type.Number({
+          description: "Guidance scale (primarily for SDXL, e.g. 7.5).",
+        })),
+        width: Type.Optional(Type.Integer({
+          description: "Width in pixels (primarily for SDXL: 512-1024).",
+        })),
+        height: Type.Optional(Type.Integer({
+          description: "Height in pixels (primarily for SDXL: 512-1024).",
+        })),
+        seed: Type.Optional(Type.Integer({
+          description: "Random seed for reproducible deterministic generation.",
+        })),
+      }),
+      execute: async (toolCallId, {prompt, filename, model, steps, guidance, width, height, seed}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket ('voltrix-workshop-blueprint-content') is not configured on this instance.");
+          }
+          const ai = hooks.getClassifierAi?.();
+          if (!ai) {
+            throw new Error("Cloudflare Workers AI binding ('env.WORKERS_AI') is not available on this instance.");
+          }
+
+          const result = await generateImageImpl(
+            { prompt, filename, model, steps, guidance, width, height, seed },
+            {
+              BLUEPRINT_CONTENT: bucket,
+              WORKERS_AI: ai,
+              CF_AI_GATEWAY: "voltrix-ai",
+              CF_AI_GATEWAY_ACCOUNT_ID: "84f114e1b747a07d247ceb17b0c1dc14",
+            }
+          );
+
+          const formatted = `🎨 **Image Generated Successfully!**\n\n` +
+            `• **Prompt:** ${result.prompt}\n` +
+            `• **Model:** \`${result.model}\`\n` +
+            `• **File:** \`${result.filename}\` (${(result.byteSize / 1024).toFixed(1)} KB)\n` +
+            `• **Public CDN URL:** [${result.imageUrl}](${result.imageUrl})\n` +
+            `• **Relative URL:** \`${result.relativeUrl}\`\n\n` +
+            `**Preview:**\n${result.markdownEmbed}\n\n` +
+            `**HTML5 Embed:**\n\`${result.htmlEmbed}\``;
+
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
     uploadAsset: defineTool({
       name: "uploadAsset",
       label: "Upload asset to edge storage",
@@ -3943,6 +4080,8 @@ export async function runAgent(
           code: Type.String({description: "Course code, e.g. 'CS301'"}),
           name: Type.String({description: "Course name, e.g. 'Operating Systems'"})
         }), {description: "Enrolled course list."})),
+        githubToken: Type.Optional(Type.String({description: "Personal GitHub Access Token (PAT) for git commits, pushing code, and pull requests."})),
+        githubDefaultRepo: Type.Optional(Type.String({description: "Default target GitHub repository in 'owner/repo' format (e.g. 'octocat/hello-world')."})),
       }),
       execute: async (toolCallId, patch) => {
         try {
@@ -3961,6 +4100,114 @@ export async function runAgent(
           return toolResult(formatted, {output: formatted, success: true, updated: patch} as Partial<AiToolCall>);
         } catch (error) {
           toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
+    recordLearnedSkill: defineTool({
+      name: "recordLearnedSkill",
+      label: "Record learned skill or correction",
+      description: "Records a new learned skill, rule, or behavioral correction captured from user feedback, preferences, or error recovery. Prevents repeating mistakes on future turns. Stored privately in the user's account storage.",
+      parameters: Type.Object({
+        trigger: Type.String({
+          description: "When or under what context this rule applies (e.g. 'When generating chemistry reaction diagrams', 'When formatting code for TypeScript strict mode').",
+        }),
+        rule: Type.String({
+          description: "The concrete operational directive or constraint to follow (e.g. 'Always include explicit return types for exported functions', 'Always use hex colors with high contrast on dark mode').",
+        }),
+        example: Type.Optional(Type.String({
+          description: "Optional concrete before/after example or code snippet demonstrating the rule.",
+        })),
+        scope: Type.Optional(Type.String({
+          description: "Storage scope: 'user' (default) or 'global'. Note: User-specific preferences and styles must ALWAYS use 'user' to maintain strict privacy across accounts.",
+        })),
+      }),
+      execute: async (toolCallId, { trigger, rule, example, scope }) => {
+        try {
+          if (!hooks.recordLearnedSkill) {
+            throw new Error("Recording skills is not supported by the current overseer.");
+          }
+          const validScope = scope === "global" ? "global" : "user";
+          const res = await hooks.recordLearnedSkill({
+            trigger,
+            rule,
+            example,
+            scope: validScope,
+          });
+
+          const formatted = `🧠 **Skill Learned & Recorded Successfully!**\n\n` +
+            `• **ID:** \`${res.skill.id}\`\n` +
+            `• **Scope:** \`${res.skill.scope}\` (Strictly private to this user)\n` +
+            `• **Trigger / Context:** ${res.skill.trigger}\n` +
+            `• **Rule:** ${res.skill.rule}\n` +
+            (res.skill.example ? `• **Example:**\n\`\`\`\n${res.skill.example}\n\`\`\`\n` : "") +
+            `\n*This rule will now be dynamically injected into instructions across all future tasks for this account.*`;
+
+          return toolResult(formatted, { output: formatted, skill: res.skill } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
+    listLearnedSkills: defineTool({
+      name: "listLearnedSkills",
+      label: "List learned skills and rules",
+      description: "Lists all learned skills and behavioral rules active for the current user, including private account skills and verified platform rules.",
+      parameters: Type.Object({}),
+      execute: async (toolCallId) => {
+        try {
+          if (!hooks.listLearnedSkills) {
+            throw new Error("Listing skills is not supported by the current overseer.");
+          }
+          const { userSkills, globalSkills } = await hooks.listLearnedSkills();
+
+          let formatted = `🧠 **Active Learned Skills & Rules:**\n\n`;
+          formatted += `### 🔒 Private User Skills (${userSkills.length})\n`;
+          if (userSkills.length === 0) {
+            formatted += `*No private skills recorded yet. Use \`recordLearnedSkill\` when the user provides feedback or corrections.*\n\n`;
+          } else {
+            for (const s of userSkills) {
+              formatted += `• **[${s.id}]** \`${s.trigger}\`\n  ↳ **Rule:** ${s.rule}${s.example ? `\n  ↳ **Example:** ${s.example}` : ""}\n`;
+            }
+            formatted += `\n`;
+          }
+
+          formatted += `### 🌐 Verified Platform Rules (${globalSkills.length})\n`;
+          for (const s of globalSkills) {
+            formatted += `• **[${s.id}]** \`${s.trigger}\`\n  ↳ **Rule:** ${s.rule}\n`;
+          }
+
+          return toolResult(formatted, { output: formatted, count: userSkills.length + globalSkills.length } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
+    deleteLearnedSkill: defineTool({
+      name: "deleteLearnedSkill",
+      label: "Delete learned skill",
+      description: "Deletes a previously learned skill by ID from the user's private account storage.",
+      parameters: Type.Object({
+        id: Type.String({ description: "ID of the learned skill to delete." }),
+      }),
+      execute: async (toolCallId, { id }) => {
+        try {
+          if (!hooks.deleteLearnedSkill) {
+            throw new Error("Deleting skills is not supported by the current overseer.");
+          }
+          const deleted = await hooks.deleteLearnedSkill(id, "user");
+          const formatted = deleted
+            ? `🗑️ Successfully deleted learned skill \`${id}\`.`
+            : `⚠️ Skill \`${id}\` was not found or could not be deleted.`;
+
+          return toolResult(formatted, { output: formatted, deleted } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
           throw error;
         }
       },
@@ -4305,6 +4552,17 @@ export async function runAgent(
       }
     }),
   };
+
+  const githubTools = defineGitHubTools({
+    hooks,
+    chatId,
+    resolveToolWorkpieceId,
+    getSessionYDoc,
+    toolResult,
+    toolCallNotes,
+    toolErrorText,
+  });
+  Object.assign(tools, githubTools);
 
   // When the agent was started to handle callbacks, add the giveUp tool so it can bail out.
   if (callbackInitiated) {

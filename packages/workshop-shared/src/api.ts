@@ -352,6 +352,17 @@ export const createAuthError = authErrors.create;
 /** Reads the machine-readable code from an authentication failure. */
 export const getAuthErrorCode = authErrors.getCode;
 
+/** A learned skill or behavioral rule captured from user feedback or runtime corrections. */
+export interface LearnedSkill {
+  id: string;
+  trigger: string;
+  rule: string;
+  example?: string;
+  scope: "user" | "global";
+  author?: string;
+  createdAt: number;
+}
+
 /** Academic profile set during onboarding, persisted in the user's Durable Object. */
 export interface StudentProfile {
   name?: string;
@@ -366,6 +377,9 @@ export interface StudentProfile {
   semester: string;
   citationStyle: string;
   courses: Array<{ code: string; name: string }>;
+  skills?: LearnedSkill[];
+  githubToken?: string;
+  githubDefaultRepo?: string;
   updatedAt: number;
 }
 

@@ -2016,9 +2016,17 @@ ${catalog.map(c => `  <url>
       else if (name.endsWith(".webm")) contentType = "video/webm";
       else if (name.endsWith(".ogg")) contentType = "audio/ogg";
       else if (name.endsWith(".m4a")) contentType = "audio/mp4";
+      else if (name.endsWith(".png")) contentType = "image/png";
+      else if (name.endsWith(".jpg") || name.endsWith(".jpeg")) contentType = "image/jpeg";
+      else if (name.endsWith(".webp")) contentType = "image/webp";
+      else if (name.endsWith(".svg")) contentType = "image/svg+xml";
+      else if (name.endsWith(".gif")) contentType = "image/gif";
 
       const obj = await env.BLUEPRINT_CONTENT.get(`hf-videos/${name}`);
       if (!obj) return new Response("Not Found", { status: 404 });
+      if (obj.httpMetadata?.contentType) {
+        contentType = obj.httpMetadata.contentType;
+      }
       return new Response(req.method === "HEAD" ? null : obj.body, {
         headers: {
           "Content-Type": contentType,

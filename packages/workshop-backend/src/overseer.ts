@@ -1,6 +1,6 @@
 import { RpcCompatible, RpcStub, RpcTarget } from "capnweb";
 import { validateRpc } from "capnweb-validate";
-import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, CodeUpdate, CodeSubscriber, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName } from '@gadgets/workshop-shared/api';
+import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, CodeUpdate, CodeSubscriber, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName, LearnedSkill } from '@gadgets/workshop-shared/api';
 import { Gatekeeper, HookInitiator, ResourceDescription, ApprovalQueue, ActionDescription, ObservationAuthorizer, ObservationDescription, VendorDescription, SupportedResource, resolveRequestedResource, HookController, HookDescription, ActionKind } from "@gadgets/workshop-shared/gatekeeper";
 import {
   DurableObject, WorkerEntrypoint, RpcStub as NativeRpcStub,
@@ -3173,6 +3173,164 @@ class OverseerImpl implements AgentHooks {
     return null;
   }
 
+  // Returns GitHub access token for current user if available (profile, connected account, or env)
+  async getGitHubAccessToken(): Promise<string | null> {
+    const ownerId = this.storage.ownerId.get();
+    if (ownerId) {
+      try {
+        const userStub = this.users.get(this.users.idFromString(ownerId));
+        const profile = await userStub.getStudentProfile().catch(() => null);
+        if (profile?.githubToken) return profile.githubToken;
+
+        const githubAccount = await userStub.getConnectedAccountByVendor("github");
+        if (githubAccount) {
+          const token = await (githubAccount as any).getAccessToken?.();
+          if (typeof token === "string" && token) return token;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    return (this.env as any).GITHUB_TOKEN || (this.env as any).GITHUB_PAT || null;
+  }
+
+  // Returns GitHub default repository for current user if configured
+  async getGitHubDefaultRepo(): Promise<string | null> {
+    const ownerId = this.storage.ownerId.get();
+    if (ownerId) {
+      try {
+        const userStub = this.users.get(this.users.idFromString(ownerId));
+        const profile = await userStub.getStudentProfile().catch(() => null);
+        if (profile?.githubDefaultRepo) return profile.githubDefaultRepo;
+      } catch {
+        // Ignore
+      }
+    }
+    return (this.env as any).GITHUB_DEFAULT_REPO || "hex5561-arch/voltrix-sandbox";
+  }
+
+  // Lists learned skills and platform guidelines
+  async listLearnedSkills(): Promise<{ userSkills: LearnedSkill[]; globalSkills: LearnedSkill[] }> {
+    const ownerId = this.storage.ownerId.get();
+    let userSkills: LearnedSkill[] = [];
+    if (ownerId) {
+      try {
+        const userStub = this.users.get(this.users.idFromString(ownerId));
+        const profile = await userStub.getStudentProfile();
+        if (profile?.skills && Array.isArray(profile.skills)) {
+          userSkills = profile.skills.filter(s => s.scope !== "global");
+        }
+      } catch (err) {
+        this.logger.warn("listLearnedSkills: failed to fetch user skills", {
+          event: "skills.fetch.failed", error: err,
+        });
+      }
+    }
+
+    const globalSkills: LearnedSkill[] = [
+      {
+        id: "global-r2-assets",
+        trigger: "When generating, downloading, or rendering visual assets (images, charts, renders)",
+        rule: "Persist assets into edge R2 storage ('voltrix-workshop-blueprint-content') and reference them via public CDN URL 'https://voltrix.stream/api/hf-videos/<filename>' or direct data URLs in sandboxed previews.",
+        scope: "global",
+        createdAt: 1729100000000,
+      },
+      {
+        id: "global-github-sandbox",
+        trigger: "When pushing code or creating pull requests without explicit repository specified",
+        rule: "Target user's configured repository or default to platform sandbox 'hex5561-arch/voltrix-sandbox' with descriptive commit message.",
+        scope: "global",
+        createdAt: 1729100000000,
+      },
+      {
+        id: "global-doc-iframe-images",
+        trigger: "When embedding images inside sandboxed document editor iframe",
+        rule: "Remote third-party image URLs fail due to sandbox CSP restrictions; always embed images as base64 data URLs or local CDN endpoints.",
+        scope: "global",
+        createdAt: 1729100000000,
+      },
+    ];
+
+    return { userSkills, globalSkills };
+  }
+
+  // Records a newly learned skill or correction strictly into the user's private UserDurableObject
+  async recordLearnedSkill(skill: Omit<LearnedSkill, "id" | "createdAt"> & { id?: string; createdAt?: number }): Promise<{ success: boolean; skill: LearnedSkill; message: string }> {
+    const ownerId = this.storage.ownerId.get();
+    if (!ownerId) {
+      throw new Error("Cannot record skill: no authenticated user session on this workspace.");
+    }
+    const userStub = this.users.get(this.users.idFromString(ownerId));
+    const profile = await userStub.getStudentProfile();
+    const existingSkills: LearnedSkill[] = (profile?.skills && Array.isArray(profile.skills)) ? [...profile.skills] : [];
+
+    const newSkill: LearnedSkill = {
+      id: skill.id || `skill-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      trigger: skill.trigger,
+      rule: skill.rule,
+      example: skill.example,
+      scope: skill.scope || "user",
+      author: ownerId,
+      createdAt: skill.createdAt || Date.now(),
+    };
+
+    const idx = existingSkills.findIndex(s => s.id === newSkill.id);
+    if (idx >= 0) {
+      existingSkills[idx] = newSkill;
+    } else {
+      existingSkills.unshift(newSkill);
+    }
+
+    const trimmedSkills = existingSkills.slice(0, 50);
+
+    const updated = {
+      ...(profile || {
+        discipline: "Science",
+        disciplineTitle: "General Studies",
+        university: "University",
+        degreeProgram: "Undergraduate",
+        academicLevel: "Year 1",
+        academicYear: "2026",
+        semester: "Semester 1",
+        citationStyle: "APA 7th",
+        courses: [],
+        updatedAt: Date.now(),
+      }),
+      skills: trimmedSkills,
+      updatedAt: Date.now(),
+    };
+
+    await userStub.setStudentProfile(updated as any);
+    return {
+      success: true,
+      skill: newSkill,
+      message: `Learned skill "${newSkill.trigger}" recorded in private user profile (${newSkill.scope} scope).`,
+    };
+  }
+
+  // Deletes a learned skill by ID from private user storage
+  async deleteLearnedSkill(id: string, _scope?: "user" | "global"): Promise<boolean> {
+    const ownerId = this.storage.ownerId.get();
+    if (!ownerId) return false;
+    try {
+      const userStub = this.users.get(this.users.idFromString(ownerId));
+      const profile = await userStub.getStudentProfile();
+      if (!profile?.skills || !Array.isArray(profile.skills)) return false;
+
+      const filtered = profile.skills.filter(s => s.id !== id);
+      if (filtered.length === profile.skills.length) return false;
+
+      await userStub.setStudentProfile({
+        ...profile,
+        skills: filtered,
+        updatedAt: Date.now(),
+      } as any);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // Queue a shareDocument card proposal for the current step.
   proposeDocumentShare(chatId: number, proposal: {
     documentKey: string;
@@ -6191,6 +6349,15 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
               `]\n` +
               `\n[ACADEMIC SUBMISSION MANDATE: When writing or formatting coursework, lab reports, essays, or academic papers for this student, ALWAYS prepend a formal academic cover page featuring their university crest: ![${profile.university} Crest](${logoUrl}), institutional header, student name (${studentName || "Student Scholar"}), degree program (${profile.degreeProgram}), course unit, and submission date, unless the student explicitly states otherwise. NOTE: Remote image URLs silently fail in the sandboxed Doc editor iframe; ALWAYS embed the crest as the self-contained base64 data URL provided above.]\n` +
               ACADEMIC_SUBMISSION_SYSTEM_DIRECTIVE;
+
+            if (profile.skills && Array.isArray(profile.skills) && profile.skills.length > 0) {
+              const userSkills = profile.skills.filter(s => s.scope !== "global");
+              if (userSkills.length > 0) {
+                const skillRules = userSkills.map(s => `- **Context / Trigger:** ${s.trigger}\n  **Rule:** ${s.rule}${s.example ? `\n  **Example:** ${s.example}` : ""}`).join("\n\n");
+                profileSection += `\n\n# Your Learned Skills & Private Preferences (Strictly Private to You)\n` +
+                  `These rules were captured from your past feedback and corrections. ALWAYS adhere to them for this user:\n\n${skillRules}\n`;
+              }
+            }
           } else {
             this.logger.info("student profile not set for user", {
               event: "profile.missing",
@@ -6207,7 +6374,14 @@ When publishing, use executeCode with getSession("YOUTUBE") and call uploadVideo
         });
       }
 
-      return base + profileSection;
+      const platformRules =
+        `\n\n# Verified Platform Rules\n` +
+        `- **Trigger:** When generating visual diagrams, charts, schematics, or assets\n  **Rule:** Use \`generateImage\` tool (Flux Schnell / SDXL) and embed via direct R2 link (https://voltrix.stream/api/hf-videos/<filename>.png).\n\n` +
+        `- **Trigger:** When committing code or publishing gadgets to GitHub\n  **Rule:** Use \`githubPushGadget\` or \`githubCommitFile\`. If owner/repo are unspecified, use the user's default repo or the platform sandbox 'hex5561-arch/voltrix-sandbox'.\n\n` +
+        `- **Trigger:** When editing files in the workspace\n  **Rule:** Always verify exact matching content before issuing editFile to prevent text mismatches.\n\n` +
+        `- **Trigger:** When user corrects you or provides personal preferences\n  **Rule:** Record the preference using \`recordLearnedSkill({ trigger, rule, example?, scope: "user" })\` so it is remembered across all future tasks without leaking across accounts.\n`;
+
+      return base + profileSection + platformRules;
     } catch (err) {
       this.logger.warn("failed to read instance instructions", {
         event: "instance.instructions.read.failed", error: err,

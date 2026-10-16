@@ -369,7 +369,7 @@ export async function searchYouTubeLecturesHybrid(query: string, env?: unknown):
 
   // Tier 1: Local catalog search
   const localMatches = searchYouTubeLectures(q);
-  if (localMatches.length >= 3) {
+  if (localMatches.length > 0) {
     return localMatches;
   }
 
