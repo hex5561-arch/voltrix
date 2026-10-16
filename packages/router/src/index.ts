@@ -26,6 +26,30 @@ export interface Env {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    const decodedPath = decodeURIComponent(url.pathname);
+
+    // If sitemap.xml or robots.txt is requested anywhere in the path (e.g. /sitemap.xml or /https://voltrix.stream/sitemap.xml when pasted into GSC)
+    if (decodedPath.endsWith("sitemap.xml") || decodedPath.includes("sitemap.xml")) {
+      if (env.ASSETS) {
+        const sitemapReq = new Request(new URL("/sitemap.xml", url.origin).toString(), req);
+        const res = await env.ASSETS.fetch(sitemapReq);
+        const headers = new Headers(res.headers);
+        headers.set("Content-Type", "application/xml; charset=utf-8");
+        headers.set("Cache-Control", "public, max-age=3600");
+        return new Response(res.body, { status: 200, headers });
+      }
+    }
+
+    if (decodedPath.endsWith("robots.txt") || decodedPath.includes("robots.txt")) {
+      if (env.ASSETS) {
+        const robotsReq = new Request(new URL("/robots.txt", url.origin).toString(), req);
+        const res = await env.ASSETS.fetch(robotsReq);
+        const headers = new Headers(res.headers);
+        headers.set("Content-Type", "text/plain; charset=utf-8");
+        headers.set("Cache-Control", "public, max-age=3600");
+        return new Response(res.body, { status: 200, headers });
+      }
+    }
 
     // Redirect plain HTTP to HTTPS. Cloudflare Workers on a custom domain can receive HTTP
     // requests when "Always Use HTTPS" is not enabled at the zone level. A persistent HTTP
@@ -68,10 +92,6 @@ export default {
       }
       return env.WORKSHOP_BACKEND.fetch(req);
     }
-
-    // Note: gatekeeper OAuth redirects land on the gatekeeper Workers themselves, at
-    // `/gatekeeper/<name>/oauth` (handled by the loop above) — there are no backend /auth
-    // callbacks.
 
     if (env.ASSETS) {
       const response = await env.ASSETS.fetch(req);
