@@ -424,7 +424,6 @@ export default function PricingPage() {
   const [phone, setPhone] = useState('')
   const [trackId, setTrackId] = useState('')
   const [checkoutError, setCheckoutError] = useState('')
-  const [iframeUrl, setIframeUrl] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Multi-month duration & discount formula
@@ -659,12 +658,9 @@ export default function PricingPage() {
         setTrackId(data.order_tracking_id ?? `ORD-${Date.now().toString().slice(-6)}`)
         setStep('success')
       } else {
-        // Pesapal order created — stay on page, set iframeUrl, start polling
+        // Pesapal order created — stay on page, start polling
         const tid = data.order_tracking_id ?? ''
         setTrackId(tid)
-        if (data.redirect_url) {
-          setIframeUrl(data.redirect_url)
-        }
         setStep('payment')
         if (tid) startPolling(tid)
       }
@@ -1026,36 +1022,12 @@ export default function PricingPage() {
                     <div className="bg-indigo-500 h-1 rounded-full animate-pulse w-3/4" />
                   </div>
 
-                  {iframeUrl && (
-                    <div className="space-y-3 pt-2 text-left">
-                      <div className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-inner">
-                        <iframe
-                          src={iframeUrl}
-                          title="Pesapal Secure Payment"
-                          className="w-full h-[580px] rounded-xl border-0"
-                          allow="payment"
-                        />
-                      </div>
-                      <div className="text-center">
-                        <a
-                          href={iframeUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1"
-                        >
-                          Having trouble with the embedded window? Open Pesapal in new tab &rarr;
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
                   <button
                     type="button"
                     onClick={() => {
                       if (pollRef.current) clearInterval(pollRef.current)
                       setStep('form')
                       setTrackId('')
-                      setIframeUrl('')
                     }}
                     className="text-xs text-zinc-400 hover:text-white transition cursor-pointer"
                   >
