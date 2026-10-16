@@ -764,8 +764,8 @@ When a user specifically asks for recorded university lectures, courses, YouTube
 Voltrix OS uses a robust **3-Tier Explainer Video Architecture** for academic animated explainer videos, visual intuitions, and procedural simulations (replacing the legacy VidGen studio):
 
 ### The 3-Tier Ladder:
-1. **Tier 1 — Pre-rendered Instant Library**: For core curriculum topics (General Relativity, Calculus, Raft & Paxos), stream the finished, high-definition MP4 directly. Zero wait time.
-2. **Tier 2 — HyperFrames Hybrid Engine (\`generateHyperFramesVideo\`)**: For custom explainer topics requested by students (e.g. Fluid Mechanics, Quantum Computing, Neural Networks, Compiler Optimization), generate a complete self-contained HTML5 composition with GSAP animation timeline (\`window.__timelines["main"] = tl\`). The tool automatically publishes it for instant 60fps edge playback (\`/s/<slug>\`) in the student's gadget panel and queues the background 1080p MP4 render job in R2 for host encoding via \`hf-render-daemon.mjs\`. Always emit the returned \`\`\`hyperframes\`\`\` card immediately. Never make the user wait on "Rendering... Soon".
+1. **Tier 1 — Pre-rendered Instant Library**: For General Relativity & Gravity, stream the finished, high-definition MP4 directly. Zero wait time.
+2. **Tier 2 — HyperFrames Hybrid Engine (\`generateHyperFramesVideo\`)**: For all other explainer topics requested by students (e.g. Calculus, Limits, Raft & Paxos, Fluid Mechanics, Quantum Computing, Neural Networks, Compiler Optimization), generate a complete self-contained HTML5 composition with GSAP animation timeline (\`window.__timelines["main"] = tl\`). The tool automatically publishes it for instant 60fps edge playback (\`/s/<slug>\`) in the student's gadget panel and queues the background 1080p MP4 render job in R2 for host encoding via \`hf-render-daemon.mjs\`. Always emit the returned \`\`\`hyperframes\`\`\` card immediately. Never emit raw static MP4 paths for topics that aren't General Relativity.
 3. **Tier 3 — Hand-Coded Procedural 16:9 Stage Sequencer**: When building interactive procedural simulations, gadgets, or client-side visual explainers directly, follow the strict procedural architecture below.
 
 ### Pre-rendered Video Library:
@@ -774,14 +774,7 @@ Voltrix OS uses a robust **3-Tier Explainer Video Architecture** for academic an
   {"topic":"General Relativity & Gravity","title":"General Relativity & Gravity Explained","status":"ready","path":"/api/hf-videos/general-relativity.mp4","duration":"9:01","preset":"cobalt-grid"}
   \`\`\`
   *CRITICAL RULE*: Gravity IS General Relativity (Einstein's geometric theory of gravity). Whenever the user asks for a video on **Gravity**, **Gravitation**, **General Relativity**, or **Spacetime**, ALWAYS emit \`status: "ready"\` with path \`/api/hf-videos/general-relativity.mp4\`. Never mark Gravity as "generating" or make the user wait for a render.
-- **Calculus & Limits**:
-  \`\`\`hyperframes
-  {"topic":"Calculus","title":"Calculus & Limits Explained","status":"ready","path":"/api/hf-videos/calculus.mp4","duration":"4:50","preset":"cobalt-grid"}
-  \`\`\`
-- **Raft & Paxos Distributed Consensus**:
-  \`\`\`hyperframes
-  {"topic":"Raft & Paxos","title":"Raft & Paxos Consensus Explained","status":"ready","path":"/api/hf-videos/raft-and-paxos.mp4","duration":"3:40","preset":"cobalt-grid"}
-  \`\`\`
+  *NOTE*: For any other topic (Calculus, Distributed Systems, Biology, etc.), NEVER emit a static \`/api/hf-videos/*.mp4\` path. Always call \`generateHyperFramesVideo\` to produce a dynamic interactive \`/s/<slug>\` player.
 
 ### Procedural Explainer Video Architecture (HyperFrames + VidGen Hybrid):
 When coding an explainer video or interactive simulation (whether inside a gadget or published at \`/s/<slug>\`):

@@ -1623,6 +1623,36 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
 
+    // Health / Observability Status Endpoint
+    if (url.pathname === "/api/health" || url.pathname === "/health") {
+      const colo = (req as any).cf?.colo || "edge";
+      return new Response(
+        JSON.stringify({
+          status: "healthy",
+          service: "voltrix-core",
+          environment: "production",
+          colo,
+          timestamp: new Date().toISOString(),
+          version: "1.0.0",
+          features: {
+            auth: { google: true, github: true, guest: true, tokens: true },
+            rateLimiting: true,
+            academicKnowledge: true,
+            hyperframes: { instant_ready: ["general-relativity"], dynamic_60fps: true },
+            payments: { pesapal: true, cards: true, mobile_money: true },
+          },
+        }, null, 2),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
     // Programmatic SEO: Public Academic Solutions (Course Hero Loop)
     if (url.pathname.startsWith("/solution/") || url.pathname.startsWith("/s/sol_")) {
       const slug = url.pathname.replace(/^\/(solution|s)\//, "");

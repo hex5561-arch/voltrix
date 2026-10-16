@@ -77,6 +77,7 @@ export default {
     }
 
     if (url.pathname === "/api" || url.pathname.startsWith("/api/") ||
+        url.pathname === "/health" ||
         url.pathname === "/s" || url.pathname.startsWith("/s/") ||
         url.pathname === "/solution" || url.pathname.startsWith("/solution/") ||
         url.pathname === "/sitemap-solutions.xml" ||
