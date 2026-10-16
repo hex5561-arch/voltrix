@@ -4,7 +4,7 @@ import { useDocumentTitle } from './useDocumentTitle'
 import { useOptionalAuthenticatedApi } from './AuthContext'
 import { getStudentProfile } from './services/studentProfile'
 import {
-  BookOpen, FileText, CheckCircle, ArrowRight, ArrowLeft, ArrowSquareOut,
+  BookOpen, FileText, CheckCircle, ArrowRight, ArrowLeft,
   X, Hexagon, GraduationCap, ShieldCheck,
   Key, Lock, Check,
   CreditCard, DeviceMobile, Tray, CalendarBlank
@@ -483,14 +483,19 @@ export default function PricingPage() {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     const pStatus = params.get('payment')
+    const cancelled = params.get('cancelled')
     const ref = params.get('ref') || params.get('OrderTrackingId')
     if (pStatus === 'success' && ref) {
       setTrackId(ref)
       setStep('success')
       fetch(`${COURSEHERO_API}/payments/status/${ref}`).catch(() => {})
-    } else if (pStatus === 'failed') {
+    } else if (pStatus === 'failed' || cancelled === '1') {
       setCheckoutError('The transaction was cancelled or declined. Please try again.')
       setStep('form')
+    } else if (pStatus === 'pending' && ref) {
+      setTrackId(ref)
+      setStep('payment')
+      startPolling(ref)
     }
   }, [])
 
@@ -683,6 +688,8 @@ export default function PricingPage() {
         setTrackId(data.order_tracking_id ?? '')
         setStep('payment')
         startPolling(data.order_tracking_id ?? '')
+        // Direct top-level navigation to official Pesapal Payment Gateway
+        window.location.href = data.redirect_url
       }
       setIsSubmitting(false)
     } catch (err) {
@@ -980,48 +987,61 @@ export default function PricingPage() {
                   </div>
                 </div>
               ) : step === 'payment' && iframeUrl ? (
-                /* ── PESAPAL SECURE GATEWAY IFRAME ── */
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
-                  <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950/70">
-                    <div className="flex items-center gap-2.5 text-xs">
-                      <ShieldCheck size={18} weight="fill" className="text-emerald-400" />
-                      <span className="font-bold text-white">Pesapal Secure Gateway</span>
-                      <span className="text-zinc-500 font-mono text-[11px]">· {formatPrice(finalUsd, currency)}</span>
+                /* ── PESAPAL SECURE GATEWAY PORTAL ── */
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-6 text-center">
+                  <div className="inline-flex p-4 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mb-1">
+                    <ShieldCheck size={36} weight="duotone" className="text-indigo-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white mb-1">Pesapal Secure Gateway</h3>
+                    <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                      Redirecting to complete payment of <span className="text-white font-mono font-semibold">{formatPrice(finalUsd, currency)}</span> via Mobile Money or Card.
+                    </p>
+                  </div>
+
+                  {/* Payment provider badges */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1 pb-1">
+                    <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">MTN MoMo</span>
+                    <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-red-500/15 text-red-300 border border-red-500/30">Airtel Money</span>
+                    <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">M-Pesa</span>
+                    <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30">Visa / Mastercard</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2 text-left">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-400">Order Reference</span>
+                      <span className="font-mono text-white text-[11px]">{trackId || 'PESAPAL-SECURE'}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <a
-                        href={iframeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <ArrowSquareOut size={13} />
-                        <span>Open in New Tab</span>
-                      </a>
-                      <span className="text-[11px] font-mono text-zinc-400 flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                        <span>Awaiting payment...</span>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-400">Status</span>
+                      <span className="flex items-center gap-1.5 text-amber-400 font-medium text-[11px]">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        <span>Awaiting Payment Authorization</span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (pollRef.current) clearInterval(pollRef.current)
-                          setStep('form')
-                          setIframeUrl('')
-                        }}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition cursor-pointer"
-                      >
-                        Cancel
-                      </button>
                     </div>
                   </div>
-                  <div className="w-full h-[620px] bg-white">
-                    <iframe
-                      src={iframeUrl}
-                      title="Pesapal Checkout"
-                      className="w-full h-full border-0"
-                      allow="payment"
-                    />
+
+                  <div className="space-y-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { window.location.href = iframeUrl }}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>Click to Open Pesapal Payment Gateway</span>
+                      <ArrowRight size={14} weight="bold" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (pollRef.current) clearInterval(pollRef.current)
+                        setStep('form')
+                        setIframeUrl('')
+                      }}
+                      className="text-xs text-zinc-400 hover:text-white transition cursor-pointer"
+                    >
+                      Cancel and return to checkout details
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -1445,8 +1465,8 @@ export default function PricingPage() {
               {step !== 'success' && (
                 <button
                   type="button"
-                  disabled={!email || isSubmitting || step === 'payment'}
-                  onClick={initiatePayment}
+                  disabled={!email || isSubmitting || (step === 'payment' && !iframeUrl)}
+                  onClick={step === 'payment' && iframeUrl ? () => { window.location.href = iframeUrl } : initiatePayment}
                   className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
@@ -1456,8 +1476,8 @@ export default function PricingPage() {
                     </>
                   ) : step === 'payment' ? (
                     <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Awaiting Pesapal Authorization...</span>
+                      <span>Open Pesapal Secure Payment</span>
+                      <ArrowRight size={14} weight="bold" />
                     </>
                   ) : (
                     <>
