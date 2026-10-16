@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /explore
+Allow: /vtube
+Allow: /privacy.html
+Allow: /terms.html
+
+# Disallow private user workspaces and internal endpoints
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /workspace/
+Disallow: /workspaces
+Disallow: /context
+Disallow: /profile
+Disallow: /providers
+
+Sitemap: https://voltrix.stream/sitemap.xml
