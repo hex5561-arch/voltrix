@@ -182,7 +182,7 @@ export default function UpgradeModal({
 }) {
   const [plans,             setPlans]             = useState<Plan[]>(DEFAULT_PLANS)
   const [selectedPlanId,    setSelectedPlanId]    = useState('pro')
-  const [billing,           setBilling]           = useState<'monthly'|'annual'>('annual')
+  const [billing,           setBilling]           = useState<'monthly'|'annual'>('monthly')
   const [currency,          setCurrency]          = useState('USD')
   const [email,             setEmail]             = useState('')
   const [name,              setName]              = useState('')
@@ -405,7 +405,7 @@ export default function UpgradeModal({
                       <span>Annual Billing</span>
                       <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded"
                         style={{ background: 'rgba(16,185,129,0.2)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)' }}>
-                        Save 33% (2 Mo Free)
+                        7-Day Free Trial · Save 33%
                       </span>
                     </>}
                   </button>
@@ -789,7 +789,12 @@ export default function UpgradeModal({
                       style={{ borderColor: '#1e1e33' }}>Back</button>
                   </div>
                 </div>
-                <iframe src={iframeUrl} title="Secure Checkout" style={{ flex: 1, width: '100%', border: 'none', display: 'block' }} allow="payment" />
+                <iframe src={iframeUrl} title="Secure Checkout" style={{ flex: 1, width: '100%', minHeight: '520px', border: 'none', display: 'block' }} allow="payment" />
+                <div className="py-2.5 px-4 text-center border-t shrink-0" style={{ borderColor: '#1e1e33', background: '#0a0a14' }}>
+                  <a href={iframeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1">
+                    <span>Having trouble with the embedded window? Open Pesapal in new tab &rarr;</span>
+                  </a>
+                </div>
               </div>
             )}
 

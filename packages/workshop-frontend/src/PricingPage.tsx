@@ -340,8 +340,8 @@ function PlanCard({
               <span className="text-xs font-normal text-zinc-400"> /month</span>
             </p>
             {billing === 'annual' && (
-              <p className="text-xs text-emerald-400 mt-1">
-                Billed annually ({formatPrice(plan.annualUsd * (1 - discount / 100), currency)}/yr)
+              <p className="text-xs text-emerald-400 mt-1 font-medium">
+                7-Day Free Trial included · Billed annually ({formatPrice(plan.annualUsd * (1 - discount / 100), currency)}/yr)
               </p>
             )}
           </div>
@@ -400,7 +400,7 @@ export default function PricingPage() {
   const currentUser = auth?.currentUser
   const studentProfile = getStudentProfile()
 
-  const [billing, setBilling] = useState<BillingCycle>('annual')
+  const [billing, setBilling] = useState<BillingCycle>('monthly')
   const [currency, setCurrency] = useState('UGX')
   const [sector, setSector] = useState<AcademicSector>('higher_ed')
   const [selectedPlanId, setSelectedPlanId] = useState<string>('scholar')
@@ -794,7 +794,7 @@ export default function PricingPage() {
               >
                 Annual
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold">
-                  Save 33%
+                  7-Day Free Trial · Save 33%
                 </span>
               </button>
             </div>
@@ -920,7 +920,79 @@ export default function PricingPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {step === 'payment' && iframeUrl ? (
+            /* ── COURSEHERO-STYLE EMBEDDED CHECKOUT VIEW ── */
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl max-w-4xl mx-auto space-y-0">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                    <ShieldCheck size={20} weight="fill" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>{selectedPlan.label}</span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                        {months === 1 ? 'Monthly' : `${months} Months`}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Amount due: <strong className="text-emerald-400 font-mono">{formatPrice(finalUsd, currency)}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono text-amber-400 flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Awaiting payment…</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pollRef.current) clearInterval(pollRef.current)
+                      setStep('form')
+                      setTrackId('')
+                      setIframeUrl('')
+                    }}
+                    className="text-xs px-3.5 py-1.5 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition cursor-pointer font-semibold"
+                  >
+                    Back to edit
+                  </button>
+                </div>
+              </div>
+
+              {/* Secure Iframe */}
+              <div className="p-3 sm:p-5 bg-zinc-950">
+                <iframe
+                  src={iframeUrl}
+                  title="Pesapal Secure Payment"
+                  className="w-full h-[650px] rounded-2xl border border-zinc-800 bg-white"
+                  allow="payment"
+                />
+              </div>
+
+              {/* Status & Fallback Footer */}
+              <div className="px-6 py-3.5 border-t border-zinc-800 bg-zinc-950/90 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400">
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span>Order Reference: <strong className="font-mono text-zinc-200">{trackId || '—'}</strong></span>
+                  <span>•</span>
+                  <span>256-bit TLS Encrypted</span>
+                  <span>•</span>
+                  <span>PCI-DSS Level 1</span>
+                </div>
+                <a
+                  href={iframeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1.5 text-xs font-medium"
+                >
+                  <ArrowSquareOut size={13} />
+                  <span>Having trouble with the embedded window? Open in new tab &rarr;</span>
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             
             {/* ── LEFT COLUMN: Subscriber Details, Duration & ChatGPT Paywall ── */}
             <div className="lg:col-span-7 space-y-6">
@@ -1520,6 +1592,7 @@ export default function PricingPage() {
               </p>
             </div>
           </div>
+          )}
         </div>
       )}
 

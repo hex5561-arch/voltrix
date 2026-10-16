@@ -515,6 +515,15 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
                 >
                   Sign in
                 </Button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('reviewer')}
+                  className="w-full mt-2 py-2 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Lightning size={14} weight="fill" />
+                  <span>Try Demo as Guest (Instant Access)</span>
+                </button>
               </form>
             )}
 
@@ -839,423 +848,50 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
           </div>
 
           <nav className="flex items-center gap-4 text-xs font-medium text-kumo-subtle">
-            <a href="#about-purpose" className="hover:text-kumo-default transition-colors hidden md:inline">
-              About &amp; Purpose
+            <a href="/pricing" className="hover:text-kumo-default transition-colors">
+              Pricing
             </a>
-            <a href="#youtube-integration" className="hover:text-kumo-default transition-colors hidden sm:inline">
-              YouTube Integration
+            <a href="/explore" className="hover:text-kumo-default transition-colors hidden sm:inline">
+              Explore
             </a>
             <a href="/privacy.html" className="hover:text-kumo-default transition-colors">
-              Privacy Policy
+              Privacy
             </a>
             <a href="/terms.html" className="hover:text-kumo-default transition-colors hidden sm:inline">
               Terms
             </a>
             <button
               type="button"
-              onClick={() => {
-                setTab('signin')
-                setShowAuthModal(true)
-              }}
-              className="py-1.5 px-3 rounded-xl bg-kumo-brand text-white font-semibold text-xs hover:bg-kumo-brand-hover transition shadow-sm cursor-pointer"
+              onClick={() => handleDemoLogin('reviewer')}
+              className="py-1.5 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
             >
-              Sign In
+              <Lightning size={14} weight="fill" />
+              <span>Guest Demo</span>
             </button>
           </nav>
         </div>
       </header>
 
-      {/* Main Landing & Authentication Container */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 sm:py-16 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
-          {/* Left Column: Purpose & Value Proposition */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
-              <GraduationCap size={15} weight="fill" />
-              <span>Academic Learning &amp; Research Workstation</span>
-            </div>
+      {/* Main Centered Sign-In Container */}
+      <main className="flex-1 max-w-lg mx-auto w-full px-4 py-8 sm:py-12 relative z-10 flex flex-col items-center justify-center">
+        {renderAuthCard()}
 
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-kumo-default leading-tight">
-              Distraction-Free Academic Learning Operating System
-            </h1>
-
-            <p className="text-sm sm:text-base text-kumo-subtle leading-relaxed">
-              Voltrix is an academic workstation and curriculum environment engineered for university students, educators, and independent scholars. Featuring <strong>V-Tube</strong> distraction-free lecture streaming with direct YouTube account synchronization, Socratic AI tutoring, smart timestamped notebooks, and structured research workspaces.
-            </p>
-
-            {/* Action CTA Buttons */}
-            <div className="flex flex-wrap items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('signin')
-                  setShowAuthModal(true)
-                }}
-                className="py-2.5 px-5 rounded-xl bg-kumo-brand text-white font-bold text-xs sm:text-sm hover:bg-kumo-brand-hover transition shadow-md flex items-center gap-2 cursor-pointer"
-              >
-                <SignIn size={16} weight="bold" />
-                <span>Sign In to Workstation</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('reviewer')}
-                className="py-2.5 px-5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-xs sm:text-sm transition shadow-sm flex items-center gap-2 cursor-pointer"
-              >
-                <Lightning size={16} weight="fill" />
-                <span>Try Demo as Guest (Instant Access)</span>
-              </button>
-
-              <a
-                href="#youtube-integration"
-                className="py-2.5 px-4 rounded-xl bg-kumo-control/60 hover:bg-kumo-control text-kumo-subtle hover:text-kumo-default border border-kumo-line font-medium text-xs sm:text-sm transition flex items-center gap-1.5"
-              >
-                <YoutubeLogo size={16} weight="fill" className="text-red-500" />
-                <span>YouTube Disclosures</span>
-              </a>
-            </div>
-
-            {/* Core Capability Badges */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
-              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
-                <div className="h-9 w-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0 mt-0.5">
-                  <Television size={18} weight="fill" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-kumo-default">V-Tube Academic Theater</h3>
-                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
-                    Watch university lectures (MIT, Stanford, Harvard, 3Blue1Brown) without ads, clickbait, or comment rabbit holes.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
-                <div className="h-9 w-9 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0 mt-0.5">
-                  <YoutubeLogo size={18} weight="fill" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-kumo-default">Direct YouTube Sync</h3>
-                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
-                    Connect Google OAuth to like educational videos and subscribe to academic creators directly on your actual YouTube account.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
-                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
-                  <Brain size={18} weight="fill" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-kumo-default">Socratic AI Tutoring</h3>
-                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
-                    Grounded concept derivations, chapter checkpoints, and active recall retention quizzes directly during lectures.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-kumo-elevated/70 border border-kumo-line flex items-start gap-3">
-                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
-                  <BookOpen size={18} weight="fill" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-kumo-default">Timestamped Notebook</h3>
-                  <p className="text-[11px] text-kumo-subtle mt-0.5 leading-relaxed">
-                    Snap notes and mathematical formulas anchored to exact seconds in lecture videos for rapid review.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Compliance Guarantee */}
-            <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-3 text-xs text-emerald-400">
-              <CheckCircle size={20} weight="fill" className="shrink-0" />
-              <span>
-                <strong>Google User Data Policy Compliant:</strong> We adhere to Google Limited Use requirements. Your YouTube tokens are used exclusively for user-initiated likes and subscriptions, and are never sold or shared.
-              </span>
-            </div>
-          </div>
-
-          {/* Right Column: Live Workstation Interactive Showcase */}
-          <div className="lg:col-span-5 w-full">
-            <div className="w-full relative bg-kumo-elevated/80 backdrop-blur-xl border border-kumo-line rounded-3xl p-5 sm:p-6 shadow-2xl overflow-hidden space-y-4">
-              {/* Window Controls Header */}
-              <div className="flex items-center justify-between border-b border-kumo-line/80 pb-3">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-rose-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-amber-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
-                </div>
-                <div className="px-2.5 py-0.5 rounded-full bg-kumo-base border border-kumo-line text-[10px] font-mono text-kumo-subtle truncate max-w-[200px]">
-                  voltrix.stream/vtube/linear-algebra
-                </div>
-                <div className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  <CheckCircle size={10} weight="fill" /> Verified
-                </div>
-              </div>
-
-              {/* V-Tube Simulated Video Screen */}
-              <div
-                className="relative rounded-2xl bg-black border border-kumo-line overflow-hidden aspect-video flex flex-col justify-between p-3.5 group cursor-pointer"
-                onClick={() => {
-                  setTab('demo')
-                  setShowAuthModal(true)
-                }}
-              >
-                <div className="flex items-center justify-between z-10">
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-white border border-white/10">
-                    MIT OpenCourseWare · 18.06
-                  </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-red-600 text-white flex items-center gap-1">
-                    <YoutubeLogo size={12} weight="fill" /> YouTube Sync
-                  </span>
-                </div>
-
-                <div className="text-center my-auto z-10">
-                  <div className="w-12 h-12 rounded-full bg-red-600/90 text-white flex items-center justify-center mx-auto shadow-lg shadow-red-600/40 group-hover:scale-110 transition-transform">
-                    <Play size={20} weight="fill" className="ml-0.5" />
-                  </div>
-                  <p className="text-xs font-bold text-white mt-2 drop-shadow">Eigenvalues &amp; Diagonalization</p>
-                  <p className="text-[10px] text-neutral-300 drop-shadow">Prof. Gilbert Strang · MIT</p>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-neutral-300 z-10 pt-1 border-t border-white/10">
-                  <span className="text-emerald-400 font-medium">✓ Subscribed via YouTube API</span>
-                  <span className="text-white font-medium">👍 Liked on YouTube</span>
-                </div>
-              </div>
-
-              {/* Socratic AI & Math Preview */}
-              <div className="p-3.5 rounded-2xl bg-kumo-base/80 border border-kumo-line space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-kumo-default">
-                  <span className="flex items-center gap-1.5 text-indigo-400">
-                    <Brain size={14} weight="fill" /> Socratic AI Explanation
-                  </span>
-                  <span className="text-[10px] text-kumo-subtle font-mono">LaTeX Math Engine</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-kumo-elevated text-xs font-serif text-center text-kumo-default border border-kumo-line/60">
-                  <p className="text-[11px] font-sans text-kumo-subtle mb-1">Characteristic Equation Formulation:</p>
-                  <span className="text-sm font-semibold tracking-wide text-cyan-300">
-                    det(A - λI) = 0 &nbsp;⟹&nbsp; λ² - tr(A)λ + det(A) = 0
-                  </span>
-                </div>
-              </div>
-
-              {/* Action Trigger Buttons */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('signin')
-                    setShowAuthModal(true)
-                  }}
-                  className="py-2 px-3 rounded-xl bg-kumo-brand text-white font-bold text-xs hover:bg-kumo-brand-hover transition shadow-sm text-center cursor-pointer"
-                >
-                  Sign In / Register
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoLogin('reviewer')}
-                  className="py-2 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition text-center cursor-pointer"
-                >
-                  1-Click Reviewer Demo
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 1.5: GOOGLE APP VERIFICATION REVIEWER & GUEST SCHOLAR SANDBOX */}
-        <section className="mt-14 pt-10 border-t border-kumo-line/80 space-y-6">
-          <div className="p-6 sm:p-8 rounded-3xl bg-emerald-500/5 border border-emerald-500/20 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
-                  <ShieldCheck size={22} weight="fill" />
-                </div>
-                <div>
-                  <h2 className="text-base sm:text-lg font-bold text-kumo-default">
-                    Google App Verification Reviewer Sandbox
-                  </h2>
-                  <p className="text-xs text-kumo-subtle">
-                    Reviewers and guests can audit all features immediately without registration.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('reviewer')}
-                className="shrink-0 py-2 px-4 rounded-xl bg-emerald-500 text-neutral-950 font-bold text-xs hover:bg-emerald-400 transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Lightning size={14} weight="fill" />
-                <span>Launch Reviewer Workspace (1-Click)</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2">
-              {DEMO_SCHOLARS.map((scholar) => (
-                <div
-                  key={scholar.id}
-                  className="p-3.5 rounded-2xl bg-kumo-elevated/90 border border-kumo-line flex flex-col justify-between gap-3 hover:border-emerald-500/40 transition-colors"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 truncate">
-                        {scholar.discipline}
-                      </span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-kumo-line text-kumo-subtle">
-                        Live
-                      </span>
-                    </div>
-                    <h3 className="text-xs font-bold text-kumo-default truncate">{scholar.name}</h3>
-                    <p className="text-[11px] text-kumo-subtle truncate mt-0.5">{scholar.institution}</p>
-                    <p className="text-[10px] text-kumo-inactive truncate">{scholar.degree}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDemoLogin(scholar.id)}
-                    disabled={loading}
-                    className="w-full py-1.5 px-3 rounded-xl bg-kumo-control/80 hover:bg-kumo-brand hover:text-white text-[11px] font-semibold text-kumo-default transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <span>Audit Workspace</span>
-                    <ArrowSquareOut size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-kumo-base/60 border border-kumo-line/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-kumo-subtle">
-              <span className="flex items-center gap-1.5">
-                <LockKey size={14} className="text-amber-400" />
-                <span>Standard Reviewer Credentials: <strong className="text-kumo-default">Username:</strong> <code className="bg-kumo-line px-1 rounded text-cyan-300">reviewer</code> &nbsp;|&nbsp; <strong className="text-kumo-default">Password:</strong> <code className="bg-kumo-line px-1 rounded text-cyan-300">GoogleReviewer2026!</code></span>
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('signin')
-                  setShowAuthModal(true)
-                }}
-                className="text-xs font-semibold text-kumo-brand hover:underline self-start sm:self-auto cursor-pointer"
-              >
-                Open Sign In Dialog &rarr;
-              </button>
-            </div>
-          </div>
-        </section>
-
-  {/* SECTION 2: APPLICATION PURPOSE & ACADEMIC ARCHITECTURE */}
-  <section id="about-purpose" className="mt-24 pt-16 border-t border-kumo-line/80 space-y-8">
-    <div className="text-center max-w-3xl mx-auto space-y-3">
-      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-xs font-semibold">
-        <Sparkle size={12} weight="fill" />
-        <span>Application Purpose</span>
-      </div>
-      <h2 className="text-2xl sm:text-3xl font-bold text-kumo-default tracking-tight">
-        Why Voltrix OS Exists: Deep Academic Focus
-      </h2>
-      <p className="text-xs sm:text-sm text-kumo-subtle leading-relaxed">
-        Modern commercial video platforms are intentionally engineered with engagement algorithms designed to maximize watch time through clickbait, algorithmically suggested unrelated content, and algorithmic rabbit holes. Voltrix OS provides an academic barrier that protects students while giving them access to world-class educational lectures.
-      </p>
-    </div>
-
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
-      <div className="p-6 rounded-2xl bg-kumo-elevated/60 border border-kumo-line space-y-3">
-        <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-          <GraduationCap size={22} weight="fill" />
-        </div>
-        <h3 className="text-sm font-bold text-kumo-default">Curriculum-Aligned Lectures</h3>
-        <p className="text-xs text-kumo-subtle leading-relaxed">
-          Lectures are strictly filtered and categorized by discipline (Computer Science, Mathematics, Medicine, Engineering) and enrolled courses. Students only see verified academic lectures from institutions like MIT OpenCourseWare, Stanford, and 3Blue1Brown.
-        </p>
-      </div>
-
-      <div className="p-6 rounded-2xl bg-kumo-elevated/60 border border-kumo-line space-y-3">
-        <div className="h-10 w-10 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500">
-          <YoutubeLogo size={22} weight="fill" />
-        </div>
-        <h3 className="text-sm font-bold text-kumo-default">Verified YouTube Sync</h3>
-        <p className="text-xs text-kumo-subtle leading-relaxed">
-          Students can like educational lectures and subscribe to university channels directly from Voltrix OS. Through the YouTube Data API v3, their actions execute on their personal YouTube account, preserving their YouTube subscription feeds without distraction.
-        </p>
-      </div>
-
-      <div className="p-6 rounded-2xl bg-kumo-elevated/60 border border-kumo-line space-y-3">
-        <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-          <Brain size={22} weight="fill" />
-        </div>
-        <h3 className="text-sm font-bold text-kumo-default">Retention &amp; Recall Checkpoints</h3>
-        <p className="text-xs text-kumo-subtle leading-relaxed">
-          Lectures feature interactive syllabus chapters, an integrated Socratic AI tutor that references specific video timestamps, and active recall retention checkpoints derived directly from the lecture material.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  {/* SECTION 3: YOUTUBE API SERVICES & GOOGLE USER DATA DISCLOSURE */}
-  <section id="youtube-integration" className="mt-20 pt-16 border-t border-kumo-line/80">
-    <div className="p-6 sm:p-8 rounded-3xl bg-kumo-elevated/80 border border-kumo-line space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0">
-          <YoutubeLogo size={22} weight="fill" />
-        </div>
-        <div>
-          <h2 className="text-base sm:text-lg font-bold text-kumo-default">
-            YouTube API Services &amp; Google User Data Disclosure
-          </h2>
-          <p className="text-xs text-kumo-subtle">
-            Transparent compliance with the Google API Services User Data Policy
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-3 text-xs text-kumo-subtle leading-relaxed">
-        <p>
-          Voltrix OS integrates with <strong>YouTube API Services</strong> to provide educational lecture viewing, chapters, and optional user-directed account synchronization.
-        </p>
-        <p>
-          Our application requests the <code>https://www.googleapis.com/auth/youtube.force-ssl</code> scope for two specific educational purposes:
-        </p>
-        <ul className="list-disc list-inside space-y-1 pl-2 text-kumo-default font-medium">
-          <li><strong>Rating educational videos:</strong> Calling <code>videos.rate</code> when a student clicks "Like" on an academic lecture.</li>
-          <li><strong>Subscribing to educational channels:</strong> Calling <code>subscriptions.insert</code> or <code>subscriptions.delete</code> when a student follows an academic creator or university channel.</li>
-        </ul>
-        <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 space-y-1.5 mt-4">
-          <p className="font-semibold text-white">Google Limited Use Disclosure:</p>
+        <div className="mt-6 text-center text-xs text-kumo-subtle space-y-2">
           <p>
-            Our app&#39;s use and transfer of information received from Google APIs to any other app will adhere to <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener" className="underline text-indigo-200">Google API Services User Data Policy</a>, including the <strong>Limited Use</strong> requirements. We do not sell or share your data with third parties.
+            Looking for cohort licenses or syllabus packages?{' '}
+            <a href="/pricing" className="text-kumo-brand hover:underline font-semibold">
+              Explore Academic Pricing &rarr;
+            </a>
           </p>
-        </div>
-        <p className="pt-2">
-          By utilizing YouTube-powered features in Voltrix OS, you agree to be bound by the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener" className="underline text-kumo-brand">YouTube Terms of Service</a> and the <a href="http://www.google.com/policies/privacy" target="_blank" rel="noopener" className="underline text-kumo-brand">Google Privacy Policy</a>. You can revoke access at any time via <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" className="underline text-kumo-brand">Google Account Permissions</a>.
-        </p>
-      </div>
-    </div>
-  </section>
-</main>
-
-
-      {/* AUTHENTICATION MODAL DIALOG (Triggered on demand via Sign In buttons) */}
-      {showAuthModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowAuthModal(false)
-          }}
-        >
-          <div className="relative w-full max-w-lg max-h-[92vh] overflow-y-auto">
-            <button
-              type="button"
-              onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 p-2 rounded-xl text-kumo-inactive hover:text-kumo-default hover:bg-kumo-control transition cursor-pointer z-30"
-              aria-label="Close dialog"
-            >
-              <X size={20} />
-            </button>
-            {renderAuthCard()}
+          <div className="flex items-center justify-center gap-3 text-[11px] text-kumo-inactive">
+            <span>256-bit TLS Encrypted</span>
+            <span>•</span>
+            <a href="/privacy.html" className="hover:text-kumo-subtle transition-colors">Privacy Policy</a>
+            <span>•</span>
+            <a href="/terms.html" className="hover:text-kumo-subtle transition-colors">Terms of Service</a>
           </div>
         </div>
-      )}
+      </main>
 
       {/* Comprehensive Public Footer */}
 <footer className="w-full border-t border-kumo-line bg-kumo-base py-10 mt-20 relative z-20">
