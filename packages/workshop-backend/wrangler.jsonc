@@ -117,6 +117,7 @@
     "PUBLIC_BASE_URL": "https://voltrix.stream",
     "CF_AI_GATEWAY": "voltrix-ai",
     "CF_AI_GATEWAY_ACCOUNT_ID": "84f114e1b747a07d247ceb17b0c1dc14",
-    "CF_AI_GATEWAY_PROVIDERS": "cloudflare,google,thehive"
+    "CF_AI_GATEWAY_PROVIDERS": "cloudflare,google,thehive",
+    "ADMINS": "[\"captain\"]"
   }
 }
