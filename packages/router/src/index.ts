@@ -54,6 +54,8 @@ export default {
 
     if (url.pathname === "/api" || url.pathname.startsWith("/api/") ||
         url.pathname === "/s" || url.pathname.startsWith("/s/") ||
+        url.pathname === "/solution" || url.pathname.startsWith("/solution/") ||
+        url.pathname === "/sitemap-solutions.xml" ||
         url.pathname === "/blueprint-screenshot" ||
         url.pathname.startsWith("/blueprint-screenshot/")) {
       // WhatsApp webhook is handled by the dedicated worker; all other /api/whatsapp/* go to backend.
