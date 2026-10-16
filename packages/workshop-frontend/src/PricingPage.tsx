@@ -1309,6 +1309,14 @@ export default function PricingPage() {
                           </div>
                         </div>
 
+                        {/* Note for African Virtual Card users */}
+                        <div className="text-[11px] text-zinc-400 bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3 flex items-start gap-2.5">
+                          <span className="text-amber-400 shrink-0 text-sm">💡</span>
+                          <span className="leading-relaxed">
+                            <strong className="text-zinc-200">Using an Airtel Money or MTN MoMo virtual card?</strong> Bank-issued Visa/Mastercards are processed directly here. For Airtel or MTN mobile wallets, select the <strong className="text-indigo-400">Mobile Money</strong> tab above for an instant PIN prompt directly on your phone.
+                          </span>
+                        </div>
+
                         {/* ChatGPT Recurring Consent Checkbox */}
                         <div className="pt-3 border-t border-zinc-800/60">
                           <label className="flex items-start gap-2.5 cursor-pointer text-xs text-zinc-300 select-none">
