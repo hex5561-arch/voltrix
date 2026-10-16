@@ -93,7 +93,7 @@ export async function getGrowthConfig(env: Cloudflare.Env): Promise<GrowthConfig
       };
     }
   } catch (err) {
-    logger.warn("Failed to load growth config from KV", { error: err });
+    logger.warn("Failed to load growth config from KV", { event: "growth.config.load_failed", error: String(err) });
   }
   return { ...DEFAULT_GROWTH_CONFIG };
 }
@@ -246,7 +246,7 @@ export async function redeemReferralCode(
         await env.BLUEPRINTS.put(userKvKey, JSON.stringify(userRec));
       }
     } catch (e) {
-      logger.warn("Failed to activate pro tier for referrer", { error: e });
+      logger.warn("Failed to activate pro tier for referrer", { event: "growth.pro.activation_failed", error: String(e) });
     }
   }
 
@@ -276,7 +276,7 @@ export async function redeemReferralCode(
     log.unshift(event);
     await env.BLUEPRINTS.put("sys:referral_log", JSON.stringify(log.slice(0, 200)));
   } catch (err) {
-    logger.warn("Failed to record referral event log", { error: err });
+    logger.warn("Failed to record referral event log", { event: "growth.referral_log.failed", error: String(err) });
   }
 
   return {
@@ -376,7 +376,7 @@ export async function adminOverrideUserGrowth(
         await env.BLUEPRINTS.put(userKvKey, JSON.stringify(userRec));
       }
     } catch (e) {
-      logger.warn("Failed to apply admin pro override to user record", { error: e });
+      logger.warn("Failed to apply admin pro override to user record", { event: "growth.override.failed", error: String(e) });
     }
   }
 
