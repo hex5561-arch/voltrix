@@ -265,7 +265,6 @@ export async function submitPesapalOrder(opts: SubmitOrderOptions): Promise<Pesa
       callback_url: `${origin.replace(/\/+$/, "")}/api/payments/callback`,
       cancellation_url: `${origin.replace(/\/+$/, "")}/api/payments/cancelled`,
       notification_id: ipnId,
-      redirect_mode: "TOP_WINDOW",
       billing_address: {
         email_address: normEmail,
         phone_number: normPhone,
