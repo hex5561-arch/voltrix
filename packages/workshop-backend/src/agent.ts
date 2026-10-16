@@ -26,6 +26,13 @@ import {
 } from "./scholarly.js";
 import { publishSiteToStorage } from "./sites.js";
 import { createHyperFramesJob } from "./hf-jobs.js";
+import {
+  synthesizeSpeech as synthesizeSpeechImpl,
+  listVoices,
+  getVoice,
+  registerVoice,
+  type VoicePersona,
+} from "./tts-engine.js";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { AgentCatalogSnapshot, formatAlwaysAvailableResourcesPrompt } from "./agent-catalog";
@@ -806,14 +813,17 @@ When coding an explainer video or interactive simulation (whether inside a gadge
     - NEVER draw raw flat slashes (/) or carats (^) for key formulas on stage.
     - **Stacked Fractions**: Always draw true vertical two-story fractions with a clean horizontal vinculum division line (numerator centered above, denominator centered below, line width = Math.max(numW, denW) + 16).
     - **Elevated Superscripts & Subscripts**: Draw exponents and indexes (e.g. E_n, n^2, ħ^2, |ψ|², K^T) with true elevated superscripts (font size ×0.65, elevated by −0.38×fontSize) or lowered subscripts (+0.22×fontSize).
-    - **Radical Notation**: Draw square roots with a true radical sign \`√\` and a horizontal vinculum overbar covering the radicand.
-- **Duo Voice Contract (Male + Female Professor Dualism)**:
-  - Unless the user explicitly specifies otherwise, ALWAYS pair an authoritative male professor (e.g. Professor Christopher, Groq voice \`"daniel"\` or \`"troy"\`) with an articulate female professor (e.g. Professor Jenny, Groq voice \`"autumn"\` or \`"diana"\`).
-  - **Pacing & Timbre Distinction**:
-    - Professor Christopher (Male): Paced at 0.94× with a low-shelf warm filter (+4.5dB at 180Hz) and pitch 0.88 for deep scholarly resonance.
-    - Professor Jenny (Female): Paced at 1.02× with high-shelf brilliance (+5dB at 3600Hz), presence peak (+4dB at 2600Hz), and pitch 1.15 for bright, articulate feminine clarity.
-    - When calling \`generateSpeechAudio\`, alternate between \`voice: "daniel"\` and \`voice: "autumn"\`.
-    - In browser \`speechSynthesis\` fallback, select male vs. female OS voices with matching pitch and rate adjustments.
+- **Voice Personas & Multi-Voice Narration**:
+  Voltrix OS features an extensible neural speech engine powered by dual backends (Groq via Cloudflare AI Gateway + Cloudflare Workers AI edge fallback) with 6 signature personas:
+  1. \`ada\` (The Professor): Articulate, measured, authoritative British academic lecturer (0.95× pace). Perfect for STEM proofs, formal derivations, academic analysis.
+  2. \`zephyr\` (Voltrix Core): Modern, crisp, energetic AI copilot (1.05× pace). Default for platform interactions, coding, and quick responses.
+  3. \`nova\` (The Mentor): Warm, empathetic, inspiring tutor (1.0× pace). Ideal for study motivation, freshman coaching, high school mentoring.
+  4. \`marcus\` (The Historian): Deep contemplative baritone (0.95× pace). Ideal for humanities, literature, history, case studies, storytelling.
+  5. \`kip\` (East African Scholar): Clear, rhythmic Kenyan/East African English cadence (1.0× pace). Tailored for KCSE, KUCCPS, regional academic contexts.
+  6. \`echo\` (The Scribe): Gentle, soothing, low-arousal voice (0.9× pace). Designed for spaced repetition flashcards, definitions, bedtime review.
+  *Extensibility*: The voice registry is modular and addable onto. You can select any of the 6 signature personas, or pass any custom voice identifier or alias.
+  - When narrating dialogues or multi-voice presentations, pair complementary personas (e.g. \`ada\` for theory + \`nova\` or \`zephyr\` for applications).
+  - Use \`synthesizeSpeech\` (or \`generateSpeechAudio\`) to synthesize speech audio.
 - **Deliberate Scholarly Cadence**:
   - Avoid rushed, monotonic speech. Keep narration cadence at a measured 0.88–0.94× scholarly pace with 0.4s natural breathing pauses after major formulas.
 - **Code Integrity (Zero Syntax Errors)**:
@@ -3329,14 +3339,62 @@ export async function runAgent(
       },
     }),
 
+    synthesizeSpeech: defineTool({
+      name: "synthesizeSpeech",
+      label: "Synthesize speech audio",
+      description: "Synthesizes high-fidelity voice audio using the Voltrix dual-engine TTS system (Groq + Cloudflare Workers AI) across 6 extensible signature personas ('ada', 'zephyr', 'nova', 'marcus', 'kip', 'echo', or custom registered voices). Caches results in edge R2 storage and returns streaming URL + HTML5 audio embed.",
+      parameters: Type.Object({
+        text: Type.String({description: "The narration text or sentence to synthesize into audio."}),
+        voice: Type.Optional(Type.String({description: "Voice persona: 'ada' (The Professor), 'zephyr' (Voltrix Core), 'nova' (The Mentor), 'marcus' (The Historian), 'kip' (East African Scholar), 'echo' (The Scribe), or any custom voice/alias. Defaults to 'zephyr'."})),
+        speed: Type.Optional(Type.Number({description: "Optional playback speed multiplier (0.75 to 1.5). Defaults to persona standard."})),
+        purpose: Type.Optional(Type.String({description: "Optional context: 'lecture', 'flashcard', 'explainer', 'story', or 'conversation'."})),
+        filename: Type.Optional(Type.String({description: "Optional custom slug for the audio file."})),
+        forceRegenerate: Type.Optional(Type.Boolean({description: "Set to true to bypass cache and force re-synthesis."})),
+      }),
+      execute: async (toolCallId, {text, voice, speed, purpose, filename, forceRegenerate}) => {
+        try {
+          const bucket = hooks.getBlueprintContentBucket();
+          if (!bucket) {
+            throw new Error("Edge storage bucket is not configured on this instance.");
+          }
+          const ai = hooks.getClassifierAi?.();
+          const groqApiKey = hooks.getGroqApiKey?.() || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
+
+          const result = await synthesizeSpeechImpl(
+            { text, voice, speed, purpose, filename, forceRegenerate },
+            {
+              BLUEPRINT_CONTENT: bucket,
+              WORKERS_AI: ai,
+              GROQ_API_KEY: groqApiKey,
+              CF_AI_GATEWAY: "voltrix-ai",
+              CF_AI_GATEWAY_ACCOUNT_ID: "84f114e1b747a07d247ceb17b0c1dc14",
+            }
+          );
+
+          const formatted = `🎙️ **Speech Audio Generated Successfully!**\n\n` +
+            `• **Persona:** ${result.persona} (${result.archetype})\n` +
+            `• **Voice ID:** \`${result.voice}\`\n` +
+            `• **Provider:** ${result.provider}\n` +
+            `• **Duration (est):** ~${result.durationEstimateSeconds}s\n` +
+            `• **Audio URL:** [${result.audioUrl}](${result.audioUrl})\n` +
+            `• **HTML5 Embed:** \`${result.htmlEmbed}\``;
+
+          return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
+    }),
+
     generateSpeechAudio: defineTool({
       name: "generateSpeechAudio",
       label: "Generate speech audio",
-      description: "Synthesizes spoken audio narration from text using high-quality low-cost neural TTS (Groq or Cloudflare Workers AI) and stores the resulting audio file in edge R2 storage. Returns the public streaming URL to embed directly into HTML5 video compositions as real <audio> elements.",
+      description: "Synthesizes spoken audio narration from text using the Voltrix dual-engine TTS system. Alias for synthesizeSpeech.",
       parameters: Type.Object({
         text: Type.String({description: "The narration text or sentence to synthesize into audio."}),
-        voice: Type.Optional(Type.String({description: "Voice ID/name to use (e.g. 'troy', 'autumn', 'diana', 'hannah'). Defaults to 'troy'."})),
-        filename: Type.Optional(Type.String({description: "Optional slug or filename without extension for the audio file (e.g. 'fluid-scene1-narration')."})),
+        voice: Type.Optional(Type.String({description: "Voice persona: 'ada', 'zephyr', 'nova', 'marcus', 'kip', 'echo', or legacy aliases. Defaults to 'zephyr'."})),
+        filename: Type.Optional(Type.String({description: "Optional slug or filename without extension for the audio file."})),
       }),
       execute: async (toolCallId, {text, voice, filename}) => {
         try {
@@ -3344,130 +3402,25 @@ export async function runAgent(
           if (!bucket) {
             throw new Error("Edge storage bucket is not configured on this instance.");
           }
-          const cleanText = text.trim();
-          if (!cleanText) {
-            throw new Error("Text is required for speech synthesis.");
-          }
-
-          const rawVoice = (voice || "autumn").toLowerCase().trim();
-          const VOICE_MAP: Record<string, string> = {
-            christopher: "daniel",
-            ryan: "troy",
-            guy: "austin",
-            jenny: "autumn",
-            sonia: "diana",
-            aria: "hannah",
-            daniel: "daniel",
-            troy: "troy",
-            austin: "austin",
-            autumn: "autumn",
-            diana: "diana",
-            hannah: "hannah",
-          };
-          const groqVoice = VOICE_MAP[rawVoice] || (rawVoice.includes("jenny") || rawVoice.includes("sonia") || rawVoice.includes("female") ? "autumn" : "daniel");
-
+          const ai = hooks.getClassifierAi?.();
           const groqApiKey = hooks.getGroqApiKey?.() || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
-          let audioBytes: ArrayBuffer | null = null;
-          let ext = "mp3";
-          let contentType = "audio/mpeg";
-          let provider = "workers-ai";
-          const attempts: Array<{ provider: string; status?: number; error?: string }> = [];
 
-          const cfGateway = "voltrix-ai";
-          const cfAccountId = "84f114e1b747a07d247ceb17b0c1dc14";
-          const groqUrl = cfGateway && cfAccountId
-            ? `https://gateway.ai.cloudflare.com/v1/${cfAccountId}/${cfGateway}/groq/openai/v1/audio/speech`
-            : "https://api.groq.com/openai/v1/audio/speech";
-
-          if (groqApiKey) {
-            try {
-              const pacedInput = cleanText.startsWith("[") ? cleanText : `[calm, clear] ${cleanText}`;
-              const groqRes = await fetch(groqUrl, {
-                method: "POST",
-                headers: {
-                  "Authorization": `Bearer ${groqApiKey}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  model: "canopylabs/orpheus-v1-english",
-                  input: pacedInput,
-                  voice: groqVoice,
-                  response_format: "wav",
-                }),
-              });
-              if (groqRes.ok) {
-                audioBytes = await groqRes.arrayBuffer();
-                ext = "wav";
-                contentType = "audio/wav";
-                provider = "groq-via-cloudflare";
-              } else {
-                const errText = await groqRes.text().catch(() => "");
-                attempts.push({ provider: "groq", status: groqRes.status, error: errText });
-              }
-            } catch (e: any) {
-              attempts.push({ provider: "groq", error: e.message || String(e) });
+          const result = await synthesizeSpeechImpl(
+            { text, voice, filename },
+            {
+              BLUEPRINT_CONTENT: bucket,
+              WORKERS_AI: ai,
+              GROQ_API_KEY: groqApiKey,
+              CF_AI_GATEWAY: "voltrix-ai",
+              CF_AI_GATEWAY_ACCOUNT_ID: "84f114e1b747a07d247ceb17b0c1dc14",
             }
-          } else {
-            attempts.push({ provider: "groq", error: "GROQ_API_KEY secret not found in environment." });
-          }
+          );
 
-          if (!audioBytes) {
-            const ai = hooks.getClassifierAi();
-            if (ai) {
-              try {
-                const aiRes: any = await (ai as any).run("@cf/myshell-ai/melotts", {
-                  prompt: cleanText,
-                  lang: "en",
-                });
-                if (aiRes) {
-                  provider = "workers-ai";
-                  ext = "mp3";
-                  contentType = "audio/mpeg";
-                  if (aiRes instanceof ArrayBuffer) {
-                    audioBytes = aiRes;
-                  } else if (aiRes instanceof Uint8Array) {
-                    audioBytes = aiRes.buffer as ArrayBuffer;
-                  } else if (typeof aiRes === "object" && aiRes !== null && "audio" in aiRes) {
-                    audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer as ArrayBuffer;
-                  } else {
-                    audioBytes = await new Response(aiRes).arrayBuffer();
-                  }
-                } else {
-                  attempts.push({ provider: "workers-ai", error: "Empty response from @cf/myshell-ai/melotts" });
-                }
-              } catch (e: any) {
-                attempts.push({ provider: "workers-ai", error: e.message || String(e) });
-              }
-            } else {
-              attempts.push({ provider: "workers-ai", error: "WORKERS_AI binding not available." });
-            }
-          }
-
-          if (!audioBytes) {
-            throw new Error(`TTS generation failed across all backends:\n${JSON.stringify(attempts, null, 2)}`);
-          }
-
-          let baseName = filename;
-          if (!baseName) {
-            let hash = 0;
-            for (let i = 0; i < cleanText.length; i++) {
-              hash = ((hash << 5) - hash) + cleanText.charCodeAt(i);
-              hash |= 0;
-            }
-            baseName = `tts-${Math.abs(hash).toString(36)}`;
-          }
-          const safeName = baseName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-          const targetFile = `${safeName}.${ext}`;
-
-          await bucket.put(`hf-videos/${targetFile}`, audioBytes, {
-            httpMetadata: { contentType },
-          });
-
-          const audioUrl = `https://voltrix.stream/api/hf-videos/${targetFile}`;
           const formatted = `🎙️ **Speech Audio Generated Successfully!**\n\n` +
-            `• **Audio URL:** [${audioUrl}](${audioUrl})\n` +
-            `• **Provider:** ${provider}\n` +
-            `• **HTML5 Embed:** \`<audio src="${audioUrl}" preload="auto"></audio>\``;
+            `• **Persona:** ${result.persona} (${result.archetype})\n` +
+            `• **Audio URL:** [${result.audioUrl}](${result.audioUrl})\n` +
+            `• **Provider:** ${result.provider}\n` +
+            `• **HTML5 Embed:** \`${result.htmlEmbed}\``;
 
           return toolResult(formatted, {output: formatted} as Partial<AiToolCall>);
         } catch (error) {

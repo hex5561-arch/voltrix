@@ -62,6 +62,7 @@ import {
   getSolution,
   renderSolutionHtml,
 } from "./solutions.js";
+import { synthesizeSpeech, listVoices, getVoice, registerVoice } from "./tts-engine.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1896,7 +1897,7 @@ ${catalog.map(c => `  <url>
     }
 
     // ── HyperFrames Video & Audio Serving ──
-    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload" || url.pathname === "/api/tts/generate" || url.pathname === "/api/tts/status")) {
+    if (req.method === "OPTIONS" && (url.pathname.startsWith("/api/hf-videos/") || url.pathname === "/api/hf-videos/upload" || url.pathname === "/api/tts/generate" || url.pathname === "/api/tts/status" || url.pathname === "/api/tts/voices")) {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -1906,11 +1907,36 @@ ${catalog.map(c => `  <url>
       });
     }
 
+    // GET /api/tts/voices — Lists all available persona voices (extensible registry)
+    if (req.method === "GET" && url.pathname === "/api/tts/voices") {
+      const voices = listVoices();
+      return Response.json({
+        ok: true,
+        count: voices.length,
+        voices: voices.map(v => ({
+          id: v.id,
+          name: v.name,
+          archetype: v.archetype,
+          description: v.description,
+          gender: v.gender,
+          defaultSpeed: v.defaultSpeed,
+          aliases: v.aliases,
+        })),
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
+    }
+
     // GET /api/tts/status — Diagnostic health probe for Groq and Cloudflare Workers AI TTS
     if (req.method === "GET" && url.pathname === "/api/tts/status") {
       const probeResults: Record<string, any> = {
         groq: { configured: false, status: "unknown" },
         workersAi: { configured: false, status: "unknown" },
+        voicesCount: listVoices().length,
       };
 
       const groqApiKey = (env as any).GROQ_API_KEY || "";
@@ -2027,10 +2053,18 @@ ${catalog.map(c => `  <url>
       });
     }
 
-    // POST /api/tts/generate — Text-to-Speech synthesis via Groq (Cloudflare AI Gateway) or Cloudflare Workers AI
+    // POST /api/tts/generate — Text-to-Speech synthesis via modular dual-engine pipeline
     if (req.method === "POST" && url.pathname === "/api/tts/generate") {
       try {
-        const body = (await req.json()) as { text?: string; voice?: string; model?: string; apiKey?: string };
+        const body = (await req.json()) as {
+          text?: string;
+          voice?: string;
+          speed?: number;
+          purpose?: string;
+          filename?: string;
+          forceRegenerate?: boolean;
+          apiKey?: string;
+        };
         const text = (body.text || "").trim();
         if (!text) {
           return new Response(JSON.stringify({ ok: false, error: "text is required" }), {
@@ -2039,113 +2073,27 @@ ${catalog.map(c => `  <url>
           });
         }
 
-        const voice = body.voice || "autumn";
-        const groqApiKey = body.apiKey || (env as any).GROQ_API_KEY || "";
-        const cfGateway = (env as any).CF_AI_GATEWAY || "voltrix-ai";
-        const cfAccountId = (env as any).CF_AI_GATEWAY_ACCOUNT_ID || "84f114e1b747a07d247ceb17b0c1dc14";
-        const groqUrl = cfGateway && cfAccountId
-          ? `https://gateway.ai.cloudflare.com/v1/${cfAccountId}/${cfGateway}/groq/openai/v1/audio/speech`
-          : "https://api.groq.com/openai/v1/audio/speech";
+        const result = await synthesizeSpeech(
+          {
+            text,
+            voice: body.voice,
+            speed: body.speed,
+            purpose: body.purpose,
+            filename: body.filename,
+            forceRegenerate: body.forceRegenerate,
+            apiKey: body.apiKey,
+          },
+          env as any
+        );
 
-        let audioBytes: ArrayBuffer | null = null;
-        let ext = "mp3";
-        let contentType = "audio/mpeg";
-        let provider = "workers-ai";
-        const attempts: Array<{ provider: string; status?: number; error?: string }> = [];
-
-        // 1. Attempt Groq Canopy Labs Orpheus via Cloudflare AI Gateway
-        if (groqApiKey) {
-          try {
-            const groqRes = await fetch(groqUrl, {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${groqApiKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: body.model || "canopylabs/orpheus-v1-english",
-                voice,
-                input: text,
-                response_format: "wav",
-              }),
-            });
-            if (groqRes.ok) {
-              audioBytes = await groqRes.arrayBuffer();
-              ext = "wav";
-              contentType = "audio/wav";
-              provider = "groq-via-cloudflare";
-            } else {
-              const errText = await groqRes.text().catch(() => "");
-              attempts.push({ provider: "groq-via-cloudflare", status: groqRes.status, error: errText });
-            }
-          } catch (e: any) {
-            attempts.push({ provider: "groq-via-cloudflare", error: e.message || String(e) });
-          }
-        } else {
-          attempts.push({ provider: "groq-via-cloudflare", error: "GROQ_API_KEY secret not found in environment." });
-        }
-
-        // 2. Fallback to Cloudflare Workers AI MeloTTS (@cf/myshell-ai/melotts)
-        if (!audioBytes && env.WORKERS_AI) {
-          try {
-            const aiRes: any = await (env.WORKERS_AI as any).run("@cf/myshell-ai/melotts", {
-              prompt: text,
-              lang: "en",
-            });
-            if (aiRes) {
-              provider = "workers-ai";
-              ext = "mp3";
-              contentType = "audio/mpeg";
-              if (aiRes instanceof ArrayBuffer) {
-                audioBytes = aiRes;
-              } else if (aiRes instanceof Uint8Array) {
-                audioBytes = aiRes.buffer as ArrayBuffer;
-              } else if (typeof aiRes === "object" && aiRes !== null && "audio" in aiRes) {
-                audioBytes = Uint8Array.from(atob(aiRes.audio), c => c.charCodeAt(0)).buffer as ArrayBuffer;
-              } else {
-                audioBytes = await new Response(aiRes).arrayBuffer();
-              }
-            } else {
-              attempts.push({ provider: "workers-ai", error: "Empty response from @cf/myshell-ai/melotts" });
-            }
-          } catch (e: any) {
-            attempts.push({ provider: "workers-ai", error: e.message || String(e) });
-          }
-        }
-
-        if (!audioBytes) {
-          return new Response(JSON.stringify({
-            ok: false,
-            error: "TTS generation failed across all backends.",
-            attempts,
-          }), {
-            status: 502,
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-          });
-        }
-
-        const textHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text + voice))))
-          .map(b => b.toString(16).padStart(2, "0")).slice(0, 10).join("");
-        const fileName = `tts-${textHash}.${ext}`;
-
-        await env.BLUEPRINT_CONTENT.put(`hf-videos/${fileName}`, audioBytes, {
-          httpMetadata: { contentType },
-        });
-
-        return new Response(JSON.stringify({
-          ok: true,
-          provider,
-          url: `/api/hf-videos/${fileName}`,
-          fullUrl: `https://voltrix.stream/api/hf-videos/${fileName}`,
-          attempts,
-        }), {
+        return Response.json(result, {
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
       } catch (err: any) {
-        return new Response(JSON.stringify({ ok: false, error: err.message }), {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        });
+        return Response.json(
+          { ok: false, error: err.message || String(err) },
+          { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+        );
       }
     }
 
