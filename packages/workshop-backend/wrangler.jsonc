@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "workshop-backend",
+  "name": "voltrix-workshop",
   "main": ".wrangler/validate/src/server.ts",
   "build": {
     "command": "pnpm run build:worker",
@@ -64,17 +64,39 @@
   "kv_namespaces": [
     {
       "binding": "BLUEPRINTS",
-      "preview_id": "gadgets-blueprint-metadata"
+      "id": "8b03b72e6b864d6c853e3a14f0ac90f0"
     },
     {
       "binding": "AVATARS",
-      "preview_id": "gadgets-avatars"
+      "id": "95afee60f1a24fdd811f86d5e28a87bb"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BLUEPRINT_CONTENT",
-      "bucket_name": "gadgets-blueprint-content"
+      "bucket_name": "voltrix-workshop-blueprint-content"
+    }
+  ],
+  "services": [
+    {
+      "binding": "ERROR_REPORTER",
+      "service": "voltrix-errors",
+      "entrypoint": "ErrorReporter"
+    },
+    {
+      "binding": "GATEKEEPER_CONTEXT",
+      "service": "voltrix-context",
+      "entrypoint": "GatekeeperVendor"
+    },
+    {
+      "binding": "GATEKEEPER_CUSTOM",
+      "service": "voltrix-academic",
+      "entrypoint": "GatekeeperVendor"
+    },
+    {
+      "binding": "GATEKEEPER_SCHEDULER",
+      "service": "voltrix-scheduler",
+      "entrypoint": "GatekeeperVendor"
     }
   ],
   "worker_loaders": [
@@ -82,21 +104,10 @@
       "binding": "LOADER"
     }
   ],
-
-  // When deploying to prod, you may want to bundle the frontend as assets on the backend, like so.
-  // But it's not the only way to do it.
-  //
-  // "assets": {
-  //   "directory": "../workshop-frontend/dist",
-  //   "not_found_handling": "single-page-application",
-  //   "run_worker_first": ["/api", "/api/*", "/blueprint-screenshot/*"]
-  // },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
     "logs": { "invocation_logs": false },
-    // Traces are free during the beta; spans bill against the Logs quota from 2026-10-01,
-    // so revisit the sampling rate before then.
     "traces": { "enabled": true, "head_sampling_rate": 0.5 }
   },
   "ai": {

@@ -10,11 +10,23 @@
   "services": [
     {
       "binding": "WORKSHOP_BACKEND",
-      "service": "workshop-backend"
+      "service": "voltrix-workshop"
     },
     {
       "binding": "WHATSAPP",
       "service": "voltrix-whatsapp"
+    },
+    {
+      "binding": "GATEKEEPER_CONTEXT",
+      "service": "voltrix-context"
+    },
+    {
+      "binding": "GATEKEEPER_SCHEDULER",
+      "service": "voltrix-scheduler"
+    },
+    {
+      "binding": "GATEKEEPER_CUSTOM",
+      "service": "voltrix-academic"
     }
   ],
 
