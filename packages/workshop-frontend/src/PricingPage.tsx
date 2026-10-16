@@ -7,9 +7,10 @@ import {
   BookOpen, FileText, CheckCircle, ArrowRight, ArrowLeft,
   X, Hexagon, GraduationCap, ShieldCheck,
   Key, Lock, Check,
-  CreditCard, DeviceMobile, Tray, CalendarBlank
+  CreditCard, DeviceMobile, Tray, CalendarBlank, Gift
 } from '@phosphor-icons/react'
 import InboxModal from './components/InboxModal'
+import ReferralModal from './components/ReferralModal'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -437,6 +438,7 @@ export default function PricingPage() {
   const [postalCode, setPostalCode] = useState('')
   const [momoProvider, setMomoProvider] = useState<'mtn' | 'airtel' | 'mpesa'>('mtn')
   const [inboxOpen, setInboxOpen] = useState(false)
+  const [showReferralModal, setShowReferralModal] = useState(false)
   const [formulaTiers] = useState<Array<{ minMonths: number, discountPct: number, label: string }>>([
     { minMonths: 1, discountPct: 0, label: "1 Month" },
     { minMonths: 2, discountPct: 5, label: "2 Months (5% off)" },
@@ -729,11 +731,26 @@ export default function PricingPage() {
           <span className="font-bold text-sm tracking-wide text-white">Voltrix OS</span>
         </Link>
         <div className="flex items-center gap-3 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowReferralModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold transition cursor-pointer"
+          >
+            <Gift size={14} weight="duotone" />
+            <span>Invite Friends (Free Pro)</span>
+          </button>
           <Link to="/" className="text-zinc-400 hover:text-white transition-colors font-medium">
             Open Workspaces
           </Link>
         </div>
       </nav>
+
+      {/* Referral Modal */}
+      <ReferralModal
+        isOpen={showReferralModal}
+        onClose={() => setShowReferralModal(false)}
+        userEmail={email}
+      />
 
       {/* ══ VIEW 1: PLAN BROWSING (Matching ChatGPT Screencast 00:03 - 00:08) ══ */}
       {step === 'idle' ? (

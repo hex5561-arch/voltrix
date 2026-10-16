@@ -27,6 +27,7 @@ import {
   ArrowLeft,
   Trash,
   Percent,
+  Gift,
 } from '@phosphor-icons/react'
 
 interface EdgeStats {
@@ -162,7 +163,11 @@ interface CohortMember {
   struggleTopics: string[]
 }
 
-export default function CommandCenterView() {
+interface CommandCenterViewProps {
+  initialTab?: 'overview' | 'users' | 'cohorts' | 'plans' | 'billing' | 'engine' | 'whatsapp' | 'credits' | 'growth'
+}
+
+export default function CommandCenterView({ initialTab = 'overview' }: CommandCenterViewProps = {}) {
   const [unlocked, setUnlocked] = useState<boolean>(() => {
     return sessionStorage.getItem('voltrix_command_center_unlocked') === 'true'
   })
@@ -170,7 +175,58 @@ export default function CommandCenterView() {
   const [pinError, setPinError] = useState(false)
   const [pinVerifying, setPinVerifying] = useState(false)
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'cohorts' | 'plans' | 'billing' | 'engine' | 'whatsapp' | 'credits'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'cohorts' | 'plans' | 'billing' | 'engine' | 'whatsapp' | 'credits' | 'growth'>(initialTab)
+
+  // Viral Growth & Referral Engine states
+  interface GrowthConfigData {
+    referralsEnabled: boolean
+    freeDailyScans: number
+    referrerRewardScans: number
+    inviteeRewardScans: number
+    referralsForProUnlock: number
+    referralProRewardDays: number
+    publicSolutionsEnabled: boolean
+    seoIndexingEnabled: boolean
+  }
+
+  interface ReferralLeaderboardEntry {
+    userId: string
+    displayName: string
+    code: string
+    successfulCount: number
+    bonusScans: number
+    proDaysEarned: number
+    invitedBy?: string
+  }
+
+  interface ReferralActivityRecord {
+    id: string
+    referrerId: string
+    inviteeId: string
+    inviteeName?: string
+    code: string
+    rewardScans: number
+    proDaysGranted?: number
+    timestamp: string
+    status: 'converted' | 'pending'
+  }
+
+  const [growthStats, setGrowthStats] = useState<{
+    config: GrowthConfigData
+    totalReferrals: number
+    convertedReferrals: number
+    totalBonusScansAwarded: number
+    totalProDaysAwarded: number
+    leaderboard: ReferralLeaderboardEntry[]
+    recentActivity: ReferralActivityRecord[]
+  } | null>(null)
+  const [growthDraft, setGrowthDraft] = useState<GrowthConfigData | null>(null)
+  const [savingGrowthConfig, setSavingGrowthConfig] = useState(false)
+  const [referralSearch, setReferralSearch] = useState('')
+  const [overrideUserModal, setOverrideUserModal] = useState<ReferralLeaderboardEntry | null>(null)
+  const [overrideScans, setOverrideScans] = useState(10)
+  const [overrideProDays, setOverrideProDays] = useState(7)
+  const [savingOverride, setSavingOverride] = useState(false)
 
   // Real live data states
   const [loading, setLoading] = useState(true)
@@ -350,6 +406,20 @@ export default function CommandCenterView() {
         console.warn('Could not load billing formula', fErr)
       }
 
+      // 8. Fetch Viral Growth & Referral stats
+      try {
+        const gRes = await fetch('/api/admin/growth')
+        if (gRes.ok) {
+          const gData = await gRes.json()
+          if (gData.success) {
+            setGrowthStats(gData)
+            setGrowthDraft(gData.config)
+          }
+        }
+      } catch (gErr) {
+        console.warn('Could not load growth stats', gErr)
+      }
+
       setLatencies({
         whoami: tSys,
         users: tUsers,
@@ -359,6 +429,60 @@ export default function CommandCenterView() {
       console.error('Failed to load command center data', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSaveGrowthConfig = async () => {
+    if (!growthDraft) return
+    setSavingGrowthConfig(true)
+    try {
+      const res = await fetch('/api/admin/growth/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(growthDraft),
+      })
+      const data = (await res.json()) as any
+      if (data.success) {
+        showToast('Growth & Referral settings updated!')
+        setGrowthStats((prev) => (prev ? { ...prev, config: data.config } : prev))
+      } else {
+        showToast('Failed to save settings: ' + (data.error || 'Unknown error'))
+      }
+    } catch (err: any) {
+      showToast('Error: ' + err.message)
+    } finally {
+      setSavingGrowthConfig(false)
+    }
+  }
+
+  const handleApplyUserOverride = async () => {
+    if (!overrideUserModal) return
+    setSavingOverride(true)
+    try {
+      const res = await fetch('/api/admin/growth/override-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: overrideUserModal.userId,
+          bonusScans: overrideScans,
+          bonusProDays: overrideProDays,
+        }),
+      })
+      const data = (await res.json()) as any
+      if (data.success) {
+        showToast(`Granted +${overrideScans} scans & +${overrideProDays}d Pro to ${overrideUserModal.displayName}!`)
+        setOverrideUserModal(null)
+        // Refresh growth data
+        fetch('/api/admin/growth')
+          .then((r) => r.json())
+          .then((d) => { if (d.success) setGrowthStats(d) })
+      } else {
+        showToast('Override failed: ' + (data.error || 'Unknown error'))
+      }
+    } catch (err: any) {
+      showToast('Error: ' + err.message)
+    } finally {
+      setSavingOverride(false)
     }
   }
 
@@ -889,6 +1013,7 @@ export default function CommandCenterView() {
             { id: 'engine', label: 'AI Engine & Gateway', icon: Cpu },
             { id: 'whatsapp', label: 'WhatsApp Copilot', icon: DeviceMobile },
             { id: 'credits', label: 'Credits & Offers', icon: Sparkle },
+            { id: 'growth', label: 'Viral Growth & Referrals', icon: Gift, count: growthStats?.totalReferrals },
           ].map((t) => {
             const Icon = t.icon
             const active = activeTab === t.id
@@ -2448,6 +2573,448 @@ export default function CommandCenterView() {
                 <span>Grant Credits Now</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ── 8. VIRAL GROWTH & REFERRAL ENGINE ──────────────────────────────── */}
+        {activeTab === 'growth' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Top Metric Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="p-5 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                  <Users size={14} className="text-indigo-400" /> Total Referrals
+                </span>
+                <div className="text-2xl font-bold font-mono text-kumo-default">
+                  {growthStats?.totalReferrals || 0}
+                </div>
+                <span className="text-[11px] text-zinc-500">Invites generated</span>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                  <CheckCircle size={14} className="text-emerald-400" /> Converted Peers
+                </span>
+                <div className="text-2xl font-bold font-mono text-emerald-400">
+                  {growthStats?.convertedReferrals || 0}
+                </div>
+                <span className="text-[11px] text-zinc-500">Joined &amp; studying</span>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                  <Sparkle size={14} className="text-amber-400" /> Scans Awarded
+                </span>
+                <div className="text-2xl font-bold font-mono text-amber-400">
+                  +{growthStats?.totalBonusScansAwarded || 0}
+                </div>
+                <span className="text-[11px] text-zinc-500">Bonus study credits</span>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-kumo-subtle flex items-center gap-1.5">
+                  <GraduationCap size={14} className="text-purple-400" /> Pro Days Earned
+                </span>
+                <div className="text-2xl font-bold font-mono text-purple-400">
+                  {growthStats?.totalProDaysAwarded || 0}d
+                </div>
+                <span className="text-[11px] text-zinc-500">Scholar Pro unlocked</span>
+              </div>
+            </div>
+
+            {/* Growth Engine Variables Editor */}
+            <div className="p-6 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-kumo-line pb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-kumo-default flex items-center gap-2">
+                    <Gift size={18} className="text-indigo-400" />
+                    <span>Viral Growth &amp; Referral Levers</span>
+                  </h3>
+                  <p className="text-xs text-kumo-subtle mt-0.5">
+                    Live growth variables controlling daily quotas, referral rewards, Pro unlock thresholds, and programmatic SEO indexing.
+                  </p>
+                </div>
+                <button
+                  onClick={handleSaveGrowthConfig}
+                  disabled={savingGrowthConfig}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-2 shrink-0 shadow-sm cursor-pointer"
+                >
+                  <Check size={14} weight="bold" />
+                  <span>{savingGrowthConfig ? 'Saving Levers...' : 'Save Growth Variables'}</span>
+                </button>
+              </div>
+
+              {growthDraft && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {/* Referral System Toggle */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-kumo-default">Referral Engine Active</span>
+                      <input
+                        type="checkbox"
+                        checked={growthDraft.referralsEnabled}
+                        onChange={(e) => setGrowthDraft({ ...growthDraft, referralsEnabled: e.target.checked })}
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <p className="text-[11px] text-kumo-subtle">
+                      Enables personal invite codes, WhatsApp share links, and peer rewards across the app.
+                    </p>
+                  </div>
+
+                  {/* Daily Free Scans Quota */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <label className="text-xs font-semibold text-kumo-default block">
+                      Daily Free Scans Quota
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={growthDraft.freeDailyScans}
+                      onChange={(e) => setGrowthDraft({ ...growthDraft, freeDailyScans: parseInt(e.target.value, 10) || 5 })}
+                      className="w-full px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line text-xs font-mono text-kumo-default"
+                    />
+                    <p className="text-[11px] text-kumo-subtle">
+                      Free scans before student hits paywall / invite-a-friend unlock prompt.
+                    </p>
+                  </div>
+
+                  {/* Referrer Reward Scans */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <label className="text-xs font-semibold text-kumo-default block">
+                      Referrer Reward Scans
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={growthDraft.referrerRewardScans}
+                      onChange={(e) => setGrowthDraft({ ...growthDraft, referrerRewardScans: parseInt(e.target.value, 10) || 5 })}
+                      className="w-full px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line text-xs font-mono text-kumo-default"
+                    />
+                    <p className="text-[11px] text-kumo-subtle">
+                      Bonus scans credited to the inviter per successful classmate sign-up.
+                    </p>
+                  </div>
+
+                  {/* Invitee Reward Scans */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <label className="text-xs font-semibold text-kumo-default block">
+                      Invitee Reward Scans
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={growthDraft.inviteeRewardScans}
+                      onChange={(e) => setGrowthDraft({ ...growthDraft, inviteeRewardScans: parseInt(e.target.value, 10) || 5 })}
+                      className="w-full px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line text-xs font-mono text-kumo-default"
+                    />
+                    <p className="text-[11px] text-kumo-subtle">
+                      Initial bonus scans credited to the newly invited student.
+                    </p>
+                  </div>
+
+                  {/* Referrals Required for Pro */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <label className="text-xs font-semibold text-kumo-default block">
+                      Invites for Scholar Pro Unlock
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={growthDraft.referralsForProUnlock}
+                      onChange={(e) => setGrowthDraft({ ...growthDraft, referralsForProUnlock: parseInt(e.target.value, 10) || 3 })}
+                      className="w-full px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line text-xs font-mono text-kumo-default"
+                    />
+                    <p className="text-[11px] text-kumo-subtle">
+                      Number of friends needed to unlock a free Scholar Pro reward tier.
+                    </p>
+                  </div>
+
+                  {/* Pro Reward Days */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <label className="text-xs font-semibold text-kumo-default block">
+                      Free Scholar Pro Reward Days
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={growthDraft.referralProRewardDays}
+                      onChange={(e) => setGrowthDraft({ ...growthDraft, referralProRewardDays: parseInt(e.target.value, 10) || 7 })}
+                      className="w-full px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line text-xs font-mono text-kumo-default"
+                    />
+                    <p className="text-[11px] text-kumo-subtle">
+                      Duration of free Scholar Pro access granted per milestone.
+                    </p>
+                  </div>
+
+                  {/* Public Solutions Toggle */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-kumo-default">Public Solution Snapshots</span>
+                      <input
+                        type="checkbox"
+                        checked={growthDraft.publicSolutionsEnabled}
+                        onChange={(e) => setGrowthDraft({ ...growthDraft, publicSolutionsEnabled: e.target.checked })}
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <p className="text-[11px] text-kumo-subtle">
+                      Enables shareable coursework solution links with viral &ldquo;Solve for Free&rdquo; banners.
+                    </p>
+                  </div>
+
+                  {/* SEO Indexing Toggle */}
+                  <div className="p-4 rounded-xl bg-kumo-base border border-kumo-line space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-kumo-default">Course Hero SEO Indexing</span>
+                      <input
+                        type="checkbox"
+                        checked={growthDraft.seoIndexingEnabled}
+                        onChange={(e) => setGrowthDraft({ ...growthDraft, seoIndexingEnabled: e.target.checked })}
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <p className="text-[11px] text-kumo-subtle">
+                      Injects Schema.org QAPage JSON-LD into public pages for Google search indexing.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Top Referrers Leaderboard */}
+            <div className="p-6 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-kumo-default flex items-center gap-2">
+                    <Users size={16} className="text-emerald-400" />
+                    <span>Top Referrers &amp; Campus Ambassadors</span>
+                  </h3>
+                  <p className="text-xs text-kumo-subtle mt-0.5">
+                    Scholars driving the highest viral peer conversions.
+                  </p>
+                </div>
+                <div className="w-full sm:w-64">
+                  <input
+                    type="text"
+                    placeholder="Search by scholar or code..."
+                    value={referralSearch}
+                    onChange={(e) => setReferralSearch(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-kumo-base border border-kumo-line text-xs text-kumo-default"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-kumo-line text-kumo-subtle text-[11px] uppercase font-semibold">
+                      <th className="py-2.5 px-3">Rank &amp; Scholar</th>
+                      <th className="py-2.5 px-3">Invite Code</th>
+                      <th className="py-2.5 px-3">Invited By</th>
+                      <th className="py-2.5 px-3 text-center">Successful Referrals</th>
+                      <th className="py-2.5 px-3 text-center">Bonus Scans</th>
+                      <th className="py-2.5 px-3 text-center">Pro Days</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-kumo-line/50">
+                    {growthStats?.leaderboard
+                      .filter((l) =>
+                        !referralSearch ||
+                        l.displayName.toLowerCase().includes(referralSearch.toLowerCase()) ||
+                        l.userId.toLowerCase().includes(referralSearch.toLowerCase()) ||
+                        l.code.toLowerCase().includes(referralSearch.toLowerCase())
+                      )
+                      .map((l, idx) => (
+                        <tr key={l.userId} className="hover:bg-kumo-base/50 transition">
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-zinc-800 text-[10px] font-mono font-bold flex items-center justify-center text-zinc-400">
+                                {idx + 1}
+                              </span>
+                              <div>
+                                <span className="font-semibold text-kumo-default block">{l.displayName}</span>
+                                <span className="text-[10px] font-mono text-zinc-500">{l.userId}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="font-mono font-bold text-indigo-400 text-[11px] px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20">
+                              {l.code}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-zinc-400 text-[11px] font-mono">
+                            {l.invitedBy ? l.invitedBy.split('@')[0] : '— Direct'}
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono font-bold text-emerald-400">
+                            {l.successfulCount}
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono text-amber-400">
+                            +{l.bonusScans}
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono text-purple-400">
+                            {l.proDaysEarned}d
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              onClick={() => {
+                                setOverrideUserModal(l)
+                                setOverrideScans(10)
+                                setOverrideProDays(7)
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-medium transition cursor-pointer"
+                            >
+                              Grant Scans / Pro
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    {(!growthStats?.leaderboard || growthStats.leaderboard.length === 0) && (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-zinc-500 text-xs">
+                          No referrals recorded yet. Peer referrals will appear here as scholars share their invite links.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* "Who Invited Who" Live Audit Log */}
+            <div className="p-6 rounded-2xl bg-kumo-elevated border border-kumo-line space-y-4 shadow-sm">
+              <div>
+                <h3 className="text-sm font-bold text-kumo-default flex items-center gap-2">
+                  <Clock size={16} className="text-indigo-400" />
+                  <span>Referral Activity &amp; Audit Log (&ldquo;Who Invited Who&rdquo;)</span>
+                </h3>
+                <p className="text-xs text-kumo-subtle mt-0.5">
+                  Complete immutable ledger of inviter-invitee pairings, timestamp, conversion status, and rewards credited.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-kumo-line text-kumo-subtle text-[11px] uppercase font-semibold">
+                      <th className="py-2.5 px-3">Timestamp</th>
+                      <th className="py-2.5 px-3">Referrer (Inviter)</th>
+                      <th className="py-2.5 px-3">Invitee (New Scholar)</th>
+                      <th className="py-2.5 px-3">Invite Code</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                      <th className="py-2.5 px-3 text-right">Reward Delivered</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-kumo-line/50 font-mono text-[11px]">
+                    {growthStats?.recentActivity.map((act) => (
+                      <tr key={act.id} className="hover:bg-kumo-base/50 transition">
+                        <td className="py-2.5 px-3 text-zinc-400 font-sans">
+                          {new Date(act.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-indigo-300">
+                          {act.referrerId}
+                        </td>
+                        <td className="py-2.5 px-3 text-emerald-300">
+                          {act.inviteeId} {act.inviteeName ? `(${act.inviteeName})` : ''}
+                        </td>
+                        <td className="py-2.5 px-3 text-zinc-300">
+                          {act.code}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-sans">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            act.status === 'converted'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {act.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-zinc-300 font-sans">
+                          <span className="text-amber-400 font-bold">+{act.rewardScans} scans</span>
+                          {act.proDaysGranted ? (
+                            <span className="ml-1 text-purple-400 font-bold">· +{act.proDaysGranted}d Pro</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                    {(!growthStats?.recentActivity || growthStats.recentActivity.length === 0) && (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-zinc-500 text-xs font-sans">
+                          No recent referral activity logged yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Grant / Override Modal */}
+            {overrideUserModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5 text-white shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Gift size={16} className="text-indigo-400" />
+                      <span>Grant Scans / Pro Access</span>
+                    </h4>
+                    <button
+                      onClick={() => setOverrideUserModal(null)}
+                      className="text-zinc-400 hover:text-white"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-zinc-400">
+                    Applying rewards to <strong className="text-white">{overrideUserModal.displayName}</strong> ({overrideUserModal.userId})
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium text-zinc-300 block mb-1">Bonus Scans</label>
+                      <input
+                        type="number"
+                        value={overrideScans}
+                        onChange={(e) => setOverrideScans(parseInt(e.target.value, 10) || 0)}
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-zinc-300 block mb-1">Scholar Pro Days</label>
+                      <input
+                        type="number"
+                        value={overrideProDays}
+                        onChange={(e) => setOverrideProDays(parseInt(e.target.value, 10) || 0)}
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+                    <button
+                      onClick={() => setOverrideUserModal(null)}
+                      className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleApplyUserOverride}
+                      disabled={savingOverride}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                    >
+                      {savingOverride ? 'Granting...' : 'Grant Rewards'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

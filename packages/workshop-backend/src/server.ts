@@ -49,6 +49,19 @@ import {
   pollPendingHyperFramesJobs,
   listRecentHyperFramesJobs,
 } from "./hf-jobs.js";
+import {
+  getGrowthConfig,
+  updateGrowthConfig,
+  getUserReferralProfile,
+  redeemReferralCode,
+  getAdminGrowthStats,
+  adminOverrideUserGrowth,
+} from "./growth.js";
+import {
+  publishSolution,
+  getSolution,
+  renderSolutionHtml,
+} from "./solutions.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1609,6 +1622,36 @@ async function handleHyperFramesJobsRequest(req: Request, env: Env): Promise<Res
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
+
+    // Programmatic SEO: Public Academic Solutions (Course Hero Loop)
+    if (url.pathname.startsWith("/solution/") || url.pathname.startsWith("/s/sol_")) {
+      const slug = url.pathname.replace(/^\/(solution|s)\//, "");
+      const solution = await getSolution(env, slug);
+      if (solution) {
+        const growthConfig = await getGrowthConfig(env);
+        const origin = env.PUBLIC_BASE_URL || url.origin || "https://voltrix.stream";
+        return new Response(renderSolutionHtml(solution, growthConfig, origin), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+    }
+
+    if (url.pathname === "/sitemap-solutions.xml" || url.pathname === "/api/solutions/sitemap.xml") {
+      const rawCatalog = await env.BLUEPRINTS.get("sys:public_solutions", "json");
+      const catalog: Array<{ id: string; slug: string; title: string }> = Array.isArray(rawCatalog) ? rawCatalog : [];
+      const origin = env.PUBLIC_BASE_URL || url.origin || "https://voltrix.stream";
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${catalog.map(c => `  <url>
+    <loc>${origin}/solution/${c.slug}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`).join("\n")}
+</urlset>`;
+      return new Response(xml, {
+        headers: { "Content-Type": "application/xml; charset=utf-8" },
+      });
+    }
 
     if (url.pathname.startsWith("/s/") || url.pathname === "/s" || url.pathname.startsWith("/api/sites")) {
       return handleSitesRequest(req, env);
@@ -3784,6 +3827,77 @@ export default {
         }
       }
       return Response.json({ success: true, simulated: true, message: `Dispatched to ${body.phone}` });
+    }
+
+    // Public Solutions API: POST /api/solutions/publish & GET /api/solutions/:id
+    if (req.method === "POST" && url.pathname === "/api/solutions/publish") {
+      try {
+        const body = await req.json() as any;
+        const res = await publishSolution(env, body);
+        return Response.json(res);
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to publish solution" }, { status: 500 });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/solutions/")) {
+      const idOrSlug = url.pathname.slice("/api/solutions/".length);
+      const sol = await getSolution(env, idOrSlug);
+      if (!sol) {
+        return Response.json({ success: false, error: "not_found" }, { status: 404 });
+      }
+      return Response.json({ success: true, solution: sol });
+    }
+
+    // User Referrals API: GET /api/referrals/my-code & POST /api/referrals/redeem
+    if (req.method === "GET" && url.pathname === "/api/referrals/my-code") {
+      const userId = url.searchParams.get("userId") || "scholar@voltrix.stream";
+      const origin = env.PUBLIC_BASE_URL || url.origin || "https://voltrix.stream";
+      const profile = await getUserReferralProfile(env, userId, origin);
+      const cfg = await getGrowthConfig(env);
+      return Response.json({ success: true, profile, config: cfg });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/referrals/redeem") {
+      try {
+        const { inviteeId, code, inviteeName } = await req.json() as any;
+        if (!inviteeId || !code) {
+          return Response.json({ success: false, message: "User ID and referral code are required." }, { status: 400 });
+        }
+        const res = await redeemReferralCode(env, inviteeId, code, inviteeName);
+        return Response.json(res);
+      } catch (err: any) {
+        return Response.json({ success: false, message: err?.message || "Redemption failed." }, { status: 500 });
+      }
+    }
+
+    // Admin Growth API: GET /api/admin/growth, POST /api/admin/growth/settings, POST /api/admin/growth/override-user
+    if (req.method === "GET" && url.pathname === "/api/admin/growth") {
+      const stats = await getAdminGrowthStats(env);
+      return Response.json({ success: true, ...stats });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/growth/settings") {
+      try {
+        const patch = await req.json() as any;
+        const updated = await updateGrowthConfig(env, patch);
+        return Response.json({ success: true, config: updated });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to update settings" }, { status: 500 });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/growth/override-user") {
+      try {
+        const { userId, bonusScans, bonusProDays } = await req.json() as any;
+        if (!userId) {
+          return Response.json({ success: false, error: "userId required" }, { status: 400 });
+        }
+        const updated = await adminOverrideUserGrowth(env, userId, Number(bonusScans) || 0, Number(bonusProDays) || 0);
+        return Response.json({ success: true, profile: updated });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to override user" }, { status: 500 });
+      }
     }
 
     if (url.pathname === "/api") {

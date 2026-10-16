@@ -635,6 +635,7 @@ export default function AdminPage() {
           { value: 'general', label: 'General' },
           { value: 'users', label: 'App Users' },
           { value: 'command-center', label: 'Command Center' },
+          { value: 'growth', label: 'Viral Growth & Referrals' },
           { value: 'gatekeepers', label: 'Gatekeepers' },
           { value: 'formats', label: 'Formats' },
           { value: 'library', label: 'Library' },
@@ -646,6 +647,13 @@ export default function AdminPage() {
       {activeTab === 'command-center' && (
         <div className="rounded-3xl border border-kumo-line overflow-hidden shadow-2xl">
           <CommandCenterView />
+        </div>
+      )}
+
+      {/* Embedded Viral Growth & Referral Engine view */}
+      {activeTab === 'growth' && (
+        <div className="rounded-3xl border border-kumo-line overflow-hidden shadow-2xl">
+          <CommandCenterView initialTab="growth" />
         </div>
       )}
 
