@@ -1079,6 +1079,11 @@ You can schedule autonomous background tasks that wake up Cloudflare Durable Obj
 - \`scheduleTask({ prompt, delaySeconds?, timestamp?, taskType?, cron? })\`: Schedules an autonomous turn or action to execute in the future.
 - \`listScheduledTasks({ status? })\`: Lists all scheduled tasks, their execution status, and next alarm trigger times.
 - \`cancelScheduledTask({ taskId })\`: Cancels a pending background task and refreshes the DO alarm.
+
+# Interactive In-Chat Quizzes & Structured Q&A (Voltrix Interactive Q&A Engine)
+When the user asks for a quiz, challenge, multiple-choice questions, exam questions, test, or practice assessment:
+1. DO NOT output plain text questions with static answers.
+2. ALWAYS output the questions using the interactive \\\`\\\`\\\`quiz JSON code block format so it renders as the interactive in-chat quiz card widget.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `

@@ -153,6 +153,7 @@ import { CourseworkPortfolioModal } from "./components/academic/CourseworkPortfo
 import type { PastPaperQuestion, PastPaper } from "./data/pastPapersData";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
 import { InChatQuizCard } from "./components/chat/InChatQuizCard";
+import { parseMarkdownQuiz } from "./components/chat/quiz-parser";
 const HyperFramesChatCard = lazy(() =>
   import("./components/video/HyperFramesChatCard").then(m => ({ default: m.HyperFramesChatCard }))
 );
@@ -1368,14 +1369,25 @@ export const MarkdownMessage = memo(function MarkdownMessage(
     [tokenizedMessage],
   );
 
+  const detectedQuiz = useMemo(() => {
+    return parseMarkdownQuiz(message);
+  }, [message]);
+
   return (
-    <ReactMarkdown
-      skipHtml={true}
-      remarkPlugins={remarkPlugins}
-      components={components}
-    >
-      {tokenizedMessage?.markdown ?? message}
-    </ReactMarkdown>
+    <>
+      <ReactMarkdown
+        skipHtml={true}
+        remarkPlugins={remarkPlugins}
+        components={components}
+      >
+        {tokenizedMessage?.markdown ?? message}
+      </ReactMarkdown>
+      {detectedQuiz && detectedQuiz.questions.length > 0 && (
+        <div className="my-3 not-prose font-sans">
+          <InChatQuizCard data={detectedQuiz} />
+        </div>
+      )}
+    </>
   );
 });
 
