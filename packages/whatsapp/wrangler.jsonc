@@ -4,15 +4,34 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-02-02",
   "compatibility_flags": ["nodejs_compat"],
+  "ai": {
+    "binding": "AI"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WhatsAppSession",
+        "class_name": "WhatsAppSession"
+      }
+    ]
+  },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["WhatsAppSession"]
     }
   ],
+  "vars": {
+    "VERIFY_TOKEN": "volt_whatsapp_verify_token_2026",
+    "WHATSAPP_PHONE_NUMBER_ID": "1380923721763579",
+    "WHATSAPP_ACCESS_TOKEN": "REPLACE_WITH_WHATSAPP_ACCESS_TOKEN",
+    "THEHIVE_API_KEY": "REPLACE_WITH_THEHIVE_API_KEY",
+    "GEMINI_API_KEY": "REPLACE_WITH_GEMINI_KEY",
+    "GROQ_API_KEY": "REPLACE_WITH_GROQ_KEY"
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
-    "logs": { "invocation_logs": false }
+    "logs": { "invocation_logs": true }
   }
 }
