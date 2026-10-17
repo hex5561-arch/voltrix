@@ -18,6 +18,10 @@
 export { WhatsAppSession } from "./session";
 import type { SessionData, AcademicProfile } from "./session";
 import { resolveUniversityLogoUrl } from "./institutional.js";
+import {
+  extractTextFromImageWithGemini,
+  extractDocumentContent,
+} from "./doc-extract.js";
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -162,7 +166,8 @@ async function sendWhatsAppAudioMessage(
   env: Env,
   to: string,
   audioDataOrBase64: ArrayBuffer | Uint8Array | string,
-  mimeType: string = "audio/mpeg"
+  mimeType: string = "audio/mpeg",
+  ptt: boolean = true
 ): Promise<boolean> {
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
   const accessToken = env.WHATSAPP_ACCESS_TOKEN || "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
@@ -184,17 +189,20 @@ async function sendWhatsAppAudioMessage(
     }
 
     const lowerMime = (mimeType || "").toLowerCase();
-    const effectiveMime = lowerMime.includes("ogg") || lowerMime.includes("opus")
+    const isOgg = lowerMime.includes("ogg") || lowerMime.includes("opus");
+    const effectiveMime = isOgg
       ? "audio/ogg; codecs=opus"
       : lowerMime.includes("mp4") || lowerMime.includes("m4a")
       ? "audio/mp4"
+      : lowerMime.includes("wav")
+      ? "audio/wav"
       : "audio/mpeg";
-    const ext = effectiveMime.includes("ogg") ? "ogg" : effectiveMime.includes("mp4") ? "mp4" : "mp3";
+    const ext = isOgg ? "ogg" : effectiveMime.includes("mp4") ? "mp4" : effectiveMime.includes("wav") ? "wav" : "mp3";
 
     const formData = new FormData();
     formData.append("messaging_product", "whatsapp");
     formData.append("type", effectiveMime);
-    formData.append("file", new Blob([audioBytes], { type: effectiveMime }), `voice_reply.${ext}`);
+    formData.append("file", new Blob([audioBytes], { type: effectiveMime }), `voice_note.${ext}`);
 
     const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/media`, {
       method: "POST",
@@ -228,7 +236,10 @@ async function sendWhatsAppAudioMessage(
         recipient_type: "individual",
         to: cleanTo,
         type: "audio",
-        audio: { id: mediaId },
+        audio: {
+          id: mediaId,
+          ...(ptt ? { ptt: true } : {}),
+        },
       }),
     });
 
@@ -509,6 +520,63 @@ function cleanTextForSpeech(text: string): string {
   return spoken.replace(/\s+/g, " ").trim();
 }
 
+async function generateVoiceScript(
+  env: Env,
+  userQuery: string,
+  detailedAnswer: string
+): Promise<string> {
+  const prompt = `You are Voltrix, a friendly, brilliant human study buddy sending a quick WhatsApp voice note to a classmate.
+Friend's Question: "${userQuery.replace(/\s+/g, " ").slice(0, 300)}"
+Detailed Solution Written in Chat:
+"""
+${detailedAnswer.slice(0, 1500)}
+"""
+
+Task: Write a natural, warm, spoken voice note (30-50 words max, approx 15-25 seconds of speech).
+Guidelines:
+1. Speak exactly like a real human leaving a quick voice memo on WhatsApp.
+2. Use casual conversational contractions: "I've", "it's", "you'll", "don't", "basically", "so yeah".
+3. Give the core answer or intuition in 1-2 punchy spoken sentences.
+4. Point them to the text message below for the detailed steps/math/code (e.g., "I've put the full step-by-step breakdown right below in the message!").
+5. DO NOT read raw equations, formulas, code syntax, or bullet points literally.
+6. NO robotic openings ("Certainly", "As an AI", "Here is your solution"). Start naturally ("Hey!", "Alright, so looking at this...").
+7. Output ONLY the plain text spoken words. No markdown, no quotes, no emojis.`;
+
+  try {
+    if (env.THEHIVE_API_KEY) {
+      const script = await callTheHive(
+        env.THEHIVE_API_KEY,
+        "You write natural, human-sounding conversational voice note scripts for WhatsApp. Output only the spoken words.",
+        [],
+        prompt
+      );
+      if (script && script.trim()) {
+        return script.replace(/^["'«“]|["'»”]$/g, "").trim();
+      }
+    }
+  } catch (e) {
+    console.warn("[WhatsApp] TheHive voice script error:", e);
+  }
+
+  try {
+    if (env.GEMINI_API_KEY) {
+      const script = await callGemini(
+        env.GEMINI_API_KEY,
+        "You write natural, human-sounding conversational voice note scripts for WhatsApp. Output only the spoken words.",
+        [],
+        prompt
+      );
+      if (script && script.trim()) {
+        return script.replace(/^["'«“]|["'»”]$/g, "").trim();
+      }
+    }
+  } catch (e) {
+    console.warn("[WhatsApp] Gemini voice script error:", e);
+  }
+
+  return cleanTextForSpeech(detailedAnswer).slice(0, 250);
+}
+
 async function synthesizeSpeech(
   env: Env,
   text: string
@@ -516,10 +584,142 @@ async function synthesizeSpeech(
   const clean = cleanTextForSpeech(text);
   if (!clean) return null;
 
-  // Keep WhatsApp voice note concise (approx 20-30 seconds of speech)
   const spokenText = clean.slice(0, 450).trim();
 
-  // Tier 1: Google Speech Neural TTS (native MP3, zero API key required, 100% reliable)
+  // Tier 1: Cloudflare Workers AI Deepgram Aura / MeloTTS (Edge native)
+  const ai = env.AI || env.WORKERS_AI;
+  if (ai && typeof ai.run === "function") {
+    // Try Deepgram Aura 2 English (ultra-realistic conversational human prosody)
+    try {
+      const audioStream: any = await ai.run("@cf/deepgram/aura-2-en", { text: spokenText });
+      if (audioStream) {
+        let bytes: Uint8Array;
+        if (audioStream instanceof Uint8Array) {
+          bytes = audioStream;
+        } else if (audioStream instanceof ArrayBuffer) {
+          bytes = new Uint8Array(audioStream);
+        } else if (typeof audioStream.arrayBuffer === "function") {
+          bytes = new Uint8Array(await audioStream.arrayBuffer());
+        } else if (typeof (audioStream as any).getReader === "function") {
+          const reader = audioStream.getReader();
+          const chunks: Uint8Array[] = [];
+          let total = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              chunks.push(value);
+              total += value.length;
+            }
+          }
+          bytes = new Uint8Array(total);
+          let offset = 0;
+          for (const c of chunks) {
+            bytes.set(c, offset);
+            offset += c.length;
+          }
+        } else {
+          bytes = new Uint8Array(0);
+        }
+        if (bytes && bytes.length > 0) {
+          return { data: bytes, mimeType: "audio/mpeg" };
+        }
+      }
+    } catch (auraErr) {
+      console.warn("[WhatsApp] Workers AI Deepgram Aura TTS attempt:", auraErr);
+    }
+
+    // Try MeloTTS on Workers AI
+    try {
+      const meloRes: any = await ai.run("@cf/myshell-ai/melotts", {
+        prompt: spokenText,
+        lang: "en-default",
+      });
+      if (meloRes?.audio) {
+        const audioArr = Array.isArray(meloRes.audio) ? new Uint8Array(meloRes.audio) : meloRes.audio;
+        if (audioArr?.byteLength > 0) {
+          return { data: new Uint8Array(audioArr), mimeType: "audio/mpeg" };
+        }
+      }
+    } catch (meloErr) {
+      console.warn("[WhatsApp] Workers AI MeloTTS attempt:", meloErr);
+    }
+  }
+
+  // Tier 2: Gemini Native Audio Synthesis (responseModalities: ["AUDIO"])
+  const geminiKey = env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `Speak this conversational message naturally, warmly, and clearly like a real friend:\n\n${spokenText}`,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: "Puck" },
+                },
+              },
+            },
+          }),
+        }
+      );
+      if (res.ok) {
+        const d = (await res.json()) as any;
+        const b64 = d?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        const retMime = d?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || "audio/wav";
+        if (b64) {
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return { data: bytes, mimeType: retMime };
+        }
+      }
+    } catch (geminiTtsErr) {
+      console.warn("[WhatsApp] Gemini audio synthesis attempt:", geminiTtsErr);
+    }
+  }
+
+  // Tier 3: OpenAI TTS (if OPENAI_API_KEY present)
+  if (env.OPENAI_API_KEY) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          input: spokenText,
+          voice: "alloy",
+          response_format: "opus",
+        }),
+      });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > 0) {
+          return { data: new Uint8Array(ab), mimeType: "audio/ogg; codecs=opus" };
+        }
+      }
+    } catch (err) {
+      console.warn("[WhatsApp] OpenAI TTS error:", err);
+    }
+  }
+
+  // Tier 4: Google Speech Multi-Chunk Neural TTS (Zero API key required, 100% dependable edge fallback)
   try {
     const words = spokenText.split(/\s+/);
     const chunks: string[] = [];
@@ -542,7 +742,7 @@ async function synthesizeSpeech(
       const res = await fetch(url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-          "Accept": "audio/mpeg,audio/*;q=0.9",
+          Accept: "audio/mpeg,audio/*;q=0.9",
         },
       });
       if (res.ok) {
@@ -566,33 +766,6 @@ async function synthesizeSpeech(
     }
   } catch (err) {
     console.warn("[WhatsApp] Google Speech TTS error:", err);
-  }
-
-  // Tier 2: OpenAI TTS (if OPENAI_API_KEY present)
-  if (env.OPENAI_API_KEY) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "tts-1",
-          input: spokenText,
-          voice: "alloy",
-          response_format: "mp3",
-        }),
-      });
-      if (res.ok) {
-        const ab = await res.arrayBuffer();
-        if (ab.byteLength > 0) {
-          return { data: new Uint8Array(ab), mimeType: "audio/mpeg" };
-        }
-      }
-    } catch (err) {
-      console.warn("[WhatsApp] OpenAI TTS error:", err);
-    }
   }
 
   return null;
@@ -971,18 +1144,52 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
       }
 
     } else if (msgType === "image") {
-      const img = message.image as { id?: string; caption?: string } | undefined;
+      const img = message.image as { id?: string; caption?: string; mime_type?: string } | undefined;
       if (img?.id) {
-        await downloadMedia(env, img.id); // download to confirm receipt; vision analysis future work
-        userText = img.caption
-          ? `Analyse this image: ${img.caption}`
-          : "Transcribe and analyse all text, equations, and academic content in this image.";
+        const media = await downloadMedia(env, img.id);
+        if (media && env.GEMINI_API_KEY) {
+          const imgText = await extractTextFromImageWithGemini(
+            env.GEMINI_API_KEY,
+            media.data,
+            media.mimeType || img.mime_type || "image/jpeg",
+            img.caption || ""
+          );
+          if (imgText) {
+            userText = `📸 [Attached Image Analysis & Transcription]:\n${imgText}\n\n${
+              img.caption ? `User Note: ${img.caption}` : "Please solve the problem(s) above and explain clearly."
+            }`;
+          }
+        }
+        if (!userText) {
+          userText = img?.caption
+            ? `Analyse this image: ${img.caption}`
+            : "Transcribe and analyse all text, equations, and academic content in this image.";
+        }
       }
 
     } else if (msgType === "document") {
-      const doc = message.document as { id?: string; filename?: string } | undefined;
+      const doc = message.document as { id?: string; filename?: string; mime_type?: string; caption?: string } | undefined;
       if (doc?.id) {
-        userText = `Please analyse the document "${doc.filename ?? "document"}" that I've sent.`;
+        const media = await downloadMedia(env, doc.id);
+        if (media) {
+          const docText = await extractDocumentContent(
+            media.data,
+            doc.mime_type || media.mimeType,
+            doc.filename || "",
+            doc.caption || "",
+            env.GEMINI_API_KEY
+          );
+          if (docText) {
+            userText = `📄 [Attached Document: "${doc.filename || "document"}"]:\n${docText}\n\n${
+              doc.caption ? `User Note: ${doc.caption}` : "Please analyze, solve, or explain the document content above."
+            }`;
+          }
+        }
+        if (!userText) {
+          userText = doc?.caption
+            ? `Please analyse the document "${doc.filename ?? "document"}": ${doc.caption}`
+            : `Please analyse the document "${doc?.filename ?? "document"}" that I've sent.`;
+        }
       }
     }
 
@@ -1082,9 +1289,12 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
 
     if (wantsVoiceReply) {
       try {
-        const speech = await synthesizeSpeech(env, aiReply);
+        // Generate a natural, conversational voice note script (human tone, 15-25s, pointing to chat breakdown below)
+        const voiceScript = await generateVoiceScript(env, userText, aiReply);
+        const speech = await synthesizeSpeech(env, voiceScript);
         if (speech && speech.data.byteLength > 0) {
-          await sendWhatsAppAudioMessage(env, from, speech.data, speech.mimeType);
+          // Send as native WhatsApp Push-To-Talk voice note (ptt = true)
+          await sendWhatsAppAudioMessage(env, from, speech.data, speech.mimeType, true);
         }
       } catch (voiceErr) {
         console.warn("[WhatsApp] Failed to dispatch voice note reply:", voiceErr);
@@ -1153,12 +1363,17 @@ export default {
         verifyTokenSet: !!env.VERIFY_TOKEN,
         hasDurableObjects: !!env.WhatsAppSession,
         aiBackend: "TheHive DeepSeek v4.1 Flash → Gemini 3.8 Flash",
+        multimodalCapabilities: {
+          imageOcr: "Gemini 3.8 Flash Vision (verbatim questions, formulas, diagrams, handwriting)",
+          documentReading: "Edge PDF Stream Parser + Gemini Multimodal PDF + DOCX XML + Text/Code UTF-8",
+        },
         voiceCapabilities: {
           transcription: "Gemini 3.8 Flash Multimodal (Primary) → Workers AI Whisper → Groq Whisper Large V3 Turbo",
-          voiceReplies: "Google Speech Neural MP3 → OpenAI TTS",
+          voiceReplies: "Conversational Scripting (Human Cadence) → Workers AI Deepgram Aura / MeloTTS → Gemini Native Audio → OpenAI TTS → Google Speech Neural",
+          nativePttVoiceNote: true,
           typingIndicator: true,
         },
-        version: "1.2.0",
+        version: "1.3.0",
       });
     }
 
