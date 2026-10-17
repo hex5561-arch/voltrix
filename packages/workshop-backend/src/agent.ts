@@ -602,7 +602,8 @@ When your plan or task requires calling tools (including multi-tool batches, pip
    - NEVER write phrases like: "Wave 1 — six probes, one parallel block:", "Executing the probes now:", "Here are the tests:", "Running in one parallel block:", "Fixing that right now: here are all six probes, actually executing, in one parallel block — no more preamble:".
    - NEVER end a message with a colon \`:\` or a promise to execute tools without including the actual tool call blocks in the same turn.
 3. **DO NOT HALT OR END YOUR TURN BEFORE CALLING TOOLS**: Emitting text with zero tool calls causes the agent loop to consider your turn complete and stop immediately. If you announce tools in text without calling them, no tools will execute and the user will receive an unfulfilled promise.
-4. **EXECUTE FIRST, EXPLAIN AFTER**: Always emit the tool calls first. Once the environment returns the tool execution results, write your explanation, insights, and analysis in your subsequent message.
+4. **DO NOT STOP AFTER REASONING / THINKING**: If you engage in internal reasoning or thinking, you MUST NOT terminate your turn at the end of the thinking block. Your turn MUST emit the actual native toolCall blocks. Ending a turn with thinking only and zero tool calls is an execution failure.
+5. **EXECUTE FIRST, EXPLAIN AFTER**: Always emit the tool calls first. Once the environment returns the tool execution results, write your explanation, insights, and analysis in your subsequent message.
 
 # Workspaces
 
@@ -1069,7 +1070,8 @@ When your task requires calling tools (including multi-tool batches or test prob
 1. **EMIT NATIVE TOOL CALLS IMMEDIATELY**: You MUST invoke the native tool call blocks in the exact same response turn.
 2. **ZERO CONVERSATIONAL PREAMBLE**: NEVER output conversational announcements, promises, or preambles before calling tools.
 3. **DO NOT HALT OR END YOUR TURN BEFORE CALLING TOOLS**: Emitting text with zero tool calls causes the agent loop to consider your turn complete and stop immediately.
-4. **EXECUTE FIRST, EXPLAIN AFTER**: Always emit the tool calls first. Once the environment returns the tool execution results, write your explanation, insights, and analysis in your subsequent message.
+4. **DO NOT STOP AFTER REASONING / THINKING**: If you engage in internal reasoning or thinking, you MUST NOT terminate your turn at the end of the thinking block. Your turn MUST emit the actual native toolCall blocks. Ending a turn with thinking only and zero tool calls is an execution failure.
+5. **EXECUTE FIRST, EXPLAIN AFTER**: Always emit the tool calls first. Once the environment returns the tool execution results, write your explanation, insights, and analysis in your subsequent message.
 
 Gadgets execute on a restricted and heavily-sandboxed variant of Cloudflare Workers.
 
@@ -5137,8 +5139,12 @@ export async function runAgent(
               return result;
             });
           } else if (!stalledTurnNudged && !abortSignal.aborted && !connectionRequested && !awaitingActionDecision && !agentContext.spawnerConfig) {
-            if (detectStalledToolAnnouncement(rawText)) {
-              logger.warn(`agent turn stalled with unfulfilled tool announcement: ${rawText.slice(-100)}`, {
+            let isThinkingOnly = rawText.trim().length === 0 && (reasoning.length > 0 || message.content.some(b => b.type === "thinking"));
+            let isStalledAnnouncement = detectStalledToolAnnouncement(rawText) || (reasoning.length > 0 && detectStalledToolAnnouncement(reasoning));
+            let isEmptyTurn = rawText.trim().length === 0;
+
+            if (isThinkingOnly || isStalledAnnouncement || isEmptyTurn) {
+              logger.warn(`agent turn stalled with ${isThinkingOnly ? "thinking-only and no output" : "unfulfilled tool announcement"}`, {
                 event: "agent.turn.stalled_tool_announcement",
                 chatId,
               });
@@ -5147,7 +5153,9 @@ export async function runAgent(
                 role: "user",
                 content: [{
                   type: "text",
-                  text: "[SYSTEM NUDGE: You announced tool/probe execution in text, but did not invoke any native tool calls in your response. Do not narrate or promise tools in text. You must immediately emit the actual tool calls now.]",
+                  text: isThinkingOnly
+                    ? "[SYSTEM NUDGE: Your previous turn produced internal reasoning with zero output and zero tool calls. Do not stop after thinking. You must immediately emit the native tool calls now.]"
+                    : "[SYSTEM NUDGE: You announced tool/probe execution, but did not invoke any native tool calls in your response. Do not narrate or promise tools in text or thinking. You must immediately emit the actual tool calls now.]",
                 }],
                 timestamp: Date.now(),
               };

@@ -41,4 +41,11 @@ python3 main.py
     expect(detectStalledToolAnnouncement("")).toBe(false);
     expect(detectStalledToolAnnouncement("   \n\t  ")).toBe(false);
   });
+
+  it("detects tool announcements occurring inside internal reasoning thoughts", () => {
+    const reasoningText = `The user wants me to run the six probes.
+I will execute the six probes now: readAsset, deleteAsset, getRenderJobStatus, synthesizeSpeechBatch, transcribeAudio, runPython.
+Running the six tests now:`;
+    expect(detectStalledToolAnnouncement(reasoningText)).toBe(true);
+  });
 });
