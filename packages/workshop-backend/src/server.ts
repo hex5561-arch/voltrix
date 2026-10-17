@@ -71,7 +71,7 @@ import {
   renderSolutionHtml,
 } from "./solutions.js";
 import { synthesizeSpeech, listVoices, getVoice, registerVoice } from "./tts-engine.js";
-import { handleWhatsAppWebhookGet, handleWhatsAppWebhookPost } from "./whatsapp-webhook.js";
+import { handleWhatsAppWebhookGet, handleWhatsAppWebhookPost, sendWhatsAppMessage } from "./whatsapp-webhook.js";
 
 const logger = createWorkshopLogger("workshop.server");
 
@@ -1856,7 +1856,7 @@ ${catalog.map(c => `  <url>
         return handleWhatsAppWebhookGet(req, env);
       }
       if (req.method === "POST") {
-        return handleWhatsAppWebhookPost(req, env);
+        return handleWhatsAppWebhookPost(req, env, ctx);
       }
       return new Response("Method Not Allowed", { status: 405 });
     }
@@ -3980,6 +3980,14 @@ ${catalog.map(c => `  <url>
           });
           const text = await res.text();
           return Response.json({ success: res.ok, response: text });
+        } catch (e: any) {
+          return Response.json({ success: false, error: e?.message || String(e) }, { status: 500 });
+        }
+      }
+      if (env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN) {
+        try {
+          const ok = await sendWhatsAppMessage(body.phone, body.message || "Voltrix OS Copilot test ping.", env);
+          return Response.json({ success: ok, direct: true });
         } catch (e: any) {
           return Response.json({ success: false, error: e?.message || String(e) }, { status: 500 });
         }

@@ -3,11 +3,26 @@ import {
   handleWhatsAppWebhookGet,
   handleWhatsAppWebhookPost,
   sendWhatsAppMessage,
+  sendWhatsAppAudioMessage,
+  sendWhatsAppDocumentMessage,
   createWhatsAppTextMessagePayload,
   fetchWhatsAppMedia,
   saveAudioToR2,
   transcribeAudio,
   getExtensionFromMimeType,
+  getAudioMimeAndExt,
+  cleanPhoneNumber,
+  formatForWhatsApp,
+  splitMessageChunks,
+  extractDocumentText,
+  extractTextFromDocx,
+  handleWhatsAppCommand,
+  processWhatsAppMessage,
+  setWhatsAppLinkingCode,
+  setWhatsAppSession,
+  getWhatsAppSession,
+  clearWhatsAppSession,
+  clearWhatsAppProcessedMessages,
   WhatsAppEnv,
 } from "../src/whatsapp-webhook";
 import server from "../src/server";
@@ -584,6 +599,426 @@ describe("WhatsApp Webhook & Media Gateway Unit Tests", () => {
       expect(mockPut).toHaveBeenCalledWith("hf-videos/whatsapp-test_media_99.wav", buffer, {
         httpMetadata: { contentType: "audio/wav" },
       });
+    });
+  });
+
+  describe("7. Formatting Engine (formatForWhatsApp)", () => {
+    it("converts markdown headers to bold asterisks", () => {
+      const input = "# Main Title\n## Section 1\n### Subsection";
+      const expected = "*Main Title*\n*Section 1*\n*Subsection*";
+      expect(formatForWhatsApp(input)).toBe(expected);
+    });
+
+    it("converts markdown double asterisks **bold** to single asterisk *bold*", () => {
+      const input = "This is **critical** information for your **quantum mechanics** exam.";
+      const expected = "This is *critical* information for your *quantum mechanics* exam.";
+      expect(formatForWhatsApp(input)).toBe(expected);
+    });
+
+    it("converts markdown bullets (- and *) to unicode bullet points", () => {
+      const input = "- Newton's first law\n* Newton's second law\n- Newton's third law";
+      const expected = "• Newton's first law\n• Newton's second law\n• Newton's third law";
+      expect(formatForWhatsApp(input)).toBe(expected);
+    });
+
+    it("converts LaTeX display equations $$...$$ to monospace code blocks", () => {
+      const input = "The kinetic energy equation is:\n$$E_k = \\frac{1}{2}mv^2$$\nUse it wisely.";
+      const formatted = formatForWhatsApp(input);
+      expect(formatted).toContain("```\nE_k = \\frac{1}{2}mv^2\n```");
+    });
+
+    it("converts LaTeX inline equations $...$ to inline code", () => {
+      const input = "Notice that $F = ma$ represents mass acceleration.";
+      const expected = "Notice that `F = ma` represents mass acceleration.";
+      expect(formatForWhatsApp(input)).toBe(expected);
+    });
+
+    it("preserves pre-existing code blocks without altering inner content", () => {
+      const input = "Here is the code:\n```python\n# This is a comment\nx = **not_bold**\n```";
+      const formatted = formatForWhatsApp(input);
+      expect(formatted).toContain("```python\n# This is a comment\nx = **not_bold**\n```");
+    });
+  });
+
+  describe("8. Chunking Engine (splitMessageChunks)", () => {
+    it("returns array with original text when length is <= maxLen", () => {
+      const text = "A short physics explanation of thermodynamics.";
+      const chunks = splitMessageChunks(text, 3800);
+      expect(chunks).toEqual([text]);
+    });
+
+    it("cleanly splits long text exceeding maxLen at paragraph boundaries", () => {
+      const p1 = "A".repeat(2500);
+      const p2 = "B".repeat(2500);
+      const fullText = `${p1}\n\n${p2}`;
+
+      const chunks = splitMessageChunks(fullText, 3800);
+      expect(chunks.length).toBe(2);
+      expect(chunks[0]).toBe(p1);
+      expect(chunks[1]).toBe(p2);
+    });
+
+    it("splits long single paragraph by lines or sentences without exceeding maxLen", () => {
+      const line1 = "Sentence 1: " + "C".repeat(2000);
+      const line2 = "Sentence 2: " + "D".repeat(2000);
+      const fullText = `${line1}\n${line2}`;
+
+      const chunks = splitMessageChunks(fullText, 3800);
+      expect(chunks.length).toBe(2);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(3800);
+      }
+    });
+
+    it("returns empty array for empty or whitespace text", () => {
+      expect(splitMessageChunks("")).toEqual([]);
+    });
+  });
+
+  describe("9. Document Ingestion (extractDocumentText & extractTextFromDocx)", () => {
+    it("extracts text from plain text, python, and markdown attachments", async () => {
+      const enc = new TextEncoder();
+      const code = 'def compute_paxos(rounds):\n    return f"Consensus reached in {rounds}"';
+      const text = await extractDocumentText(enc.encode(code), "text/x-python", "consensus.py");
+      expect(text).toBe(code);
+
+      const md = "# Research Notes\n- Hypothesis 1\n- Hypothesis 2";
+      const mdText = await extractDocumentText(enc.encode(md), "text/markdown", "notes.md");
+      expect(mdText).toBe(md);
+    });
+
+    it("extracts text from Word .docx zip entries", async () => {
+      // Create mock .docx zip buffer with word/document.xml
+      const filename = "word/document.xml";
+      const xml = "<w:document><w:body><w:p><w:r><w:t>Quantum Computing Invariants</w:t></w:r></w:p></w:body></w:document>";
+      const enc = new TextEncoder();
+      const fileBytes = enc.encode(filename);
+      const xmlBytes = enc.encode(xml);
+
+      const header = new Uint8Array(30);
+      header[0] = 0x50; header[1] = 0x4b; header[2] = 0x03; header[3] = 0x04;
+      header[8] = 0; header[9] = 0; // uncompressed
+      const size = xmlBytes.length;
+      header[18] = size & 0xff; header[19] = (size >> 8) & 0xff;
+      header[22] = size & 0xff; header[23] = (size >> 8) & 0xff;
+      header[26] = fileBytes.length & 0xff; header[27] = (fileBytes.length >> 8) & 0xff;
+
+      const docxBytes = new Uint8Array(30 + fileBytes.length + xmlBytes.length);
+      docxBytes.set(header, 0);
+      docxBytes.set(fileBytes, 30);
+      docxBytes.set(xmlBytes, 30 + fileBytes.length);
+
+      const extracted = await extractDocumentText(
+        docxBytes,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "assignment.docx"
+      );
+      expect(extracted).toContain("Quantum Computing Invariants");
+    });
+
+    it("falls back to caption for image attachments", async () => {
+      const fakeImage = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+      const result = await extractDocumentText(
+        fakeImage,
+        "image/jpeg",
+        "graph.jpg",
+        "Free body diagram of pendulum"
+      );
+      expect(result).toBe("Image note: Free body diagram of pendulum");
+    });
+  });
+
+  describe("10. Outbound Audio & Document Messaging (sendWhatsAppAudioMessage & sendWhatsAppDocumentMessage)", () => {
+    it("sendWhatsAppAudioMessage sends audio via URL link", async () => {
+      let capturedBody: any;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init?: any) => {
+        capturedBody = JSON.parse(init?.body);
+        return new Response(JSON.stringify({ messages: [{ id: "wamid.AUDIO_LINK" }] }), {
+          status: 200,
+        });
+      });
+
+      const audioUrl = "https://r2.voltrix.stream/audio/reply.ogg";
+      const success = await sendWhatsAppAudioMessage("256701112233", audioUrl, mockEnv);
+
+      expect(success).toBe(true);
+      expect(capturedBody).toEqual({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: "256701112233",
+        type: "audio",
+        audio: { link: audioUrl },
+      });
+    });
+
+    it("sendWhatsAppAudioMessage uploads binary audio stream and sends message with media ID", async () => {
+      let uploadedFormData: FormData | null = null;
+      let sendPayload: any = null;
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init?: any) => {
+        const url = String(input);
+        if (url.endsWith("/media")) {
+          uploadedFormData = init?.body as FormData;
+          return new Response(JSON.stringify({ id: "media_uploaded_audio_99" }), { status: 200 });
+        }
+        if (url.endsWith("/messages")) {
+          sendPayload = JSON.parse(init?.body);
+          return new Response(JSON.stringify({ messages: [{ id: "wamid.AUDIO_ID_MSG" }] }), {
+            status: 200,
+          });
+        }
+        return new Response("Not found", { status: 404 });
+      });
+
+      const fakeAudioBuffer = new Uint8Array([0x4f, 0x67, 0x67, 0x53]).buffer;
+      const success = await sendWhatsAppAudioMessage(
+        "256701112233",
+        fakeAudioBuffer,
+        mockEnv,
+        "audio/ogg"
+      );
+
+      expect(success).toBe(true);
+      expect(uploadedFormData).toBeDefined();
+      expect(sendPayload).toEqual({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: "256701112233",
+        type: "audio",
+        audio: { id: "media_uploaded_audio_99" },
+      });
+    });
+
+    it("sendWhatsAppDocumentMessage sends document via URL link", async () => {
+      let capturedBody: any;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init?: any) => {
+        capturedBody = JSON.parse(init?.body);
+        return new Response(JSON.stringify({ messages: [{ id: "wamid.DOC_LINK" }] }), {
+          status: 200,
+        });
+      });
+
+      const docUrl = "https://os.voltrix.stream/api/docs/pdf/doc-123.pdf";
+      const success = await sendWhatsAppDocumentMessage(
+        "256701112233",
+        docUrl,
+        "Distributed_Systems.pdf",
+        "Official ISO 216 Coursework PDF",
+        mockEnv
+      );
+
+      expect(success).toBe(true);
+      expect(capturedBody).toEqual({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: "256701112233",
+        type: "document",
+        document: {
+          link: docUrl,
+          filename: "Distributed_Systems.pdf",
+          caption: "Official ISO 216 Coursework PDF",
+        },
+      });
+    });
+
+    it("sendWhatsAppDocumentMessage uploads binary document and sends message with media ID", async () => {
+      let sendPayload: any = null;
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init?: any) => {
+        const url = String(input);
+        if (url.endsWith("/media")) {
+          return new Response(JSON.stringify({ id: "media_uploaded_doc_77" }), { status: 200 });
+        }
+        if (url.endsWith("/messages")) {
+          sendPayload = JSON.parse(init?.body);
+          return new Response(JSON.stringify({ messages: [{ id: "wamid.DOC_ID_MSG" }] }), {
+            status: 200,
+          });
+        }
+        return new Response("Not found", { status: 404 });
+      });
+
+      const fakePdfBuffer = new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer; // %PDF
+      const success = await sendWhatsAppDocumentMessage(
+        "256701112233",
+        fakePdfBuffer,
+        "Coursework.pdf",
+        "Submitted Paper",
+        mockEnv
+      );
+
+      expect(success).toBe(true);
+      expect(sendPayload).toEqual({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: "256701112233",
+        type: "document",
+        document: {
+          id: "media_uploaded_doc_77",
+          filename: "Coursework.pdf",
+          caption: "Submitted Paper",
+        },
+      });
+    });
+  });
+
+  describe("11. Interactive Slash & Exclamation Commands (handleWhatsAppCommand)", () => {
+    it("handles !help command with comprehensive directives manual", async () => {
+      const result = await handleWhatsAppCommand("256701112233", "!help", mockEnv);
+      expect(result.handled).toBe(true);
+      expect(result.command).toBe("help");
+      expect(result.reply).toContain("Welcome to Voltrix OS on WhatsApp!");
+      expect(result.reply).toContain("!help");
+      expect(result.reply).toContain("!clear");
+      expect(result.reply).toContain("!status");
+      expect(result.reply).toContain("!link <code>");
+    });
+
+    it("handles !clear command by resetting conversation history", async () => {
+      const phone = "256701112233";
+      setWhatsAppSession(phone, {
+        phoneNumber: phone,
+        history: [
+          { role: "user", content: "Previous question" },
+          { role: "assistant", content: "Previous answer" },
+        ],
+        lastActive: Date.now(),
+      });
+
+      const result = await handleWhatsAppCommand(phone, "!clear", mockEnv);
+      expect(result.handled).toBe(true);
+      expect(result.command).toBe("clear");
+      expect(result.reply).toContain("Conversation Memory Reset");
+
+      const cleared = getWhatsAppSession(phone);
+      expect(cleared?.history.length).toBe(0);
+    });
+
+    it("handles !status command showing linked account and system operational metrics", async () => {
+      const phone = "256701112233";
+      const result = await handleWhatsAppCommand(phone, "!status", mockEnv);
+      expect(result.handled).toBe(true);
+      expect(result.command).toBe("status");
+      expect(result.reply).toContain("Voltrix OS WhatsApp Copilot Status");
+      expect(result.reply).toContain(phone);
+    });
+
+    it("handles !link with invalid code returning instructional guide", async () => {
+      const result = await handleWhatsAppCommand("256701112233", "!link abc", mockEnv);
+      expect(result.handled).toBe(true);
+      expect(result.command).toBe("link");
+      expect(result.reply).toContain("Invalid Link Code");
+      expect(result.reply).toContain("Generate Link Code");
+    });
+
+    it("handles !link with valid 6-digit code pairing WhatsApp to user account", async () => {
+      const phone = "256701112233";
+      const code = "654321";
+
+      setWhatsAppLinkingCode(code, {
+        userId: "user_pro_99",
+        name: "Ada Lovelace",
+        expiresAt: Date.now() + 600000,
+      });
+
+      const result = await handleWhatsAppCommand(phone, `!link ${code}`, mockEnv);
+      expect(result.handled).toBe(true);
+      expect(result.command).toBe("link");
+      expect(result.reply).toContain("Account Successfully Linked!");
+      expect(result.reply).toContain("Ada Lovelace");
+
+      const session = getWhatsAppSession(phone);
+      expect(session?.linkedUserId).toBe("user_pro_99");
+    });
+  });
+
+  describe("12. Edge Agent Bridge & Multi-Turn Conversation (processWhatsAppMessage)", () => {
+    it("routes incoming message into AGENT_BRIDGE, updates multi-turn history, and sends formatted reply", async () => {
+      let sentBody: any;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input: any, init?: any) => {
+        sentBody = JSON.parse(init?.body);
+        return new Response(JSON.stringify({ messages: [{ id: "wamid.OUT_REPLY" }] }), {
+          status: 200,
+        });
+      });
+
+      const mockBridge = vi.fn().mockResolvedValue("## Solution\n**Force** equals mass times acceleration: $F = ma$.");
+
+      const envWithBridge: WhatsAppEnv = {
+        ...mockEnv,
+        AGENT_BRIDGE: mockBridge,
+      };
+
+      const msg = {
+        id: "wamid.AGENT_TEST_1",
+        from: "256709998888",
+        type: "text",
+        timestamp: "1729000800",
+        text: "How do you calculate force?",
+      };
+
+      const result = await processWhatsAppMessage(msg, envWithBridge);
+
+      expect(mockBridge).toHaveBeenCalledWith(
+        "How do you calculate force?",
+        expect.objectContaining({ phone: "256709998888" }),
+        envWithBridge
+      );
+
+      // Verify formatted reply was produced and sent
+      expect(result.reply).toBe("*Solution*\n*Force* equals mass times acceleration: `F = ma`.");
+      expect(result.sent).toBe(true);
+      expect(sentBody?.text?.body).toBe(result.reply);
+
+      // Verify session multi-turn conversation memory
+      const session = getWhatsAppSession("256709998888");
+      expect(session?.history.length).toBe(2);
+      expect(session?.history[0].content).toBe("How do you calculate force?");
+      expect(session?.history[1].content).toContain("Solution");
+    });
+
+    it("triggers outbound voice note reply when user requests voice reply with TTS_ENGINE configured", async () => {
+      let sentAudio: any;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any, init?: any) => {
+        const url = String(input);
+        if (url.endsWith("/media")) {
+          return new Response(JSON.stringify({ id: "media_tts_voice_id" }), { status: 200 });
+        }
+        if (url.endsWith("/messages")) {
+          const body = JSON.parse(init?.body);
+          if (body.type === "audio") {
+            sentAudio = body;
+          }
+          return new Response(JSON.stringify({ messages: [{ id: "wamid.MSG_OK" }] }), { status: 200 });
+        }
+        return new Response("Not found", { status: 404 });
+      });
+
+      const mockTts = vi.fn().mockResolvedValue({
+        buffer: new Uint8Array([0x4f, 0x67, 0x67, 0x53]),
+        mimeType: "audio/ogg",
+      });
+
+      const envWithTts: WhatsAppEnv = {
+        ...mockEnv,
+        AGENT_BRIDGE: vi.fn().mockResolvedValue("Entropy increases in an isolated thermodynamic system."),
+        TTS_ENGINE: mockTts,
+      };
+
+      const msg = {
+        id: "wamid.VOICE_REQUEST_1",
+        from: "256709997777",
+        type: "text",
+        timestamp: "1729000850",
+        text: "Explain entropy and reply with voice note please",
+      };
+
+      await processWhatsAppMessage(msg, envWithTts);
+
+      expect(mockTts).toHaveBeenCalled();
+      expect(sentAudio).toBeDefined();
+      expect(sentAudio.type).toBe("audio");
+      expect(sentAudio.audio.id).toBe("media_tts_voice_id");
     });
   });
 });

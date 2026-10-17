@@ -3816,6 +3816,9 @@ export async function runAgent(
         audioUrl: Type.Optional(Type.String({
           description: "Direct public URL to fetch audio from if not already in R2.",
         })),
+        audioBytes: Type.Optional(Type.Any({
+          description: "Optional raw audio bytes (Uint8Array/ArrayBuffer) or base64-encoded audio payload string.",
+        })),
         language: Type.Optional(Type.String({
           description: "Optional ISO language code hint (e.g. 'en', 'es', 'fr', 'sw', 'de').",
         })),
@@ -3823,7 +3826,7 @@ export async function runAgent(
           description: "Whether to generate WebVTT (.vtt) and SubRip (.srt) subtitle files and persist them to R2. Defaults to true.",
         })),
       }),
-      execute: async (toolCallId, {filename, audioUrl, language, generateSubtitles = true}) => {
+      execute: async (toolCallId, {filename, audioUrl, audioBytes, language, generateSubtitles = true}) => {
         try {
           const bucket = hooks.getBlueprintContentBucket();
           if (!bucket) {
@@ -3834,8 +3837,22 @@ export async function runAgent(
             throw new Error("Cloudflare Workers AI binding ('env.WORKERS_AI') is not available on this instance.");
           }
 
+          let resolvedBytes = audioBytes;
+          if (typeof audioBytes === "string") {
+            try {
+              const binaryStr = atob(audioBytes);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+              }
+              resolvedBytes = bytes;
+            } catch {
+              // Leave as original if base64 decode is not applicable
+            }
+          }
+
           const result = await transcribeAudioImpl(
-            { filename, audioUrl, language, generateSubtitles },
+            { filename, audioUrl, audioBytes: resolvedBytes, language, generateSubtitles },
             {
               BLUEPRINT_CONTENT: bucket,
               WORKERS_AI: ai,
