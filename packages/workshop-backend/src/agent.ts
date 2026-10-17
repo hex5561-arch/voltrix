@@ -595,6 +595,15 @@ export interface AgentHooks {
 let SYSTEM_PROMPT = `
 You are a helpful coding assistant tasked with helping users write small personal applications known as "Gadgets". A Gadget is an application that typically serves a single user, or a small group, rather than being public-facing. They may help a user automate part of their job, or just be gadgets the user makes for fun.
 
+# CRITICAL TOOL EXECUTION INVARIANT — ZERO PREAMBLE BEFORE TOOL CALLS
+When your plan or task requires calling tools (including multi-tool batches, pipelines, or test probe waves):
+1. **EMIT NATIVE TOOL CALLS IMMEDIATELY**: You MUST invoke the native tool call blocks in the exact same response turn.
+2. **ZERO CONVERSATIONAL PREAMBLE**: NEVER output conversational announcements, promises, or preambles before calling tools.
+   - NEVER write phrases like: "Wave 1 — six probes, one parallel block:", "Executing the probes now:", "Here are the tests:", "Running in one parallel block:", "Fixing that right now: here are all six probes, actually executing, in one parallel block — no more preamble:".
+   - NEVER end a message with a colon \`:\` or a promise to execute tools without including the actual tool call blocks in the same turn.
+3. **DO NOT HALT OR END YOUR TURN BEFORE CALLING TOOLS**: Emitting text with zero tool calls causes the agent loop to consider your turn complete and stop immediately. If you announce tools in text without calling them, no tools will execute and the user will receive an unfulfilled promise.
+4. **EXECUTE FIRST, EXPLAIN AFTER**: Always emit the tool calls first. Once the environment returns the tool execution results, write your explanation, insights, and analysis in your subsequent message.
+
 # Workspaces
 
 You are working within a "workspace". A workspace contains any number of Gadgets, plus connections to external resources. Each of these is available to you as a named binding in your \`env\` (used with the \`executeCode\` tool, described later). The workspace's current Gadgets, along with each one's files and bindings, are listed later in this prompt with the \`env\` name each one goes by.
@@ -1037,10 +1046,30 @@ You possess an active skill learning and error prevention flywheel:
 - User skills are strictly scoped to the user's private account DO (\`scope: "user"\`). NEVER leak or apply one user's private customizations to other accounts.
 - Use \`listLearnedSkills()\` to view the active learned rules and platform guidelines.
 - Use \`deleteLearnedSkill({ id })\` if a rule is obsolete or explicitly revoked.
+# Scientific Python Computing & Numerical Analysis
+You have access to a full CPython 3.13 scientific computing environment via the \`runPython\` tool:
+- Pre-imported libraries: \`numpy as np\`, \`scipy\`, \`pandas as pd\`, \`sympy as sp\`, and \`matplotlib.pyplot as plt\`.
+- Capabilities: Symbolic algebra and calculus (\`sp.diff\`, \`sp.integrate\`, \`sp.solve\`), linear algebra (\`np.linalg.solve\`, SVD), differential equations (\`scipy.integrate.solve_ivp\`), statistical modeling (\`pandas\`, \`scipy.stats\`), and visualization (\`plt.plot\`, \`plt.figure\`, \`plt.savefig\`).
+- Output: Automatically captures \`stdout\`, \`stderr\`, final expression evaluation, formatted LaTeX (\`$$...$$\`), and high-resolution plots saved to edge R2 and CDN (\`https://voltrix.stream/api/hf-videos/<filename>.png\`).
+- Usage: Call \`runPython({ code: "import numpy as np..." })\`.
+
+# Edge Asset Storage & Render Pipeline Management
+You have direct management tools for assets and render jobs stored on Cloudflare R2:
+- \`readAsset({ filename })\`: Directly reads the text or JSON content of any asset or render job manifest stored in edge R2 (e.g. \`hf-jobs/<jobId>.json\` or \`hf-videos/<filename>\`). Use this instead of burning external HTTP requests.
+- \`deleteAsset({ filename })\`: Removes obsolete test badges, scratch files, or transient artifacts from edge storage.
+- \`getRenderJobStatus({ jobId })\`: Queries the status of an asynchronous video rendering job (\`queued\`, \`rendering\`, \`completed\`, \`failed\`), returning percentage progress, target file path, and public CDN URL.
+- \`synthesizeSpeechBatch({ clips })\`: High-throughput multi-clip TTS synthesis. Generates an entire scene's audio narration in parallel from an array of \`{ id, voice, text }\`, saving the audio files to R2 CDN and returning the clips manifest.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `
 You are an AI agent started to perform a specific task as part of a personal application called a "Gadget". A Gadget is an application that typically serves a single user, or a small group, rather than being public-facing. They may help a user automate part of their job, or just be gadgets the user makes for fun.
+
+# CRITICAL TOOL EXECUTION INVARIANT — ZERO PREAMBLE BEFORE TOOL CALLS
+When your task requires calling tools (including multi-tool batches or test probe waves):
+1. **EMIT NATIVE TOOL CALLS IMMEDIATELY**: You MUST invoke the native tool call blocks in the exact same response turn.
+2. **ZERO CONVERSATIONAL PREAMBLE**: NEVER output conversational announcements, promises, or preambles before calling tools.
+3. **DO NOT HALT OR END YOUR TURN BEFORE CALLING TOOLS**: Emitting text with zero tool calls causes the agent loop to consider your turn complete and stop immediately.
+4. **EXECUTE FIRST, EXPLAIN AFTER**: Always emit the tool calls first. Once the environment returns the tool execution results, write your explanation, insights, and analysis in your subsequent message.
 
 Gadgets execute on a restricted and heavily-sandboxed variant of Cloudflare Workers.
 
@@ -1729,6 +1758,34 @@ export function rehydrateStoredAssistantMessage(
     content.push({...block, arguments: record.input as Record<string, unknown>});
   }
   return {...stored, content};
+}
+
+/**
+ * Detects whether an assistant message was a conversational preamble or announcement
+ * promising tool/probe execution that terminated without emitting any tool calls.
+ */
+export function detectStalledToolAnnouncement(text: string): boolean {
+  if (!text || text.trim().length === 0) return false;
+  const trimmed = text.trim();
+
+  // Pattern 1: Explicit wave / probe / parallel block announcement
+  if (/(?:wave\s*\d+|parallel block|no more preamble|actually executing)/i.test(trimmed)) {
+    return true;
+  }
+
+  // Pattern 2: Announces firing/running/executing tools/probes
+  if (/(?:first I fire|firing all|executing (?:all|the)|launching (?:the|all)|running the (?:six|probes|tools|tests)|here are (?:all|the) (?:six|\d+)?\s*(?:probes|tools|calls))/i.test(trimmed)) {
+    return true;
+  }
+
+  // Pattern 3: Text ending in a colon or bold colon promising tool/probe execution
+  if (/:\s*(?:\*\*|\*|__|_)?\s*$/.test(trimmed)) {
+    if (/(?:probe|tool|test|call|execut|run|fire|block|preamble)/i.test(trimmed)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // Builds an assistant message reconstructed from the chat log, filling the bookkeeping fields pi
@@ -4938,6 +4995,11 @@ export async function runAgent(
   // Turn cap, replacing the old stepCountIs(30).
   let turnCount = 0;
 
+  // Auto-recovery state: if an assistant message stalls with an unfulfilled tool execution
+  // announcement (e.g. text preamble with zero tool calls), queue a nudge to steer it immediately.
+  let pendingFollowUpNudge: Message | undefined;
+  let stalledTurnNudged = false;
+
   // The awaited event sink driving both the client stream fan-out and the persistence barrier.
   let emit = async (event: AgentEvent): Promise<void> => {
     switch (event.type) {
@@ -5074,6 +5136,22 @@ export async function runAgent(
               }
               return result;
             });
+          } else if (!stalledTurnNudged && !abortSignal.aborted && !connectionRequested && !awaitingActionDecision && !agentContext.spawnerConfig) {
+            if (detectStalledToolAnnouncement(rawText)) {
+              logger.warn(`agent turn stalled with unfulfilled tool announcement: ${rawText.slice(-100)}`, {
+                event: "agent.turn.stalled_tool_announcement",
+                chatId,
+              });
+              stalledTurnNudged = true;
+              pendingFollowUpNudge = {
+                role: "user",
+                content: [{
+                  type: "text",
+                  text: "[SYSTEM NUDGE: You announced tool/probe execution in text, but did not invoke any native tool calls in your response. Do not narrate or promise tools in text. You must immediately emit the actual tool calls now.]",
+                }],
+                timestamp: Date.now(),
+              };
+            }
           }
 
           // The model-facing snapshot rides along for the overseer to persist beside the display
@@ -5159,6 +5237,14 @@ export async function runAgent(
           awaitingActionDecision ||
           // Auto-terminate when callback-initiated and all callbacks have been resolved/rejected.
           (callbackInitiated && hooks.activeAgentCallbackCount(chatId) === 0),
+      getFollowUpMessages: async () => {
+        if (pendingFollowUpNudge) {
+          let nudge = pendingFollowUpNudge;
+          pendingFollowUpNudge = undefined;
+          return [nudge];
+        }
+        return [];
+      },
     }, emit, abortSignal, handle.stream);
   } finally {
     // Flush any remaining Y.Doc changes captured during this turn as a single "changes" message.
