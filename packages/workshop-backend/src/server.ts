@@ -3995,6 +3995,54 @@ ${catalog.map(c => `  <url>
       return Response.json({ success: true, simulated: true, message: `Dispatched to ${body.phone}` });
     }
 
+    // Command Center: POST /api/admin/whatsapp/set-webhook
+    if (req.method === "POST" && url.pathname === "/api/admin/whatsapp/set-webhook") {
+      const {
+        callbackUrl = "https://voltrix.stream/api/webhooks/whatsapp",
+        verifyToken = env.WHATSAPP_VERIFY_TOKEN || "volt_whatsapp_verify_token_2026",
+      } = await req.json().catch(() => ({})) as any;
+
+      const token = env.WHATSAPP_ACCESS_TOKEN;
+      const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
+      const wabaId = (env as any).WHATSAPP_BUSINESS_ACCOUNT_ID || "1289686079850008";
+
+      const results: Record<string, any> = {};
+
+      // 1. Try updating Phone Number webhook override
+      try {
+        const phoneRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            webhook_configuration: {
+              application: callbackUrl,
+            },
+          }),
+        });
+        results.phoneUpdate = { status: phoneRes.status, body: await phoneRes.json().catch(() => null) };
+      } catch (err: any) {
+        results.phoneUpdate = { error: err.message };
+      }
+
+      // 2. Try subscribing WABA to app
+      try {
+        const wabaRes = await fetch(`https://graph.facebook.com/v21.0/${wabaId}/subscribed_apps`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
+        });
+        results.wabaSubscribed = { status: wabaRes.status, body: await wabaRes.json().catch(() => null) };
+      } catch (err: any) {
+        results.wabaSubscribed = { error: err.message };
+      }
+
+      return Response.json({ success: true, callbackUrl, results });
+    }
+
     // Public Solutions API: POST /api/solutions/publish & GET /api/solutions/:id
     if (req.method === "POST" && url.pathname === "/api/solutions/publish") {
       try {
