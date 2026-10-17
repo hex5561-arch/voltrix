@@ -3793,6 +3793,7 @@ export async function runAgent(
             timeoutMs,
             bucket,
             userId,
+            pollForCompletion: true,
           });
 
           const formatted = formatPythonRunOutput(result);
@@ -4377,10 +4378,10 @@ export async function runAgent(
           const groqApiKey = hooks.getGroqApiKey?.() || (typeof process !== "undefined" ? (process as any).env?.GROQ_API_KEY : "") || "";
 
           const results = await Promise.all(clips.map(async (clip) => {
-            const voice = clip.voice || "Christopher";
+            const requestedVoice = (clip.voice || "Christopher").trim();
             const customSlug = clip.filename || `narration-${clip.id.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}-${Date.now().toString(36)}`;
             const res = await synthesizeSpeechImpl(
-              { text: clip.text, voice, filename: customSlug },
+              { text: clip.text, voice: requestedVoice, filename: customSlug },
               {
                 BLUEPRINT_CONTENT: bucket,
                 WORKERS_AI: ai,
@@ -4389,17 +4390,17 @@ export async function runAgent(
             );
             return {
               id: clip.id,
-              voice: res.voice,
-              durationSeconds: res.durationEstimateSeconds,
+              voice: clip.voice || res.voice || requestedVoice,
+              durationSeconds: res.durationSeconds ?? res.durationEstimateSeconds,
               audioUrl: res.audioUrl,
               text: clip.text,
             };
           }));
 
-          const totalDuration = results.reduce((acc, r) => acc + r.durationSeconds, 0);
+          const totalDuration = Number(results.reduce((acc, r) => acc + r.durationSeconds, 0).toFixed(2));
           const manifestLines = results.map(r => `| \`${r.id}\` | \`${r.voice}\` | ${r.durationSeconds.toFixed(2)}s | [Audio](${r.audioUrl}) |`).join("\n");
 
-          const formatted = `🎙️ **Batch Speech Narration Manifest (${results.length} clips, ${totalDuration.toFixed(1)}s total)**\n\n` +
+          const formatted = `🎙️ **Batch Speech Narration Manifest (${results.length} clips, ${totalDuration.toFixed(2)}s total)**\n\n` +
             `| Scene ID | Voice | Duration | URL |\n|---|---|---|---|\n` +
             manifestLines + `\n\n` +
             `**HyperFrames Audio Manifest JSON:**\n\`\`\`json\n` +

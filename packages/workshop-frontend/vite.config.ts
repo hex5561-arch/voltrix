@@ -81,6 +81,8 @@ export default defineConfig(({ mode }) => {
         '/api/client-errors': `http://${backendHost}`,
         '/blueprint-screenshot': `http://${backendHost}`,
         '/api/site-logo': `http://${backendHost}`,
+        '/api/chat': `http://${backendHost}`,
+        '/api/vtube': `http://${backendHost}`,
       },
     },
     build: {

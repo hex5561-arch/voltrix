@@ -10,8 +10,8 @@ import { inflateSync, inflateRawSync } from "node:zlib";
  * 4. Plain Text, Code, CSV, Markdown & JSON UTF-8 decoding
  */
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = "";
   const chunkSize = 8192;
   for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -294,62 +294,167 @@ export function extractTextFromDocx(buffer: Uint8Array): string {
     .trim();
 }
 
-// ── Gemini Multimodal OCR (Images & Visual PDFs) ──────────────────────────────
+// ── Multi-Tier Multimodal OCR (Images & Visual PDFs) ─────────────────────────
 
-export async function extractTextFromImageWithGemini(
-  geminiKey: string,
-  buffer: ArrayBuffer,
+export interface MultimodalEnv {
+  OPENROUTER_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  WORKERS_AI?: any;
+  AI?: any;
+  ASR_ENGINE?: (buffer: ArrayBuffer, mimeType: string, env: any) => Promise<string>;
+  [key: string]: any;
+}
+
+/**
+ * Multi-Tier Vision & OCR Extractor:
+ * Tier 1: OpenRouter openai/gpt-4o-mini (Unbeatable accuracy on handwriting, tables, and formulas)
+ * Tier 2: Cloudflare Workers AI @cf/meta/llama-3.2-11b-vision-instruct
+ * Tier 3: Gemini 2.0 Flash / 1.5 Flash Vision
+ */
+export async function extractTextFromImage(
+  buffer: ArrayBuffer | Uint8Array,
   mimeType: string = "image/jpeg",
-  caption: string = ""
+  caption: string = "",
+  env?: MultimodalEnv
 ): Promise<string> {
-  if (!geminiKey || buffer.byteLength === 0) return "";
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (!bytes || bytes.length === 0) return "";
 
   const cleanMime = (mimeType || "image/jpeg").split(";")[0].trim().toLowerCase();
-  const b64 = arrayBufferToBase64(buffer);
+  const b64 = arrayBufferToBase64(bytes);
 
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
-      {
+  const prompt = `Transcribe and extract all text, messages, UI labels, handwriting, questions, formulas, tables, and visible details in this image verbatim.${
+    caption ? `\nUser Note/Instruction: ${caption}` : ""
+  }`;
+
+  // ── Tier 1: OpenRouter gpt-4o-mini (Fast, rock-solid table/formula transcription) ──
+  const openrouterKey =
+    env?.OPENROUTER_API_KEY ||
+    (typeof process !== "undefined" && process.env?.OPENROUTER_API_KEY) ||
+    "";
+
+  if (openrouterKey) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${openrouterKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://voltrix.stream",
+          "X-Title": "Voltrix WhatsApp Vision",
+        },
         body: JSON.stringify({
-          contents: [
+          model: "openai/gpt-4o-mini",
+          messages: [
             {
-              parts: [
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
                 {
-                  text: `You are an elite academic OCR and vision intelligence model.
-Transcribe, extract, and describe all text, questions, mathematical formulas, equations, diagrams, handwritten notes, tables, charts, and code visible in this image verbatim and thoroughly.
-If there are multiple questions or problem numbers, list each one clearly with its labels (e.g. Question 1, Part (a), etc.).
-${caption ? `User Note/Instruction: ${caption}` : ""}`,
-                },
-                {
-                  inlineData: {
-                    mimeType: cleanMime,
-                    data: b64,
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${cleanMime};base64,${b64}`,
                   },
                 },
               ],
             },
           ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2048,
-          },
         }),
-      }
-    );
+      });
 
-    if (res.ok) {
-      const data = (await res.json()) as any;
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (text) return text;
-    } else {
-      const err = await res.text().catch(() => "");
-      console.warn(`[WhatsApp OCR] Gemini Vision failed (${res.status}): ${err}`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (text) return text;
+      } else {
+        const err = await res.text().catch(() => "");
+        console.warn(`[WhatsApp OCR] OpenRouter Vision failed (${res.status}): ${err}`);
+      }
+    } catch (err) {
+      console.warn("[WhatsApp OCR] OpenRouter Vision error:", err);
     }
-  } catch (err) {
-    console.warn("[WhatsApp OCR] Gemini Vision error:", err);
+  }
+
+  // ── Tier 2: Cloudflare Workers AI Vision (@cf/meta/llama-3.2-11b-vision-instruct) ──
+  const ai = env?.WORKERS_AI || env?.AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const res: any = await ai.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+        image: Array.from(bytes),
+        prompt,
+        max_tokens: 2048,
+      });
+      const text = res?.description || res?.response || (typeof res === "string" ? res : "");
+      if (text && text.trim().length > 0) return text.trim();
+    } catch (err) {
+      console.warn("[WhatsApp OCR] Workers AI Vision error:", err);
+    }
+  }
+
+  // ── Tier 3: Gemini 2.0 Flash / 1.5 Flash Vision ──
+  const geminiKey = env?.GEMINI_API_KEY;
+  if (geminiKey && geminiKey !== "REPLACE_WITH_GEMINI_KEY") {
+    const text = await extractTextFromImageWithGemini(geminiKey, bytes, cleanMime, caption);
+    if (text) return text;
+  }
+
+  return "";
+}
+
+export async function extractTextFromImageWithGemini(
+  geminiKey: string,
+  buffer: ArrayBuffer | Uint8Array,
+  mimeType: string = "image/jpeg",
+  caption: string = ""
+): Promise<string> {
+  if (!geminiKey || geminiKey === "REPLACE_WITH_GEMINI_KEY") return "";
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (bytes.length === 0) return "";
+  const cleanMime = (mimeType || "image/jpeg").split(";")[0].trim().toLowerCase();
+  const b64 = arrayBufferToBase64(bytes);
+
+  const prompt = `Transcribe and extract all text, messages, UI labels, handwriting, questions, formulas, tables, and visible details in this image verbatim.${
+    caption ? `\nUser Note/Instruction: ${caption}` : ""
+  }`;
+
+  for (const model of ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: cleanMime,
+                      data: b64,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 2048,
+            },
+          }),
+        }
+      );
+
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text) return text;
+      }
+    } catch {
+      // try next
+    }
   }
 
   return "";
@@ -363,115 +468,189 @@ export async function extractTextFromPdfWithGemini(
   if (!geminiKey || buffer.byteLength === 0) return "";
   const b64 = arrayBufferToBase64(buffer);
 
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `You are an expert document understanding model.
+  for (const model of ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `You are an expert document understanding model.
 Transcribe, extract, and describe all text, questions, mathematical formulas, equations, tables, problem sets, and academic content from this PDF document verbatim.
 If the PDF contains scanned pages, homework questions, or exam problems, list each problem clearly with all its given values and diagrams described.
 ${caption ? `User Instruction: ${caption}` : ""}`,
-                },
-                {
-                  inlineData: {
-                    mimeType: "application/pdf",
-                    data: b64,
                   },
-                },
-              ],
+                  {
+                    inlineData: {
+                      mimeType: "application/pdf",
+                      data: b64,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 2048,
             },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2048,
-          },
-        }),
-      }
-    );
+          }),
+        }
+      );
 
-    if (res.ok) {
-      const data = (await res.json()) as any;
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (text) return text;
-    } else {
-      const err = await res.text().catch(() => "");
-      console.warn(`[WhatsApp PDF OCR] Gemini failed (${res.status}): ${err}`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text) return text;
+      }
+    } catch {
+      // try next
     }
-  } catch (err) {
-    console.warn("[WhatsApp PDF OCR] Gemini error:", err);
   }
 
   return "";
 }
 
-// ── Gemini Multimodal Video Analysis & Speech Transcription ───────────────────
+// ── Multi-Tier Video Analysis & Speech Transcription ──────────────────────────
+
+export async function analyzeVideo(
+  buffer: ArrayBuffer | Uint8Array,
+  mimeType: string = "video/mp4",
+  caption: string = "",
+  env?: MultimodalEnv
+): Promise<string> {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (!bytes || bytes.length === 0) return "";
+
+  const cleanMime = (mimeType || "video/mp4").split(";")[0].trim().toLowerCase();
+
+  // ── Tier 1: Gemini Multimodal Video ──
+  const geminiKey = env?.GEMINI_API_KEY;
+  if (geminiKey && geminiKey !== "REPLACE_WITH_GEMINI_KEY") {
+    const text = await analyzeVideoWithGemini(geminiKey, bytes, cleanMime, caption);
+    if (text) return text;
+  }
+
+  // ── Tier 2: ASR Audio Speech Transcription from Video Track ──
+  // A) Custom ASR_ENGINE
+  if (typeof env?.ASR_ENGINE === "function") {
+    try {
+      const speech = await env.ASR_ENGINE(bytes.buffer as ArrayBuffer, cleanMime, env);
+      if (speech && speech.trim()) {
+        return `[Transcribed Speech from Video]:\n${speech.trim()}${caption ? `\n\nUser Note: ${caption}` : ""}`;
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Video] ASR_ENGINE failed:", e);
+    }
+  }
+
+  // B) Groq Whisper with video buffer
+  if (env?.GROQ_API_KEY) {
+    try {
+      const formData = new FormData();
+      const ext = cleanMime.includes("webm") ? "webm" : "mp4";
+      formData.append("file", new Blob([bytes], { type: cleanMime }), `video.${ext}`);
+      formData.append("model", "whisper-large-v3-turbo");
+      formData.append("response_format", "json");
+
+      const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        if (data?.text?.trim()) {
+          return `[Transcribed Speech from Video]:\n${data.text.trim()}${caption ? `\n\nUser Note: ${caption}` : ""}`;
+        }
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Video] Groq Whisper failed:", e);
+    }
+  }
+
+  // C) Workers AI Whisper
+  const ai = env?.WORKERS_AI || env?.AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const res: any = await ai.run("@cf/openai/whisper", {
+        audio: Array.from(bytes),
+      });
+      if (res?.text?.trim()) {
+        return `[Transcribed Speech from Video]:\n${res.text.trim()}${caption ? `\n\nUser Note: ${caption}` : ""}`;
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Video] Workers AI Whisper failed:", e);
+    }
+  }
+
+  return "";
+}
 
 export async function analyzeVideoWithGemini(
   geminiKey: string,
-  buffer: ArrayBuffer,
+  buffer: ArrayBuffer | Uint8Array,
   mimeType: string = "video/mp4",
   caption: string = ""
 ): Promise<string> {
-  if (!geminiKey || buffer.byteLength === 0) return "";
+  if (!geminiKey || geminiKey === "REPLACE_WITH_GEMINI_KEY") return "";
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (bytes.length === 0) return "";
   const cleanMime = (mimeType || "video/mp4").split(";")[0].trim().toLowerCase();
-  const b64 = arrayBufferToBase64(buffer);
+  const b64 = arrayBufferToBase64(bytes);
 
-  try {
-    const prompt = `Transcribe all speech verbatim from this video, and thoroughly describe all visual scenes, actions, on-screen text, diagrams, and questions.${
-      caption ? `\nUser Note/Context: ${caption}` : ""
-    }`;
+  const prompt = `Transcribe all speech verbatim from this video, and thoroughly describe all visual scenes, actions, on-screen text, diagrams, and questions.${
+    caption ? `\nUser Note/Context: ${caption}` : ""
+  }`;
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: prompt,
-                },
-                {
-                  inlineData: {
-                    mimeType: cleanMime,
-                    data: b64,
+  for (const model of ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: cleanMime,
+                      data: b64,
+                    },
                   },
-                },
-              ],
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 2048,
             },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2048,
-          },
-        }),
-      }
-    );
+          }),
+        }
+      );
 
-    if (res.ok) {
-      const data = (await res.json()) as any;
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (text) return text;
-    } else {
-      const err = await res.text().catch(() => "");
-      console.warn(`[WhatsApp Video OCR] Gemini Video failed (${res.status}): ${err}`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text) return text;
+      }
+    } catch {
+      // try next
     }
-  } catch (err) {
-    console.warn("[WhatsApp Video OCR] Gemini Video error:", err);
   }
 
   return "";
 }
-
 
 // ── Master Universal Document Extractor ───────────────────────────────────────
 
@@ -480,10 +659,15 @@ export async function extractDocumentContent(
   mimeType: string = "",
   filename: string = "",
   caption: string = "",
-  geminiKey?: string
+  envOrGeminiKey?: any
 ): Promise<string> {
   const bytes = new Uint8Array(buffer);
   if (bytes.length === 0) return "";
+
+  const env: MultimodalEnv =
+    typeof envOrGeminiKey === "string"
+      ? { GEMINI_API_KEY: envOrGeminiKey }
+      : (envOrGeminiKey || {});
 
   const lowerMime = (mimeType || "").toLowerCase();
   const lowerName = (filename || "").toLowerCase();
@@ -501,8 +685,8 @@ export async function extractDocumentContent(
     }
 
     // B) Multimodal Gemini Vision fallback (handles scanned PDFs, handwritten homework, diagrams)
-    if (geminiKey) {
-      const geminiText = await extractTextFromPdfWithGemini(geminiKey, buffer, caption);
+    if (env.GEMINI_API_KEY) {
+      const geminiText = await extractTextFromPdfWithGemini(env.GEMINI_API_KEY, buffer, caption);
       if (geminiText) return geminiText;
     }
   }
@@ -544,10 +728,8 @@ export async function extractDocumentContent(
     lowerMime.startsWith("image/") ||
     /\.(png|jpg|jpeg|webp|bmp|gif|heic)$/i.test(lowerName)
   ) {
-    if (geminiKey) {
-      const imgText = await extractTextFromImageWithGemini(geminiKey, buffer, lowerMime || "image/jpeg", caption);
-      if (imgText) return imgText;
-    }
+    const imgText = await extractTextFromImage(buffer, lowerMime || "image/jpeg", caption, env);
+    if (imgText) return imgText;
   }
 
   return "";

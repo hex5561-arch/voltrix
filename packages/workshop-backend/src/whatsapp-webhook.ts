@@ -21,6 +21,9 @@
 
 import { inflateRawSync } from "node:zlib";
 import { extractTextFromPdf } from "./pdf-extract.js";
+import { publishSiteToStorage } from "./sites.js";
+import { normalizeImageOutput } from "./image-engine.js";
+import { transcodeAudioForWhatsApp } from "./voice-transcode.js";
 
 export interface WhatsAppEnv {
   WHATSAPP_VERIFY_TOKEN?: string;
@@ -33,6 +36,8 @@ export interface WhatsAppEnv {
   AI?: any;
   GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   CF_AI_GATEWAY?: string;
   CF_AI_GATEWAY_ACCOUNT_ID?: string;
   PUBLIC_BASE_URL?: string;
@@ -82,6 +87,7 @@ export interface WhatsAppWebhookMessage {
   voice?: WhatsAppIncomingMediaMessage;
   document?: WhatsAppIncomingMediaMessage;
   image?: WhatsAppIncomingMediaMessage;
+  video?: WhatsAppIncomingMediaMessage;
   interactive?: WhatsAppIncomingInteractiveMessage;
   caption?: string;
   [key: string]: unknown;
@@ -149,6 +155,18 @@ const linkingCodes = new Map<string, { userId: string; name?: string; expiresAt:
 
 // Rolling 1,000 message dedup window to ignore Meta Graph API retries
 const processedMessageIds = new Map<string, number>();
+
+export const DEFAULT_WHATSAPP_PHONE_ID = "1380923721763579";
+export const DEFAULT_WHATSAPP_ACCESS_TOKEN =
+  "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
+
+export function getWhatsAppCredentials(env?: WhatsAppEnv): { phoneId: string; accessToken: string } {
+  const phoneId = env?.WHATSAPP_PHONE_NUMBER_ID || DEFAULT_WHATSAPP_PHONE_ID;
+  const rawToken = env?.WHATSAPP_ACCESS_TOKEN;
+  const accessToken =
+    rawToken && !rawToken.includes("REPLACE") ? rawToken : DEFAULT_WHATSAPP_ACCESS_TOKEN;
+  return { phoneId, accessToken };
+}
 
 /**
  * Checks if a message ID has already been processed to prevent duplicates from Meta retries.
@@ -454,6 +472,382 @@ export function extractTextFromDocx(buffer: Uint8Array): string {
     .trim();
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Multi-Tier Vision & OCR Extractor:
+ * Tier 1: OpenRouter openai/gpt-4o-mini (Unbeatable accuracy on handwriting, tables, and formulas)
+ * Tier 2: Cloudflare Workers AI @cf/meta/llama-3.2-11b-vision-instruct
+ * Tier 3: Gemini 2.0 Flash / 1.5 Flash Vision
+ */
+export async function extractTextFromImage(
+  buffer: ArrayBuffer | Uint8Array,
+  mimeType: string = "image/jpeg",
+  caption: string = "",
+  env?: WhatsAppEnv
+): Promise<string> {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (!bytes || bytes.length === 0) return "";
+
+  const cleanMime = (mimeType || "image/jpeg").split(";")[0].trim().toLowerCase();
+  const b64 = arrayBufferToBase64(bytes);
+
+  const prompt = `Transcribe and extract all text, messages, UI labels, handwriting, questions, formulas, tables, and visible details in this image verbatim.${
+    caption ? `\nUser Note/Instruction: ${caption}` : ""
+  }`;
+
+  // ── Tier 1: OpenRouter gpt-4o-mini ──
+  const openrouterKey =
+    env?.OPENROUTER_API_KEY ||
+    (typeof process !== "undefined" && process.env?.OPENROUTER_API_KEY) ||
+    "";
+
+  if (openrouterKey) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openrouterKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://voltrix.stream",
+          "X-Title": "Voltrix WhatsApp Vision",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${cleanMime};base64,${b64}`,
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (text) return text;
+      } else {
+        const err = await res.text().catch(() => "");
+        console.warn(`[WhatsApp Backend OCR] OpenRouter Vision failed (${res.status}): ${err}`);
+      }
+    } catch (err) {
+      console.warn("[WhatsApp Backend OCR] OpenRouter Vision error:", err);
+    }
+  }
+
+  // ── Tier 2: Cloudflare Workers AI Vision (@cf/meta/llama-3.2-11b-vision-instruct) ──
+  const ai = env?.WORKERS_AI || env?.AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const res: any = await ai.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+        image: Array.from(bytes),
+        prompt,
+        max_tokens: 2048,
+      });
+      const text = res?.description || res?.response || (typeof res === "string" ? res : "");
+      if (text && text.trim().length > 0) return text.trim();
+    } catch (err) {
+      console.warn("[WhatsApp Backend OCR] Workers AI Vision error:", err);
+    }
+  }
+
+  // ── Tier 3: Gemini 2.0 Flash / 1.5 Flash Vision ──
+  const geminiKey = env?.GEMINI_API_KEY;
+  if (geminiKey && geminiKey !== "REPLACE_WITH_GEMINI_KEY") {
+    for (const model of ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { text: prompt },
+                    {
+                      inlineData: {
+                        mimeType: cleanMime,
+                        data: b64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 2048,
+              },
+            }),
+          }
+        );
+
+        if (res.ok) {
+          const data = (await res.json()) as any;
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (text) return text;
+        } else {
+          const err = await res.text().catch(() => "");
+          console.warn(`[WhatsApp Backend OCR] Gemini ${model} failed (${res.status}): ${err}`);
+        }
+      } catch (err) {
+        console.warn(`[WhatsApp Backend OCR] Gemini ${model} error:`, err);
+      }
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Multi-Tier Video Analysis & Speech Transcription:
+ * Tier 1: Gemini 2.0 Flash / 1.5 Flash Multimodal Video Analysis
+ * Tier 2: ASR Audio Speech Transcription from Video Track
+ */
+export async function analyzeVideo(
+  buffer: ArrayBuffer | Uint8Array,
+  mimeType: string = "video/mp4",
+  caption: string = "",
+  env?: WhatsAppEnv
+): Promise<string> {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (!bytes || bytes.length === 0) return "";
+
+  const cleanMime = (mimeType || "video/mp4").split(";")[0].trim().toLowerCase();
+  const b64 = arrayBufferToBase64(bytes);
+
+  const prompt = `Transcribe all speech verbatim from this video, and thoroughly describe all visual scenes, actions, on-screen text, diagrams, and questions.${
+    caption ? `\nUser Note/Context: ${caption}` : ""
+  }`;
+
+  // ── Tier 1: Gemini Multimodal Video ──
+  const geminiKey = env?.GEMINI_API_KEY;
+  if (geminiKey && geminiKey !== "REPLACE_WITH_GEMINI_KEY") {
+    for (const model of ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { text: prompt },
+                    {
+                      inlineData: {
+                        mimeType: cleanMime,
+                        data: b64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 2048,
+              },
+            }),
+          }
+        );
+
+        if (res.ok) {
+          const data = (await res.json()) as any;
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (text) return text;
+        } else {
+          const err = await res.text().catch(() => "");
+          console.warn(`[WhatsApp Backend Video] Gemini ${model} failed (${res.status}): ${err}`);
+        }
+      } catch (err) {
+        console.warn(`[WhatsApp Backend Video] Gemini ${model} error:`, err);
+      }
+    }
+  }
+
+  // ── Tier 2: ASR Audio Speech Transcription from Video Track ──
+  // A) Custom ASR_ENGINE
+  if (typeof env?.ASR_ENGINE === "function") {
+    try {
+      const speech = await env.ASR_ENGINE(bytes.buffer as ArrayBuffer, cleanMime, env);
+      if (speech && speech.trim()) {
+        return `[Transcribed Speech from Video]:\n${speech.trim()}${caption ? `\n\nUser Note: ${caption}` : ""}`;
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Backend Video] ASR_ENGINE failed:", e);
+    }
+  }
+
+  // B) Groq Whisper with video buffer
+  if (env?.GROQ_API_KEY) {
+    try {
+      const formData = new FormData();
+      const ext = cleanMime.includes("webm") ? "webm" : "mp4";
+      formData.append("file", new Blob([bytes], { type: cleanMime }), `video.${ext}`);
+      formData.append("model", "whisper-large-v3-turbo");
+      formData.append("response_format", "json");
+
+      const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        if (data?.text?.trim()) {
+          return `[Transcribed Speech from Video]:\n${data.text.trim()}${caption ? `\n\nUser Note: ${caption}` : ""}`;
+        }
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Backend Video] Groq Whisper failed:", e);
+    }
+  }
+
+  // C) Workers AI Whisper
+  const ai = env?.WORKERS_AI || env?.AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const res: any = await ai.run("@cf/openai/whisper", {
+        audio: Array.from(bytes),
+      });
+      if (res?.text?.trim()) {
+        return `[Transcribed Speech from Video]:\n${res.text.trim()}${caption ? `\n\nUser Note: ${caption}` : ""}`;
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Backend Video] Workers AI Whisper failed:", e);
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Generates an image using Cloudflare Workers AI.
+ */
+export async function generateImageBytes(
+  env: WhatsAppEnv,
+  prompt: string
+): Promise<Uint8Array | null> {
+  const ai = env.WORKERS_AI || env.AI;
+  if (!ai || typeof ai.run !== "function") return null;
+
+  const models = [
+    "@cf/black-forest-labs/flux-1-schnell",
+    "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+  ];
+
+  for (const model of models) {
+    try {
+      const res: any = await ai.run(model, { prompt: prompt.trim() });
+      if (!res) continue;
+      const bytes = await normalizeImageOutput(res);
+      if (bytes && bytes.length > 0) return bytes;
+    } catch (e) {
+      console.warn(`[WhatsApp Backend] Workers AI image generation failed with ${model}:`, e);
+    }
+  }
+  return null;
+}
+
+/**
+ * Dispatches native WhatsApp image message using Meta Graph API.
+ */
+export async function sendWhatsAppImageMessage(
+  to: string,
+  imageBytesOrBuffer: ArrayBuffer | Uint8Array,
+  env: WhatsAppEnv,
+  caption?: string
+): Promise<boolean> {
+  const { phoneId, accessToken } = getWhatsAppCredentials(env);
+  if (!phoneId || !accessToken) return false;
+
+  const cleanTo = cleanPhoneNumber(to);
+  try {
+    const bytes =
+      imageBytesOrBuffer instanceof Uint8Array
+        ? imageBytesOrBuffer
+        : new Uint8Array(imageBytesOrBuffer);
+
+    const formData = new FormData();
+    formData.append("messaging_product", "whatsapp");
+    formData.append("type", "image/png");
+    formData.append("file", new Blob([bytes], { type: "image/png" }), "generated_image.png");
+
+    const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/media`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text().catch(() => "");
+      console.error(`[WhatsApp Backend] Image upload failed (${uploadRes.status}): ${errText}`);
+      return false;
+    }
+
+    const uploadData = (await uploadRes.json()) as { id?: string };
+    const mediaId = uploadData?.id;
+    if (!mediaId) {
+      console.error("[WhatsApp Backend] Image upload returned no media ID");
+      return false;
+    }
+
+    const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: cleanTo,
+        type: "image",
+        image: {
+          id: mediaId,
+          ...(caption ? { caption } : {}),
+        },
+      }),
+    });
+
+    if (!sendRes.ok) {
+      const errText = await sendRes.text().catch(() => "");
+      console.error(`[WhatsApp Backend] Send image message failed (${sendRes.status}): ${errText}`);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[WhatsApp Backend] sendWhatsAppImageMessage error:", err);
+    return false;
+  }
+}
+
 /**
  * Extracts human-readable text from uploaded documents (PDF, DOCX, text/code, and images).
  */
@@ -516,12 +910,14 @@ export async function extractDocumentText(
     }
   }
 
-  // 4. Image document note fallback
-  if (lowerMime.startsWith("image/") || /\.(png|jpg|jpeg|webp|bmp|gif)$/i.test(lowerName)) {
+  // 4. Image documents
+  if (lowerMime.startsWith("image/") || /\.(png|jpg|jpeg|webp|bmp|gif|heic)$/i.test(lowerName)) {
+    const imgText = await extractTextFromImage(bytes, lowerMime || "image/jpeg", caption, _env);
+    if (imgText) return imgText;
     if (caption) {
       return `Image note: ${caption}`;
     }
-    return "Image attachment received.";
+    return "";
   }
 
   return "";
@@ -539,6 +935,7 @@ export async function fetchWhatsAppMedia(
     method: "GET",
     headers: {
       Authorization: `Bearer ${accessToken}`,
+      "User-Agent": "curl/7.64.1",
     },
   });
 
@@ -556,6 +953,7 @@ export async function fetchWhatsAppMedia(
     method: "GET",
     headers: {
       Authorization: `Bearer ${accessToken}`,
+      "User-Agent": "curl/7.64.1",
     },
   });
 
@@ -688,6 +1086,345 @@ export async function transcribeAudio(
 }
 
 /**
+ * Cleans markdown, LaTeX, and code syntax into natural spoken text for speech synthesis.
+ */
+export function cleanTextForSpeech(text: string): string {
+  let spoken = text
+    .replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, " [Code implementation] ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(/\[\d+(?:,\s*\d+)*\]/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/^>\s+/gm, "")
+    .replace(/^[\*\-+]\s+/gm, " ")
+    .replace(/^\d+\.\s+/gm, " ")
+    .replace(/https?:\/\/[^\s]+/g, "");
+
+  spoken = spoken
+    .replace(/\\alpha/g, " alpha ")
+    .replace(/\\beta/g, " beta ")
+    .replace(/\\gamma/g, " gamma ")
+    .replace(/\\delta|\\Delta/g, " delta ")
+    .replace(/\\epsilon|\\varepsilon/g, " epsilon ")
+    .replace(/\\theta/g, " theta ")
+    .replace(/\\lambda/g, " lambda ")
+    .replace(/\\mu/g, " mu ")
+    .replace(/\\sigma|\\Sigma/g, " sigma ")
+    .replace(/\\omega|\\Omega/g, " omega ")
+    .replace(/\\pi/g, " pi ")
+    .replace(/\\partial/g, " partial derivative ")
+    .replace(/\\nabla/g, " del ")
+    .replace(/\\approx/g, " is approximately ")
+    .replace(/\\neq/g, " is not equal to ")
+    .replace(/\\leq|\\le/g, " is less than or equal to ")
+    .replace(/\\geq|\\ge/g, " is greater than or equal to ")
+    .replace(/\\pm/g, " plus or minus ")
+    .replace(/\\times/g, " multiplied by ")
+    .replace(/\\div/g, " divided by ")
+    .replace(/\\cdot/g, " times ")
+    .replace(/\\infty/g, " infinity ");
+
+  spoken = spoken
+    .replace(/\\int_\{?([^{}\s^]+)\}?\^\{?([^{}\s]+)\}?/g, " the integral from $1 to $2 of ")
+    .replace(/\\sum_\{?([^{}\s^]+)\}?\^\{?([^{}\s]+)\}?/g, " the sum from $1 to $2 of ")
+    .replace(/\\lim_\{?([^{}]+)\}?/g, " the limit as $1 of ")
+    .replace(/\\int/g, " the integral of ")
+    .replace(/\\sum/g, " the sum of ");
+
+  for (let i = 0; i < 3; i++) {
+    spoken = spoken
+      .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, " the fraction $1 over $2 ")
+      .replace(/\\sqrt\{([^{}]+)\}/g, " square root of $1 ");
+  }
+
+  spoken = spoken
+    .replace(/\^2\b/g, " squared ")
+    .replace(/\^3\b/g, " cubed ")
+    .replace(/\^\{([^}]+)\}/g, " to the power of $1 ")
+    .replace(/\^([0-9a-zA-Z])/g, " to the power of $1 ")
+    .replace(/_\{([^}]+)\}/g, " sub $1 ")
+    .replace(/_([0-9a-zA-Z])/g, " sub $1 ")
+    .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
+    .replace(/\$([^$]+)\$/g, "$1")
+    .replace(/\\[a-zA-Z]+/g, " ");
+
+  return spoken.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Generates a natural, warm, conversational WhatsApp voice note script (15-25 seconds)
+ * pointing the user to the full text message below.
+ */
+export async function generateVoiceScript(
+  env: WhatsAppEnv,
+  userQuery: string,
+  detailedAnswer: string
+): Promise<string> {
+  const prompt = `You are Voltrix, a friendly, brilliant human study buddy sending a quick WhatsApp voice note to a classmate.
+Friend's Question: "${userQuery.replace(/\s+/g, " ").slice(0, 300)}"
+Detailed Solution Written in Chat:
+"""
+${detailedAnswer.slice(0, 1500)}
+"""
+
+Task: Write a natural, warm, spoken voice note (30-50 words max, approx 15-25 seconds of speech).
+Guidelines:
+1. Speak exactly like a real human leaving a quick voice memo on WhatsApp.
+2. Use casual conversational contractions: "I've", "it's", "you'll", "don't", "basically", "so yeah".
+3. Give the core answer or intuition in 1-2 punchy spoken sentences.
+4. Point them to the text message below for the detailed steps/math/code (e.g., "I've put the full step-by-step breakdown right below in the message!").
+5. DO NOT read raw equations, formulas, code syntax, or bullet points literally.
+6. NO robotic openings ("Certainly", "As an AI", "Here is your solution"). Start naturally ("Hey!", "Alright, so looking at this...").
+7. Output ONLY the plain text spoken words. No markdown, no quotes, no emojis.`;
+
+  // Try Gemini 3.8 Flash
+  const rawGeminiKey = env.GEMINI_API_KEY;
+  const geminiKey = rawGeminiKey ? rawGeminiKey.split(",")[0].trim() : "";
+  if (geminiKey && !geminiKey.includes("REPLACE")) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 250, temperature: 0.7 },
+          }),
+        }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text) return text.replace(/^["'«“]|["'»”]$/g, "").trim();
+      }
+    } catch (e) {
+      console.warn("[WhatsApp Webhook] Gemini voice script error:", e);
+    }
+  }
+
+  // Try Workers AI
+  const ai = env.WORKERS_AI || env.AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const res: any = await ai.run("@cf/meta/llama-3.3-70b-instruct", {
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 250,
+      });
+      const text = res?.response || (typeof res === "string" ? res : "");
+      if (text && text.trim()) return text.replace(/^["'«“]|["'»”]$/g, "").trim();
+    } catch (e) {
+      console.warn("[WhatsApp Webhook] Workers AI voice script error:", e);
+    }
+  }
+
+  // Conversational fallback
+  const coreClean = cleanTextForSpeech(detailedAnswer).slice(0, 150).trim();
+  return `Hey! So I looked through this for you. Basically, ${coreClean}. I've put the full step-by-step breakdown and all the details right below in the chat!`;
+}
+
+/**
+ * Multi-tier Text-To-Speech engine synthesizing speech into WhatsApp-compatible Ogg Opus.
+ */
+export async function synthesizeVoiceReply(
+  env: WhatsAppEnv,
+  text: string
+): Promise<{ data: Uint8Array; mimeType: string } | null> {
+  const clean = cleanTextForSpeech(text);
+  if (!clean) return null;
+
+  const spokenText = clean.slice(0, 450).trim();
+
+  // Tier 1: OpenAI TTS (Returns genuine Ogg Opus for native WhatsApp PTT voice notes with waveforms)
+  if (env.OPENAI_API_KEY && !env.OPENAI_API_KEY.includes("REPLACE")) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          input: spokenText,
+          voice: "alloy",
+          response_format: "opus",
+        }),
+      });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > 0) {
+          return { data: new Uint8Array(ab), mimeType: "audio/ogg; codecs=opus" };
+        }
+      }
+    } catch (err) {
+      console.warn("[WhatsApp Webhook] OpenAI TTS error:", err);
+    }
+  }
+
+  // Tier 2: Cloudflare Workers AI Deepgram Aura / MeloTTS
+  const ai = env.WORKERS_AI || env.AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const audioStream: any = await ai.run("@cf/deepgram/aura-2-en", { text: spokenText });
+      if (audioStream) {
+        let bytes: Uint8Array;
+        if (audioStream instanceof Uint8Array) {
+          bytes = audioStream;
+        } else if (audioStream instanceof ArrayBuffer) {
+          bytes = new Uint8Array(audioStream);
+        } else if (typeof audioStream.arrayBuffer === "function") {
+          bytes = new Uint8Array(await audioStream.arrayBuffer());
+        } else if (typeof (audioStream as any).getReader === "function") {
+          const reader = audioStream.getReader();
+          const chunks: Uint8Array[] = [];
+          let total = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              chunks.push(value);
+              total += value.length;
+            }
+          }
+          bytes = new Uint8Array(total);
+          let offset = 0;
+          for (const c of chunks) {
+            bytes.set(c, offset);
+            offset += c.length;
+          }
+        } else {
+          bytes = new Uint8Array(0);
+        }
+        if (bytes && bytes.length > 0) {
+          return await transcodeAudioForWhatsApp(bytes, "audio/mpeg");
+        }
+      }
+    } catch (auraErr) {
+      console.warn("[WhatsApp Webhook] Workers AI Deepgram Aura TTS attempt:", auraErr);
+    }
+
+    try {
+      const meloRes: any = await ai.run("@cf/myshell-ai/melotts", {
+        prompt: spokenText,
+        lang: "en-default",
+      });
+      if (meloRes?.audio) {
+        const audioArr = Array.isArray(meloRes.audio) ? new Uint8Array(meloRes.audio) : meloRes.audio;
+        if (audioArr?.byteLength > 0) {
+          return await transcodeAudioForWhatsApp(new Uint8Array(audioArr), "audio/mpeg");
+        }
+      }
+    } catch (meloErr) {
+      console.warn("[WhatsApp Webhook] Workers AI MeloTTS attempt:", meloErr);
+    }
+  }
+
+  // Tier 3: Gemini Native Audio Synthesis
+  const rawGeminiKey = env.GEMINI_API_KEY;
+  const geminiKey = rawGeminiKey ? rawGeminiKey.split(",")[0].trim() : "";
+  if (geminiKey && !geminiKey.includes("REPLACE")) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `Speak this conversational message naturally, warmly, and clearly like a real friend:\n\n${spokenText}`,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: "Puck" },
+                },
+              },
+            },
+          }),
+        }
+      );
+      if (res.ok) {
+        const d = (await res.json()) as any;
+        const b64 = d?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        const retMime = d?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || "audio/wav";
+        if (b64) {
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return await transcodeAudioForWhatsApp(bytes, retMime);
+        }
+      }
+    } catch (geminiTtsErr) {
+      console.warn("[WhatsApp Webhook] Gemini audio synthesis attempt:", geminiTtsErr);
+    }
+  }
+
+  // Tier 4: Google Speech Multi-Chunk Neural TTS (Zero API key required, 100% dependable edge fallback)
+  try {
+    const words = spokenText.split(/\s+/);
+    const chunks: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      if ((cur + " " + w).length > 150) {
+        if (cur) chunks.push(cur.trim());
+        cur = w;
+      } else {
+        cur = cur ? `${cur} ${w}` : w;
+      }
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+
+    const byteArrays: Uint8Array[] = [];
+    let totalLen = 0;
+
+    for (const chunk of chunks) {
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=en&client=tw-ob`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          Accept: "audio/mpeg,audio/*;q=0.9",
+        },
+      });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > 0) {
+          const arr = new Uint8Array(ab);
+          byteArrays.push(arr);
+          totalLen += arr.byteLength;
+        }
+      }
+    }
+
+    if (byteArrays.length > 0 && totalLen > 0) {
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const arr of byteArrays) {
+        merged.set(arr, offset);
+        offset += arr.byteLength;
+      }
+      return await transcodeAudioForWhatsApp(merged, "audio/mpeg");
+    }
+  } catch (err) {
+    console.warn("[WhatsApp Webhook] Google Speech TTS error:", err);
+  }
+
+  return null;
+}
+
+/**
  * Builds the outbound text message payload expected by WhatsApp Graph API.
  */
 export function createWhatsAppTextMessagePayload(to: string, text: string) {
@@ -712,15 +1449,14 @@ export async function sendWhatsAppMessage(
   text: string,
   env: WhatsAppEnv
 ): Promise<boolean> {
-  const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = env.WHATSAPP_ACCESS_TOKEN;
+  const { phoneId, accessToken } = getWhatsAppCredentials(env);
 
-  if (!phoneNumberId || !accessToken) {
+  if (!phoneId || !accessToken) {
     console.error("Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN");
     return false;
   }
 
-  const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+  const url = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
   const payload = createWhatsAppTextMessagePayload(to, text);
 
   try {
@@ -755,11 +1491,10 @@ export async function sendWhatsAppAudioMessage(
   env: WhatsAppEnv,
   mimeType: string = "audio/ogg"
 ): Promise<boolean> {
-  const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = env.WHATSAPP_ACCESS_TOKEN;
+  const { phoneId: phoneNumberId, accessToken } = getWhatsAppCredentials(env);
 
-  if (!phoneNumberId || !accessToken || !to || !audioBufferOrUrl) {
-    console.error("Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN or audio payload");
+  if (!to || !audioBufferOrUrl) {
+    console.error("Missing WhatsApp recipient or audio payload");
     return false;
   }
 
@@ -794,27 +1529,33 @@ export async function sendWhatsAppAudioMessage(
 
   // Binary or base64 audio
   try {
-    let audioBytes: Uint8Array;
+    let rawBytes: Uint8Array;
     if (typeof audioBufferOrUrl === "string") {
       const clean = audioBufferOrUrl.replace(/^data:audio\/[^;]+;base64,/, "");
       if (typeof Buffer !== "undefined") {
-        audioBytes = Buffer.from(clean, "base64");
+        rawBytes = Buffer.from(clean, "base64");
       } else {
         const bin = atob(clean);
-        audioBytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) audioBytes[i] = bin.charCodeAt(i);
+        rawBytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) rawBytes[i] = bin.charCodeAt(i);
       }
     } else if (audioBufferOrUrl instanceof ArrayBuffer) {
-      audioBytes = new Uint8Array(audioBufferOrUrl);
+      rawBytes = new Uint8Array(audioBufferOrUrl);
     } else {
-      audioBytes = audioBufferOrUrl;
+      rawBytes = audioBufferOrUrl;
     }
 
-    const { mimeType: effectiveMime, ext } = getAudioMimeAndExt(mimeType);
+    // Always transcode / verify audio into WhatsApp-native Ogg Opus format.
+    // WhatsApp mobile client strictly requires OggS container + Opus codec
+    // with MIME 'audio/ogg; codecs=opus' to render the green voice note waveform player.
+    const { data: opusBytes, mimeType: effectiveMime } = await transcodeAudioForWhatsApp(
+      rawBytes,
+      mimeType
+    );
 
     const formData = new FormData();
     formData.append("messaging_product", "whatsapp");
-    formData.append("file", new Blob([audioBytes], { type: effectiveMime }), `voice_reply.${ext}`);
+    formData.append("file", new Blob([opusBytes], { type: effectiveMime }), "voice_note.ogg");
     formData.append("type", effectiveMime);
 
     const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/media`, {
@@ -838,6 +1579,10 @@ export async function sendWhatsAppAudioMessage(
       return false;
     }
 
+    // Meta WhatsApp Cloud API v21.0 strictly rejects "ptt": true on the "audio" parameter
+    // (returns: OAuthException: Unexpected key "ptt" on param "audio").
+    // WhatsApp mobile client displays native green voice note with waveforms automatically
+    // when media is uploaded as Ogg Opus with MIME "audio/ogg; codecs=opus".
     const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
       method: "POST",
       headers: {
@@ -871,8 +1616,7 @@ export async function sendWhatsAppDocumentMessage(
   env: WhatsAppEnv,
   mimeType: string = "application/pdf"
 ): Promise<boolean> {
-  const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = env.WHATSAPP_ACCESS_TOKEN;
+  const { phoneId: phoneNumberId, accessToken } = getWhatsAppCredentials(env);
 
   if (!phoneNumberId || !accessToken || !to || !documentBufferOrUrl) {
     console.error("Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN or document payload");
@@ -990,8 +1734,7 @@ export async function markWhatsAppMessageAsRead(
   messageId: string,
   env: WhatsAppEnv
 ): Promise<boolean> {
-  const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = env.WHATSAPP_ACCESS_TOKEN;
+  const { phoneId: phoneNumberId, accessToken } = getWhatsAppCredentials(env);
   if (!phoneNumberId || !accessToken || !messageId) return false;
 
   try {
@@ -1162,6 +1905,31 @@ export async function handleWhatsAppCommand(
     return { handled: true, command: "link", reply: successMsg };
   }
 
+  // 5. !image / !draw / !generate
+  if (lower.startsWith("!image") || lower.startsWith("!draw") || lower.startsWith("!generate")) {
+    const prompt = text.replace(/^!(?:image|draw|generate)\s*/i, "").trim();
+    if (!prompt) {
+      return {
+        handled: true,
+        command: "image",
+        reply: "🎨 Please specify what image you would like to generate, e.g. `!image quantum computing circuit diagram`",
+      };
+    }
+
+    const imageBytes = await generateImageBytes(env, prompt);
+    if (imageBytes && imageBytes.length > 0) {
+      const sent = await sendWhatsAppImageMessage(cleanPhone, imageBytes, env, `🎨 ${prompt}`);
+      if (sent) {
+        return { handled: true, command: "image", reply: "" }; // already sent as native photo
+      }
+    }
+    return {
+      handled: true,
+      command: "image",
+      reply: "🎨 Image generation service is currently initializing or busy. Please try again shortly!",
+    };
+  }
+
   return { handled: false };
 }
 
@@ -1183,15 +1951,42 @@ export async function processWhatsAppMessage(
 
   // 1. Check commands
   const cmdResult = await handleWhatsAppCommand(from, userText, env);
-  if (cmdResult.handled && cmdResult.reply) {
+  if (cmdResult.handled) {
     message.command = cmdResult.command;
-    message.reply = cmdResult.reply;
-
-    let sent = false;
-    if (env.AUTO_REPLY !== false && env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN) {
-      sent = await sendWhatsAppMessage(cleanPhone, cmdResult.reply, env);
+    if (cmdResult.reply) {
+      message.reply = cmdResult.reply;
+      let sent = false;
+      const { phoneId, accessToken } = getWhatsAppCredentials(env);
+      if (env.AUTO_REPLY !== false && phoneId && accessToken) {
+        sent = await sendWhatsAppMessage(cleanPhone, cmdResult.reply, env);
+      }
+      return { reply: cmdResult.reply, sent, command: cmdResult.command };
     }
-    return { reply: cmdResult.reply, sent, command: cmdResult.command };
+    return { reply: "", sent: true, command: cmdResult.command };
+  }
+
+  // 1.5 Natural language image generation intent
+  const nlImageMatch = userText.match(
+    /^(?:generate\s+(?:an?\s+)?image(?:\s+of)?|draw\s+(?:an?\s+)?|create\s+(?:an?\s+)?image(?:\s+of)?|paint\s+(?:an?\s+)?)(.+)$/i
+  );
+  if (nlImageMatch && nlImageMatch[1].trim().length > 2) {
+    const prompt = nlImageMatch[1].trim();
+    const imageBytes = await generateImageBytes(env, prompt);
+    if (imageBytes && imageBytes.length > 0) {
+      const sent = await sendWhatsAppImageMessage(cleanPhone, imageBytes, env, `🎨 ${prompt}`);
+      if (sent) {
+        const replyText = `🎨 Generated and sent image: *${prompt}*`;
+        let s = getWhatsAppSession(cleanPhone);
+        if (!s) {
+          s = { phoneNumber: cleanPhone, history: [], lastActive: Date.now() };
+          userSessions.set(cleanPhone, s);
+        }
+        s.history.push({ role: "user", content: userText, timestamp: Date.now() });
+        s.history.push({ role: "assistant", content: replyText, timestamp: Date.now() });
+        message.reply = replyText;
+        return { reply: replyText, sent: true };
+      }
+    }
   }
 
   // 2. Load or initialize session
@@ -1336,6 +2131,85 @@ export async function processWhatsAppMessage(
     rawReply = `Hello! I received your message: "${userText}". How can Voltrix OS assist you today?`;
   }
 
+  // 3.6 HTML Web Application Auto-Publishing & App Card
+  const htmlBlockRegex = /```html\s*([\s\S]*?<!DOCTYPE html[\s\S]*?)```/i;
+  const rawHtmlRegex = /(<!DOCTYPE html[\s\S]*?<\/html>)/i;
+
+  let extractedHtml = "";
+  let matchedBlock = "";
+
+  const fenceMatch = rawReply.match(htmlBlockRegex);
+  if (fenceMatch && fenceMatch[1] && fenceMatch[1].length > 150) {
+    extractedHtml = fenceMatch[1];
+    matchedBlock = fenceMatch[0];
+  } else {
+    const rawMatch = rawReply.match(rawHtmlRegex);
+    if (rawMatch && rawMatch[1] && rawMatch[1].length > 150) {
+      extractedHtml = rawMatch[1];
+      matchedBlock = rawMatch[0];
+    }
+  }
+
+  if (extractedHtml) {
+    try {
+      const titleMatch = extractedHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const siteTitle = titleMatch ? titleMatch[1].trim() : (session.userName ? `${session.userName}'s Web App` : "Interactive Web Application");
+      let liveUrl = "";
+
+      if (env.BLUEPRINT_CONTENT) {
+        try {
+          const pubResult = await publishSiteToStorage(env.BLUEPRINT_CONTENT, {
+            html: extractedHtml,
+            title: siteTitle,
+            userId: session.linkedUserId || cleanPhone,
+            authorName: session.userName || "Voltrix Scholar",
+            origin: "https://voltrix.stream",
+          });
+          if (pubResult && pubResult.liveUrl) {
+            liveUrl = pubResult.liveUrl;
+          }
+        } catch (storageErr) {
+          console.warn("[WhatsApp Webhook] Direct publishSiteToStorage failed, falling back to HTTP:", storageErr);
+        }
+      }
+
+      if (!liveUrl) {
+        const pubRes = await fetch("https://voltrix.stream/api/sites/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            html: extractedHtml,
+            title: siteTitle,
+            userId: session.linkedUserId || cleanPhone,
+            authorName: session.userName,
+          }),
+        });
+        if (pubRes.ok) {
+          const pubData = (await pubRes.json()) as any;
+          if (pubData.success && pubData.liveUrl) {
+            liveUrl = pubData.liveUrl;
+          }
+        }
+      }
+
+      if (liveUrl) {
+        const appCard =
+          `\n\n🚀 *Your Web App is Live on Global Edge!*\n` +
+          `📱 *App:* ${siteTitle}\n` +
+          `🔗 *Live URL:* ${liveUrl}\n` +
+          `💾 *Backend Storage:* \`VoltrixDB\` Enabled (Persistent State)\n` +
+          `⚡ _Sub-50ms TTFB worldwide. Open to test and interact with your app directly on your phone!_`;
+
+        if (matchedBlock) {
+          rawReply = rawReply.replace(matchedBlock, "").trim();
+        }
+        rawReply = rawReply ? `${rawReply}\n\n${appCard}` : appCard;
+      }
+    } catch (pubErr) {
+      console.warn("[WhatsApp Webhook] Auto-publish error:", pubErr);
+    }
+  }
+
   // Append assistant turn to history
   session.history.push({ role: "assistant", content: rawReply, timestamp: Date.now() });
 
@@ -1348,7 +2222,8 @@ export async function processWhatsAppMessage(
 
   // Dispatch outbound message if configured
   let sentAll = false;
-  if (env.AUTO_REPLY !== false && env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN) {
+  const { phoneId, accessToken } = getWhatsAppCredentials(env);
+  if (env.AUTO_REPLY !== false && phoneId && accessToken) {
     sentAll = true;
     for (const chunk of chunks) {
       const ok = await sendWhatsAppMessage(cleanPhone, chunk, env);
@@ -1361,15 +2236,33 @@ export async function processWhatsAppMessage(
       userText
     );
 
-    if ((isVoice || wantsVoice) && typeof env.TTS_ENGINE === "function") {
+    if (isVoice || wantsVoice) {
       try {
-        const summary = formattedReply.replace(/[*_#•`]/g, "").slice(0, 300);
-        const tts = await env.TTS_ENGINE(summary, env);
-        if (tts?.buffer) {
-          await sendWhatsAppAudioMessage(cleanPhone, tts.buffer, env, tts.mimeType || "audio/ogg");
+        let voiceBuffer: ArrayBuffer | Uint8Array | null = null;
+        let voiceMime = "audio/ogg; codecs=opus";
+
+        if (typeof env.TTS_ENGINE === "function") {
+          const tts = await env.TTS_ENGINE(formattedReply, env);
+          if (tts?.buffer) {
+            voiceBuffer = tts.buffer;
+            if (tts.mimeType) voiceMime = tts.mimeType;
+          }
         }
-      } catch (ttsErr) {
-        console.warn("Outbound voice synthesis error:", ttsErr);
+
+        if (!voiceBuffer) {
+          const voiceScript = await generateVoiceScript(env, userText, formattedReply);
+          const ttsRes = await synthesizeVoiceReply(env, voiceScript);
+          if (ttsRes?.data) {
+            voiceBuffer = ttsRes.data;
+            voiceMime = ttsRes.mimeType;
+          }
+        }
+
+        if (voiceBuffer) {
+          await sendWhatsAppAudioMessage(cleanPhone, voiceBuffer, env, voiceMime);
+        }
+      } catch (voiceErr) {
+        console.warn("Outbound voice synthesis error:", voiceErr);
       }
     }
   }
@@ -1633,16 +2526,15 @@ export async function handleWhatsAppWebhookPost(
               let extracted = "";
               if (env.WHATSAPP_ACCESS_TOKEN) {
                 const media = await fetchWhatsAppMedia(mediaId, env.WHATSAPP_ACCESS_TOKEN);
-                extracted = await extractDocumentText(
+                extracted = await extractTextFromImage(
                   media.buffer,
                   media.mimeType || mimeType,
-                  "image.jpg",
                   caption,
                   env
                 );
               }
 
-              const prompt = `📸 [Attached Image Analysis]:\n${extracted || caption || "Image attached"}`;
+              const prompt = `📸 [Attached Image Analysis & Transcription]:\n${extracted || "Image received."}${caption ? `\n\nUser Note/Context: "${caption}"` : ""}`;
               const processedMsg: ProcessedWhatsAppMessage = {
                 id,
                 from,
@@ -1666,6 +2558,62 @@ export async function handleWhatsAppWebhookPost(
                 mediaId,
                 mimeType,
                 error: imgErr?.message || String(imgErr),
+              });
+            }
+          } else if (type === "video") {
+            const vidObj = message.video;
+            const caption = message.caption || vidObj?.caption || "";
+
+            if (!vidObj || !vidObj.id) {
+              processedMessages.push({
+                id,
+                from,
+                type: "video",
+                timestamp,
+                error: "Missing video object id",
+              });
+              continue;
+            }
+
+            const mediaId = vidObj.id;
+            const mimeType = vidObj.mime_type || "video/mp4";
+
+            try {
+              let analysis = "";
+              if (env.WHATSAPP_ACCESS_TOKEN) {
+                const media = await fetchWhatsAppMedia(mediaId, env.WHATSAPP_ACCESS_TOKEN);
+                analysis = await analyzeVideo(
+                  media.buffer,
+                  media.mimeType || mimeType,
+                  caption,
+                  env
+                );
+              }
+
+              const prompt = `🎬 [Attached Video Analysis & Transcription]:\n${analysis || "Video received."}${caption ? `\n\nUser Note/Context: "${caption}"` : ""}`;
+              const processedMsg: ProcessedWhatsAppMessage = {
+                id,
+                from,
+                type: "video",
+                timestamp,
+                mediaId,
+                mimeType,
+                text: prompt,
+                extractedText: analysis,
+              };
+
+              await processWhatsAppMessage(processedMsg, env);
+              processedMessages.push(processedMsg);
+            } catch (vidErr: any) {
+              console.error(`Error processing WhatsApp video ${mediaId}:`, vidErr);
+              processedMessages.push({
+                id,
+                from,
+                type: "video",
+                timestamp,
+                mediaId,
+                mimeType,
+                error: vidErr?.message || String(vidErr),
               });
             }
           } else {

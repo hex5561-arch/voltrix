@@ -9,16 +9,6 @@ import {
   EyeSlash,
   Sparkle,
   ShieldCheck,
-  GraduationCap,
-  Television,
-  Brain,
-  BookOpen,
-  YoutubeLogo,
-  CheckCircle,
-  ArrowSquareOut,
-  LockKey,
-  X,
-  Play,
 } from '@phosphor-icons/react'
 import { Button, Banner, Loader } from '@cloudflare/kumo'
 import { hashPassword } from './passwordHash'
@@ -132,7 +122,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess, initialTab = 'signi
   const [error, setError] = useState<string | null>(null)
   const [successNotice, setSuccessNotice] = useState<string | null>(null)
 
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(() => {
+  const [showAuthModal] = useState<boolean>(() => {
     if (initialTab === 'signup') return true
     if (typeof window !== 'undefined') {
       const search = window.location.search || ''

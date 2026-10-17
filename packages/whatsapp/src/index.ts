@@ -19,10 +19,13 @@ export { WhatsAppSession } from "./session";
 import type { SessionData, AcademicProfile } from "./session";
 import { resolveUniversityLogoUrl } from "./institutional.js";
 import {
+  extractTextFromImage,
   extractTextFromImageWithGemini,
   extractDocumentContent,
+  analyzeVideo,
   analyzeVideoWithGemini,
 } from "./doc-extract.js";
+import { transcodeAudioForWhatsApp } from "./voice-transcode.js";
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,7 @@ export interface Env {
   GEMINI_API_KEY?: string;
   GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   AI?: any;
   WORKERS_AI?: any;
 }
@@ -167,72 +171,43 @@ export async function sendWhatsAppAudioMessage(
   env: Env,
   to: string,
   audioDataOrBase64: ArrayBuffer | Uint8Array | string,
-  mimeType: string = "audio/mpeg",
-  ptt: boolean = true
+  mimeType: string = "audio/ogg",
+  _ptt: boolean = true
 ): Promise<boolean> {
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
   const accessToken =
-    env.WHATSAPP_ACCESS_TOKEN ||
-    "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
+    env.WHATSAPP_ACCESS_TOKEN && !env.WHATSAPP_ACCESS_TOKEN.includes("REPLACE")
+      ? env.WHATSAPP_ACCESS_TOKEN
+      : "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
 
   try {
     const cleanTo = cleanPhoneNumber(to);
-    let audioBytes: Uint8Array;
+    let rawBytes: Uint8Array;
     if (typeof audioDataOrBase64 === "string") {
       const clean = audioDataOrBase64.replace(/^data:audio\/[^;]+;base64,/, "");
       const bin = atob(clean);
-      audioBytes = new Uint8Array(bin.length);
+      rawBytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) {
-        audioBytes[i] = bin.charCodeAt(i);
+        rawBytes[i] = bin.charCodeAt(i);
       }
     } else if (audioDataOrBase64 instanceof ArrayBuffer) {
-      audioBytes = new Uint8Array(audioDataOrBase64);
+      rawBytes = new Uint8Array(audioDataOrBase64);
     } else {
-      audioBytes = audioDataOrBase64;
+      rawBytes = audioDataOrBase64;
     }
 
-    const lowerMime = (mimeType || "").toLowerCase();
-    const isOpusMime = lowerMime.includes("ogg") && lowerMime.includes("opus");
-    const isOpusOnly = lowerMime.includes("opus") && !lowerMime.includes("mp3") && !lowerMime.includes("wav");
-
-    // Check Ogg container magic header 'OggS'
-    const hasOggMagic =
-      audioBytes.length >= 4 &&
-      audioBytes[0] === 0x4f &&
-      audioBytes[1] === 0x67 &&
-      audioBytes[2] === 0x67 &&
-      audioBytes[3] === 0x53;
-
-    // Determine strict effective MIME type
-    let effectiveMime = "audio/mpeg";
-    if (isOpusMime || (isOpusOnly && hasOggMagic)) {
-      effectiveMime = "audio/ogg; codecs=opus";
-    } else if (lowerMime.includes("ogg")) {
-      effectiveMime = hasOggMagic ? "audio/ogg; codecs=opus" : "audio/ogg";
-    } else if (lowerMime.includes("mp4") || lowerMime.includes("m4a")) {
-      effectiveMime = "audio/mp4";
-    } else if (lowerMime.includes("wav")) {
-      effectiveMime = "audio/wav";
-    } else {
-      effectiveMime = "audio/mpeg";
-    }
-
-    // Meta WhatsApp Cloud API strictly drops ptt:true unless audio is audio/ogg; codecs=opus
-    const isOpusOgg = effectiveMime.includes("ogg") && effectiveMime.includes("opus");
-    const sendPtt = Boolean(ptt && isOpusOgg);
-
-    const ext = isOpusOgg
-      ? "ogg"
-      : effectiveMime.includes("mp4")
-      ? "mp4"
-      : effectiveMime.includes("wav")
-      ? "wav"
-      : "mp3";
+    // Always transcode / verify audio into WhatsApp-native Ogg Opus format.
+    // WhatsApp mobile client strictly requires OggS container + Opus codec
+    // with MIME 'audio/ogg; codecs=opus' to render the green voice note waveform player.
+    const { data: opusBytes, mimeType: effectiveMime } = await transcodeAudioForWhatsApp(
+      rawBytes,
+      mimeType
+    );
 
     const formData = new FormData();
     formData.append("messaging_product", "whatsapp");
     formData.append("type", effectiveMime);
-    formData.append("file", new Blob([audioBytes], { type: effectiveMime }), `voice_note.${ext}`);
+    formData.append("file", new Blob([opusBytes], { type: effectiveMime }), "voice_note.ogg");
 
     const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/media`, {
       method: "POST",
@@ -255,11 +230,10 @@ export async function sendWhatsAppAudioMessage(
       return false;
     }
 
-    const audioPayload: Record<string, unknown> = { id: mediaId };
-    if (sendPtt) {
-      audioPayload.ptt = true;
-    }
-
+    // Meta WhatsApp Cloud API v21.0 strictly rejects "ptt": true on the "audio" parameter
+    // (returns: OAuthException: Unexpected key "ptt" on param "audio").
+    // WhatsApp mobile client displays native green voice note with waveforms automatically
+    // when media is uploaded as Ogg Opus with MIME "audio/ogg; codecs=opus".
     const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: "POST",
       headers: {
@@ -271,7 +245,7 @@ export async function sendWhatsAppAudioMessage(
         recipient_type: "individual",
         to: cleanTo,
         type: "audio",
-        audio: audioPayload,
+        audio: { id: mediaId },
       }),
     });
 
@@ -770,7 +744,9 @@ Guidelines:
     console.warn("[WhatsApp] Gemini voice script error:", e);
   }
 
-  return cleanTextForSpeech(detailedAnswer).slice(0, 250);
+  // Human conversational fallback template
+  const coreClean = cleanTextForSpeech(detailedAnswer).slice(0, 150).trim();
+  return `Hey! So I looked through this for you. Basically, ${coreClean}. I've put the full step-by-step breakdown and all the details right below in the chat!`;
 }
 
 export async function synthesizeSpeech(
@@ -845,7 +821,7 @@ export async function synthesizeSpeech(
           bytes = new Uint8Array(0);
         }
         if (bytes && bytes.length > 0) {
-          return { data: bytes, mimeType: "audio/mpeg" };
+          return await transcodeAudioForWhatsApp(bytes, "audio/mpeg");
         }
       }
     } catch (auraErr) {
@@ -861,7 +837,7 @@ export async function synthesizeSpeech(
       if (meloRes?.audio) {
         const audioArr = Array.isArray(meloRes.audio) ? new Uint8Array(meloRes.audio) : meloRes.audio;
         if (audioArr?.byteLength > 0) {
-          return { data: new Uint8Array(audioArr), mimeType: "audio/mpeg" };
+          return await transcodeAudioForWhatsApp(new Uint8Array(audioArr), "audio/mpeg");
         }
       }
     } catch (meloErr) {
@@ -870,11 +846,12 @@ export async function synthesizeSpeech(
   }
 
   // Tier 3: Gemini Native Audio Synthesis (responseModalities: ["AUDIO"])
-  const geminiKey = env.GEMINI_API_KEY;
+  const rawGeminiKey = env.GEMINI_API_KEY;
+  const geminiKey = rawGeminiKey ? rawGeminiKey.split(",")[0].trim() : "";
   if (geminiKey) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -907,7 +884,7 @@ export async function synthesizeSpeech(
           const bin = atob(b64);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          return { data: bytes, mimeType: retMime };
+          return await transcodeAudioForWhatsApp(bytes, retMime);
         }
       }
     } catch (geminiTtsErr) {
@@ -958,7 +935,7 @@ export async function synthesizeSpeech(
         merged.set(arr, offset);
         offset += arr.byteLength;
       }
-      return { data: merged, mimeType: "audio/mpeg" };
+      return await transcodeAudioForWhatsApp(merged, "audio/mpeg");
     }
   } catch (err) {
     console.warn("[WhatsApp] Google Speech TTS error:", err);
@@ -1361,12 +1338,12 @@ export async function processMessage(message: WaMessage, contact: WaContact | un
       const img = message.image as { id?: string; caption?: string; mime_type?: string } | undefined;
       if (img?.id) {
         const media = await downloadMedia(env, img.id);
-        if (media && env.GEMINI_API_KEY) {
-          const imgText = await extractTextFromImageWithGemini(
-            env.GEMINI_API_KEY,
+        if (media) {
+          const imgText = await extractTextFromImage(
             media.data,
             media.mimeType || img.mime_type || "image/jpeg",
-            img.caption || ""
+            img.caption || "",
+            env
           );
           if (imgText) {
             userText = `📸 [Attached Image Analysis & Transcription]:\n${imgText}\n\n${
@@ -1391,7 +1368,7 @@ export async function processMessage(message: WaMessage, contact: WaContact | un
             doc.mime_type || media.mimeType,
             doc.filename || "",
             doc.caption || "",
-            env.GEMINI_API_KEY
+            env
           );
           if (docText) {
             userText = `📄 [Attached Document: "${doc.filename || "document"}"]:\n${docText}\n\n${
@@ -1410,12 +1387,12 @@ export async function processMessage(message: WaMessage, contact: WaContact | un
       const vid = message.video as { id?: string; caption?: string; mime_type?: string } | undefined;
       if (vid?.id) {
         const media = await downloadMedia(env, vid.id);
-        if (media && env.GEMINI_API_KEY) {
-          const videoAnalysis = await analyzeVideoWithGemini(
-            env.GEMINI_API_KEY,
+        if (media) {
+          const videoAnalysis = await analyzeVideo(
             media.data,
             media.mimeType || vid.mime_type || "video/mp4",
-            vid.caption || ""
+            vid.caption || "",
+            env
           );
           if (videoAnalysis) {
             userText = `🎬 [Video Transcription & Analysis]:\n${videoAnalysis}\n\n${

@@ -36,6 +36,7 @@ export interface RunPythonParams {
   bucket?: R2Bucket | null;
   mode?: "auto" | "http" | "direct" | "queue";
   userId?: string;
+  pollForCompletion?: boolean;
 }
 
 export interface PythonJob {
@@ -373,15 +374,71 @@ export async function runPythonHttp(
 // Master Unified runPython Dispatcher
 // ─────────────────────────────────────────────────────────────────────────────
 
+export function isWorkerdEnvironment(): boolean {
+  return (
+    typeof (globalThis as any).WebSocketPair !== "undefined" ||
+    typeof (globalThis as any).caches?.default !== "undefined" ||
+    (typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers")
+  );
+}
+
+export function isLocalhostOrPrivateIp(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === "127.0.0.1" ||
+      host === "localhost" ||
+      host === "0.0.0.0" ||
+      host === "::1" ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      (host.startsWith("172.") && /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function pollPythonJobUntilComplete(
+  bucket: R2Bucket,
+  jobId: string,
+  timeoutMs = 10000,
+  pollIntervalMs = 250
+): Promise<PythonRunResult | null> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const job = await getPythonJob(bucket, jobId);
+    if (job?.status === "ready" && job.result) {
+      return job.result;
+    }
+    if (job?.status === "failed") {
+      return (
+        job.result || {
+          success: false,
+          stdout: "",
+          stderr: job.error || "Python execution failed in runner daemon",
+          result: null,
+          latex: null,
+          plots: [],
+          executionTimeMs: Date.now() - start,
+        }
+      );
+    }
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+  return null;
+}
+
 export async function runPython(params: RunPythonParams): Promise<PythonRunResult> {
-  const { code, timeoutMs = 10000, runnerUrl, bucket, mode = "auto", userId } = params;
+  const { code, timeoutMs = 10000, runnerUrl, bucket, mode = "auto", userId, pollForCompletion } = params;
 
   if (mode === "direct") {
     return runPythonDirect(code, timeoutMs);
   }
 
   if (mode === "http") {
-    const targetUrl = runnerUrl || process.env.PY_RUNNER_URL || "http://127.0.0.1:8788";
+    const targetUrl = runnerUrl || (typeof process !== "undefined" ? process.env?.PY_RUNNER_URL : undefined) || "http://127.0.0.1:8788";
     return runPythonHttp(targetUrl, code, timeoutMs);
   }
 
@@ -401,23 +458,25 @@ export async function runPython(params: RunPythonParams): Promise<PythonRunResul
   }
 
   // mode === "auto"
-  // 1. If explicit runnerUrl or PY_RUNNER_URL is given, try HTTP first
-  const preferredUrl = runnerUrl || (typeof process !== "undefined" ? process.env?.PY_RUNNER_URL : undefined);
-  if (preferredUrl) {
-    try {
-      const res = await runPythonHttp(preferredUrl, code, timeoutMs);
-      if (res.success || !res.stderr.includes("Failed to reach Python runner service")) {
-        return res;
+  const isWorkerd = isWorkerdEnvironment();
+  const configuredUrl = runnerUrl || (typeof process !== "undefined" ? process.env?.PY_RUNNER_URL : undefined);
+
+  // 1. If explicit runnerUrl or PY_RUNNER_URL is given:
+  if (configuredUrl) {
+    // In Cloudflare Workers edge, NEVER call 127.0.0.1 or private IP without a tunnel (causes Error 1003 Direct IP access denied)
+    if (isWorkerd && isLocalhostOrPrivateIp(configuredUrl)) {
+      // Route through R2 queue instead of failing with Cloudflare Error 1003
+    } else {
+      try {
+        const res = await runPythonHttp(configuredUrl, code, timeoutMs);
+        if (res.success || (!res.stderr.includes("Failed to reach Python runner service") && !res.stderr.includes("Runner HTTP error (403)"))) {
+          return res;
+        }
+      } catch {
+        // Fall through
       }
-    } catch {
-      // Fall through to next option
     }
   }
-
-  const isWorkerd =
-    typeof (globalThis as any).WebSocketPair !== "undefined" ||
-    typeof (globalThis as any).caches?.default !== "undefined" ||
-    (typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers");
 
   // 2. If in native Node.js host environment (not workerd), try direct execution
   if (!isWorkerd && typeof process !== "undefined" && process.versions?.node) {
@@ -431,19 +490,29 @@ export async function runPython(params: RunPythonParams): Promise<PythonRunResul
     }
   }
 
-  // 3. Fallback to default local runner if reachable
-  try {
-    const localRes = await runPythonHttp("http://127.0.0.1:8788", code, timeoutMs);
-    if (localRes.success || !localRes.stderr.includes("Failed to reach Python runner service")) {
-      return localRes;
+  // 3. If NOT workerd, try local HTTP runner
+  if (!isWorkerd) {
+    try {
+      const localRes = await runPythonHttp("http://127.0.0.1:8788", code, timeoutMs);
+      if (localRes.success || (!localRes.stderr.includes("Failed to reach Python runner service") && !localRes.stderr.includes("Runner HTTP error (403)"))) {
+        return localRes;
+      }
+    } catch {
+      // Continue
     }
-  } catch {
-    // Continue
   }
 
-  // 4. Edge worker fallback: enqueue into R2
+  // 4. Edge worker fallback: enqueue into R2 and poll for completion
   if (bucket) {
     const job = await createPythonJob(bucket, { code, timeoutMs, userId });
+
+    if (pollForCompletion) {
+      const completed = await pollPythonJobUntilComplete(bucket, job.id, timeoutMs, 250);
+      if (completed) {
+        return completed;
+      }
+    }
+
     return {
       success: true,
       stdout: `Job queued in R2 for background daemon execution (Job ID: ${job.id})`,

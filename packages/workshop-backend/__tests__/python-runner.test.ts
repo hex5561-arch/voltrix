@@ -250,5 +250,66 @@ describe("Voltrix Scientific Python Execution Engine", () => {
       expect(res.stdout).toContain("Job queued in R2");
       expect(res.result).toMatch(/^queued:py-/);
     });
+
+    it("avoids calling localhost or direct IP when inside workerd and routes through R2 queue", async () => {
+      const mockFetch = vi.fn();
+      globalThis.fetch = mockFetch;
+      const bucket = createMockR2Bucket();
+
+      const res = await runPython({
+        code: "print('direct IP safety')",
+        runnerUrl: "http://127.0.0.1:8788",
+        bucket,
+        mode: "auto",
+      });
+
+      // In workerd, it must not call fetch on 127.0.0.1 (Error 1003 Direct IP access denied)
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(res.success).toBe(true);
+      expect(res.result).toMatch(/^queued:py-/);
+    });
+
+    it("polls R2 for completion when pollForCompletion is true and returns completed result", async () => {
+      const bucket = createMockR2Bucket();
+
+      // Simulate a background daemon completing the job after 50ms
+      setTimeout(async () => {
+        const pending = await pollPendingPythonJobs(bucket);
+        if (pending.length > 0) {
+          const job = pending[0];
+          await updatePythonJob(bucket, job.id, {
+            status: "ready",
+            result: {
+              success: true,
+              stdout: "Executed via simulated daemon\n",
+              stderr: "",
+              result: "[1, 4, 9, 16]",
+              latex: "\\{1, 4, 9, 16\\}",
+              plots: [
+                {
+                  filename: "plot.png",
+                  url: "https://voltrix.stream/api/hf-videos/plot.png",
+                },
+              ],
+              executionTimeMs: 42,
+            },
+          });
+        }
+      }, 50);
+
+      const res = await runPython({
+        code: "[x**2 for x in range(1, 5)]",
+        bucket,
+        mode: "auto",
+        pollForCompletion: true,
+        timeoutMs: 3000,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.stdout).toContain("Executed via simulated daemon");
+      expect(res.result).toBe("[1, 4, 9, 16]");
+      expect(res.plots.length).toBe(1);
+      expect(res.plots[0].url).toBe("https://voltrix.stream/api/hf-videos/plot.png");
+    });
   });
 });

@@ -152,6 +152,7 @@ import { TimetableVelocityWidget } from "./components/academic/TimetableVelocity
 import { CourseworkPortfolioModal } from "./components/academic/CourseworkPortfolioModal";
 import type { PastPaperQuestion, PastPaper } from "./data/pastPapersData";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
+import { InChatQuizCard } from "./components/chat/InChatQuizCard";
 const HyperFramesChatCard = lazy(() =>
   import("./components/video/HyperFramesChatCard").then(m => ({ default: m.HyperFramesChatCard }))
 );
@@ -1266,6 +1267,23 @@ function getMarkdownComponents(
               <YouTubeChatCard rawUrl={String(children).trim()} />
             </div>
           );
+        }
+      }
+      if (lang === "quiz" || lang === "assessment" || lang === "test" || lang === "json") {
+        try {
+          const raw = String(children).trim();
+          if (raw.startsWith("{") && (lang !== "json" || raw.includes('"questions"'))) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+              return (
+                <div className="my-2 not-prose font-sans">
+                  <InChatQuizCard data={parsed} />
+                </div>
+              );
+            }
+          }
+        } catch {
+          // Fall through to normal code display on invalid JSON
         }
       }
       return (
