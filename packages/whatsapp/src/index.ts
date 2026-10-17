@@ -88,6 +88,7 @@ function splitChunks(text: string, maxLen = 3800): string[] {
 export async function sendTextMessage(env: Env, to: string, text: string): Promise<void> {
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
   const accessToken = env.WHATSAPP_ACCESS_TOKEN || "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
+  const cleanTo = cleanPhoneNumber(to);
   for (const chunk of splitChunks(text)) {
     try {
       const res = await fetch(
@@ -101,7 +102,7 @@ export async function sendTextMessage(env: Env, to: string, text: string): Promi
           body: JSON.stringify({
             messaging_product: "whatsapp",
             recipient_type: "individual",
-            to,
+            to: cleanTo,
             type: "text",
             text: { body: chunk, preview_url: false },
           }),
@@ -202,21 +203,13 @@ export async function sendWhatsAppAudioMessage(
     let filename = "voice_note.mp3";
 
     if (isOpus) {
-      uploadMime = "audio/ogg";
+      uploadMime = "audio/ogg; codecs=opus";
       filename = "voice_note.ogg";
       uploadBytes = rawBytes;
     } else {
-      // Safe transcoding attempt: only use if it succeeded and produced valid Ogg Opus
-      try {
-        const transcoded = await transcodeAudioForWhatsApp(rawBytes, mimeType);
-        if (transcoded && isOggOpus(transcoded.data)) {
-          uploadBytes = transcoded.data;
-          uploadMime = "audio/ogg";
-          filename = "voice_note.ogg";
-        }
-      } catch (e) {
-        console.warn("[WhatsApp] Transcode to opus skipped, using direct audio format:", e);
-      }
+      uploadMime = "audio/mpeg";
+      filename = "voice_note.mp3";
+      uploadBytes = rawBytes;
     }
 
     const formData = new FormData();
@@ -534,10 +527,11 @@ async function callGemini(
     { role: "user", parts: [{ text: userText }] },
   ];
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(4000),
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents,
@@ -566,10 +560,11 @@ export async function transcribeAudio(
     try {
       const base64Data = arrayBufferToBase64(audioData);
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(4000),
           body: JSON.stringify({
             contents: [
               {
@@ -916,16 +911,67 @@ export async function synthesizeSpeech(
     }
   }
 
-  // Tier 3: Gemini Native Audio Synthesis (responseModalities: ["AUDIO"])
+  // Tier 3: Google Speech Multi-Chunk Neural TTS (Zero API key required, 100% dependable edge fallback)
+  try {
+    const words = spokenText.split(/\s+/);
+    const chunks: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      if ((cur + " " + w).length > 150) {
+        if (cur) chunks.push(cur.trim());
+        cur = w;
+      } else {
+        cur = cur ? `${cur} ${w}` : w;
+      }
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+
+    const byteArrays: Uint8Array[] = [];
+    let totalLen = 0;
+
+    for (const chunk of chunks) {
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=en&client=tw-ob`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          Accept: "audio/mpeg,audio/*;q=0.9",
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > 0) {
+          const arr = new Uint8Array(ab);
+          byteArrays.push(arr);
+          totalLen += arr.byteLength;
+        }
+      }
+    }
+
+    if (byteArrays.length > 0 && totalLen > 0) {
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const arr of byteArrays) {
+        merged.set(arr, offset);
+        offset += arr.byteLength;
+      }
+      return { data: merged, mimeType: "audio/mpeg" };
+    }
+  } catch (err) {
+    console.warn("[WhatsApp] Google Speech TTS error:", err);
+  }
+
+  // Tier 4: Gemini Native Audio Synthesis (responseModalities: ["AUDIO"])
   const rawGeminiKey = env.GEMINI_API_KEY;
   const geminiKey = rawGeminiKey ? rawGeminiKey.split(",")[0].trim() : "";
   if (geminiKey) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(3000),
           body: JSON.stringify({
             contents: [
               {
@@ -961,55 +1007,6 @@ export async function synthesizeSpeech(
     } catch (geminiTtsErr) {
       console.warn("[WhatsApp] Gemini audio synthesis attempt:", geminiTtsErr);
     }
-  }
-
-  // Tier 4: Google Speech Multi-Chunk Neural TTS (Zero API key required, 100% dependable edge fallback)
-  try {
-    const words = spokenText.split(/\s+/);
-    const chunks: string[] = [];
-    let cur = "";
-    for (const w of words) {
-      if ((cur + " " + w).length > 150) {
-        if (cur) chunks.push(cur.trim());
-        cur = w;
-      } else {
-        cur = cur ? `${cur} ${w}` : w;
-      }
-    }
-    if (cur.trim()) chunks.push(cur.trim());
-
-    const byteArrays: Uint8Array[] = [];
-    let totalLen = 0;
-
-    for (const chunk of chunks) {
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=en&client=tw-ob`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-          Accept: "audio/mpeg,audio/*;q=0.9",
-        },
-      });
-      if (res.ok) {
-        const ab = await res.arrayBuffer();
-        if (ab.byteLength > 0) {
-          const arr = new Uint8Array(ab);
-          byteArrays.push(arr);
-          totalLen += arr.byteLength;
-        }
-      }
-    }
-
-    if (byteArrays.length > 0 && totalLen > 0) {
-      const merged = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const arr of byteArrays) {
-        merged.set(arr, offset);
-        offset += arr.byteLength;
-      }
-      return { data: merged, mimeType: "audio/mpeg" };
-    }
-  } catch (err) {
-    console.warn("[WhatsApp] Google Speech TTS error:", err);
   }
 
   return null;
@@ -1710,8 +1707,8 @@ export default {
     const url  = new URL(req.url);
     const path = url.pathname;
 
-    // GET /api/whatsapp/webhook — Meta challenge
-    if (req.method === "GET" && path === "/api/whatsapp/webhook") {
+    // GET /api/whatsapp/webhook — Meta challenge (supports both /api/whatsapp/webhook and /api/webhooks/whatsapp)
+    if (req.method === "GET" && (path === "/api/whatsapp/webhook" || path === "/api/webhooks/whatsapp")) {
       const mode      = url.searchParams.get("hub.mode");
       const token     = url.searchParams.get("hub.verify_token");
       const challenge = url.searchParams.get("hub.challenge");
@@ -1722,7 +1719,7 @@ export default {
     }
 
     // POST /api/whatsapp/webhook — Inbound messages
-    if (req.method === "POST" && path === "/api/whatsapp/webhook") {
+    if (req.method === "POST" && (path === "/api/whatsapp/webhook" || path === "/api/webhooks/whatsapp")) {
       const body = await req.json() as Record<string, unknown>;
       ctx.waitUntil((async () => {
         try {
@@ -1753,31 +1750,45 @@ export default {
         phoneNumberId: phoneId ? `${phoneId.slice(0, 4)}...${phoneId.slice(-4)}` : null,
         verifyTokenSet: !!env.VERIFY_TOKEN,
         hasDurableObjects: !!env.WhatsAppSession,
-        aiBackend: "TheHive DeepSeek v4.1 Flash → Gemini 3.8 Flash",
+        aiBackend: "TheHive DeepSeek v4.1 Flash → Workers AI Llama 3.3 70B",
         multimodalCapabilities: {
-          imageOcr: "Gemini 3.8 Flash Vision (verbatim questions, formulas, diagrams, handwriting)",
-          videoTranscriptionAndAnalysis: "Gemini 3.8 Flash Multimodal (speech verbatim + visual scenes, actions, diagrams)",
+          imageOcr: "Gemini 2.5 Flash Vision (verbatim questions, formulas, diagrams, handwriting)",
+          videoTranscriptionAndAnalysis: "Gemini 2.5 Flash Multimodal (speech verbatim + visual scenes, actions, diagrams)",
           imageGeneration: "Workers AI @cf/black-forest-labs/flux-1-schnell & SDXL",
           documentReading: "Edge PDF Stream Parser + Gemini Multimodal PDF + DOCX XML + Text/Code UTF-8",
           appHosting: "Auto-publish to Global Edge (https://voltrix.stream/s/<slug>) with built-in VoltrixDB state persistence & interactive App Cards",
         },
         voiceCapabilities: {
-          transcription: "Gemini 3.8 Flash Multimodal (Primary) → Workers AI Whisper → Groq Whisper Large V3 Turbo",
+          transcription: "Gemini 2.5 Flash Multimodal (Primary) → Workers AI Whisper → Groq Whisper Large V3 Turbo",
           voiceReplies: "Conversational Scripting (Human Cadence) → OpenAI TTS (Opus PTT) → Workers AI Deepgram Aura / MeloTTS (Audio) → Google Speech Neural (Audio)",
           nativePttVoiceNote: true,
           pttGating: "Strict Ogg Opus only; MP3/WAV/MP4 dispatched as standard audio to prevent Meta drops",
           typingIndicator: true,
         },
-        version: "1.4.0",
+        version: "1.4.1",
       });
     }
 
     // POST /api/whatsapp/test
     if (req.method === "POST" && path === "/api/whatsapp/test") {
-      const { to, message } = await req.json() as { to?: string; message?: string };
-      if (!to) return Response.json({ error: "to is required" }, { status: 400 });
-      await sendTextMessage(env, to, message ?? "⚡ Test from Volt — Voltrix WhatsApp is live!");
-      return Response.json({ ok: true });
+      try {
+        const { to, message, type } = await req.json() as { to?: string; message?: string; type?: string };
+        if (!to) return Response.json({ error: "to is required" }, { status: 400 });
+        if (type === "voice" || type === "audio") {
+          const script = message ?? "Hey! This is a test voice note from Voltrix OS. Your WhatsApp integration is running perfectly!";
+          const speech = await synthesizeSpeech(env, script);
+          if (speech && speech.data.byteLength > 0) {
+            const ok = await sendWhatsAppAudioMessage(env, to, speech.data, speech.mimeType, true);
+            return Response.json({ ok, audioLength: speech.data.byteLength, mimeType: speech.mimeType });
+          }
+          return Response.json({ ok: false, error: "Synthesis failed" }, { status: 500 });
+        }
+        await sendTextMessage(env, to, message ?? "⚡ Test from Volt — Voltrix WhatsApp is live!");
+        return Response.json({ ok: true });
+      } catch (err: any) {
+        console.error("[WhatsApp] /api/whatsapp/test error:", err);
+        return Response.json({ ok: false, error: err?.message || String(err) }, { status: 500 });
+      }
     }
 
     return new Response("Not found", { status: 404 });
