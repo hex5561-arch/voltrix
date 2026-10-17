@@ -1,4 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import {
   CaretLeft,
   CaretRight,
@@ -10,6 +14,7 @@ import {
   SquaresFour,
   PaperPlaneTilt,
 } from '@phosphor-icons/react';
+import { normalizeLatexMath } from '../../utils/latexNormalizer';
 
 export interface QuizQuestion {
   question: string;
@@ -34,6 +39,23 @@ export interface InChatQuizCardProps {
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+const MathContent: React.FC<{ text: string; className?: string }> = ({ text, className = '' }) => {
+  return (
+    <span className={`inline-block align-middle max-w-full overflow-x-auto ${className}`}>
+      <ReactMarkdown
+        skipHtml={true}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          p: ({ children }) => <span>{children}</span>,
+        }}
+      >
+        {normalizeLatexMath(text)}
+      </ReactMarkdown>
+    </span>
+  );
+};
 
 export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
   data,
@@ -149,7 +171,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
               title={mode === 'card' ? 'Show all questions at once' : 'Step-by-step card view'}
             >
               {mode === 'card' ? <ListBullets size={15} /> : <SquaresFour size={15} />}
-              <span>{mode === 'card' ? 'All Questions' : 'Step-by-Step'}</span>
+              <span>{mode === 'card' ? `All ${total} Questions` : 'Step-by-Step'}</span>
             </button>
           </div>
 
@@ -164,6 +186,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
                     setShowHint(false);
                   }}
                   className="p-0.5 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Previous Question"
                 >
                   <CaretLeft size={14} />
                 </button>
@@ -178,6 +201,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
                     setShowHint(false);
                   }}
                   className="p-0.5 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Next Question"
                 >
                   <CaretRight size={14} />
                 </button>
@@ -231,19 +255,55 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
         {/* ── MODE 1: STEP-BY-STEP SINGLE QUESTION CARD ── */}
         {mode === 'card' && (
           <div className="space-y-4">
+            {/* Direct Jump Question Navigation Pills (N questions on demand) */}
+            {total > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 pb-3 border-b border-zinc-800/60">
+                {questions.map((_, idx) => {
+                  const isCurrent = idx === currentIndex;
+                  const isAnswered = selectedAnswers[idx] !== undefined;
+
+                  let pillCls =
+                    'w-7 h-7 rounded-lg text-xs font-mono font-medium flex items-center justify-center transition-all cursor-pointer';
+                  if (isCurrent) {
+                    pillCls += ' bg-white text-zinc-950 font-bold shadow-md ring-2 ring-white/30';
+                  } else if (isAnswered) {
+                    pillCls += ' bg-zinc-800 text-zinc-200 border border-zinc-600 hover:bg-zinc-700';
+                  } else {
+                    pillCls +=
+                      ' bg-zinc-900/60 text-zinc-500 border border-zinc-800 hover:text-zinc-300 hover:bg-zinc-800/50';
+                  }
+
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setCurrentIndex(idx);
+                        setShowHint(false);
+                      }}
+                      className={pillCls}
+                      title={`Jump to Question ${idx + 1}${isAnswered ? ' (Answered)' : ''}`}
+                    >
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="space-y-1">
-              <p className="text-[15px] font-medium leading-relaxed text-zinc-100">
-                {currentQ.question}
-              </p>
+              <div className="text-[15px] font-medium leading-relaxed text-zinc-100">
+                <MathContent text={currentQ.question} />
+              </div>
               {showHint && currentQ.hint && (
                 <div className="mt-2 flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-300">
                   <Lightbulb size={16} className="flex-shrink-0 mt-0.5 text-amber-400" />
-                  <span>{currentQ.hint}</span>
+                  <MathContent text={currentQ.hint} />
                 </div>
               )}
             </div>
 
-            {/* Options List — Neutral Styling, NO red/green */}
+            {/* Options List — Neutral Styling with KaTeX typesetting */}
             <div className="space-y-2 pt-1">
               {currentQ.options.map((option, optIdx) => {
                 const isSelected = selectedAnswers[currentIndex] === optIdx;
@@ -270,7 +330,9 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
                     >
                       {OPTION_LETTERS[optIdx]}
                     </span>
-                    <span className="text-sm font-medium leading-snug">{option}</span>
+                    <div className="text-sm font-medium leading-snug flex-1">
+                      <MathContent text={option} />
+                    </div>
                   </button>
                 );
               })}
@@ -329,7 +391,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
               </p>
             </div>
 
-            {/* Vertical Questions with Radio Options & Dividers */}
+            {/* Vertical Questions with Radio Options & KaTeX math rendering */}
             <div className="space-y-5">
               {questions.map((q, qIdx) => {
                 const selectedOpt = selectedAnswers[qIdx];
@@ -339,9 +401,10 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
                     key={qIdx}
                     className="space-y-3 border-b border-zinc-800/60 pb-5 last:border-b-0"
                   >
-                    <p className="text-sm font-medium text-zinc-100 leading-relaxed">
-                      {qIdx + 1}. {q.question}
-                    </p>
+                    <div className="text-sm font-medium text-zinc-100 leading-relaxed flex items-start gap-1.5">
+                      <span className="font-semibold">{qIdx + 1}.</span>
+                      <MathContent text={q.question} className="flex-1" />
+                    </div>
 
                     <div className="space-y-1.5 pl-1">
                       {q.options.map((opt, optIdx) => {
@@ -369,12 +432,12 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
                                 <span className="w-2 h-2 rounded-full bg-white" />
                               )}
                             </span>
-                            <span className="text-xs sm:text-sm leading-relaxed">
-                              <span className="font-semibold mr-1.5">
+                            <div className="text-xs sm:text-sm leading-relaxed flex items-center gap-1.5 flex-1">
+                              <span className="font-semibold">
                                 {OPTION_LETTERS[optIdx]}.
                               </span>
-                              {opt}
-                            </span>
+                              <MathContent text={opt} />
+                            </div>
                           </div>
                         );
                       })}

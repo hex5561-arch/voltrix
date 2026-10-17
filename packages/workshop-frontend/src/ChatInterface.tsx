@@ -154,6 +154,9 @@ import type { PastPaperQuestion, PastPaper } from "./data/pastPapersData";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
 import { InChatQuizCard } from "./components/chat/InChatQuizCard";
 import { parseMarkdownQuiz, stripRawOptionsFromMarkdown } from "./components/chat/quiz-parser";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { normalizeLatexMath } from "./utils/latexNormalizer";
 const HyperFramesChatCard = lazy(() =>
   import("./components/video/HyperFramesChatCard").then(m => ({ default: m.HyperFramesChatCard }))
 );
@@ -1335,7 +1338,8 @@ function getMarkdownComponents(
   };
 }
 
-const REMARK_PLUGINS_NO_CAPSULES = [remarkGfm];
+const REMARK_PLUGINS_NO_CAPSULES = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS = [rehypeKatex];
 const MARKDOWN_COMPONENTS_NO_CAPSULES = getMarkdownComponents();
 
 /**
@@ -1366,7 +1370,7 @@ export const MarkdownMessage = memo(function MarkdownMessage(
   );
   const remarkPlugins = useMemo(
     () => tokenizedMessage
-      ? [remarkGfm, createCapsuleRemarkPlugin(tokenizedMessage.mentionsByToken)]
+      ? [remarkGfm, remarkMath, createCapsuleRemarkPlugin(tokenizedMessage.mentionsByToken)]
       : REMARK_PLUGINS_NO_CAPSULES,
     [tokenizedMessage],
   );
@@ -1378,10 +1382,11 @@ export const MarkdownMessage = memo(function MarkdownMessage(
 
   const displayMarkdown = useMemo(() => {
     const raw = tokenizedMessage?.markdown ?? message;
+    const preprocessed = normalizeLatexMath(raw);
     if (detectedQuiz && detectedQuiz.questions.length > 0) {
-      return stripRawOptionsFromMarkdown(raw);
+      return stripRawOptionsFromMarkdown(preprocessed);
     }
-    return raw;
+    return preprocessed;
   }, [tokenizedMessage, message, detectedQuiz]);
 
   return (
@@ -1389,6 +1394,7 @@ export const MarkdownMessage = memo(function MarkdownMessage(
       <ReactMarkdown
         skipHtml={true}
         remarkPlugins={remarkPlugins}
+        rehypePlugins={REHYPE_PLUGINS}
         components={components}
       >
         {displayMarkdown}
