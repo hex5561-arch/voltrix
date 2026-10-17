@@ -41,7 +41,131 @@ export interface PublishSiteResult {
   publishedAt: string;
 }
 
-export function normalizeSiteHtml(rawHtml: string, title = 'Interactive Web Application'): string {
+export function getVoltrixDbScript(slug?: string): string {
+  const safeSlug = (slug || '').replace(/[^a-z0-9-_]/gi, '');
+  return `<script id="voltrix-edge-sdk">
+(function() {
+  if (window.VoltrixDB) return;
+  var appSlug = ${JSON.stringify(safeSlug || '')};
+  function getSlug() {
+    if (appSlug) return appSlug;
+    if (window.__VOLTRIX_APP_SLUG__) return window.__VOLTRIX_APP_SLUG__;
+    var m = window.location.pathname.match(/\\/s\\/([^/?#]+)/);
+    return m ? m[1].replace(/\\.html$/i, '') : 'default-app';
+  }
+  function getApiBase() {
+    var origin = (window.location && window.location.origin && window.location.origin.indexOf('http') === 0)
+      ? window.location.origin
+      : 'https://voltrix.stream';
+    return origin + '/api/sites/data';
+  }
+
+  window.VoltrixDB = {
+    async get(key) {
+      var s = getSlug();
+      try {
+        var res = await fetch(getApiBase() + '?slug=' + encodeURIComponent(s) + '&key=' + encodeURIComponent(key));
+        if (res.ok) {
+          var data = await res.json();
+          if (data && data.success) return data.value;
+        }
+      } catch (e) {
+        console.warn('[VoltrixDB] get network fallback:', e);
+      }
+      try {
+        var local = localStorage.getItem('vdb_' + s + '_' + key);
+        return local !== null ? JSON.parse(local) : null;
+      } catch (err) {
+        return null;
+      }
+    },
+
+    async set(key, val) {
+      var s = getSlug();
+      try {
+        localStorage.setItem('vdb_' + s + '_' + key, JSON.stringify(val));
+      } catch (e) {}
+      try {
+        var res = await fetch(getApiBase(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: s, key: key, value: val })
+        });
+        if (res.ok) {
+          var data = await res.json();
+          return data.value !== undefined ? data.value : val;
+        }
+      } catch (e) {
+        console.warn('[VoltrixDB] set network error:', e);
+      }
+      return val;
+    },
+
+    async getAll() {
+      var s = getSlug();
+      try {
+        var res = await fetch(getApiBase() + '?slug=' + encodeURIComponent(s));
+        if (res.ok) {
+          var data = await res.json();
+          if (data && data.success && data.data) return data.data;
+        }
+      } catch (e) {
+        console.warn('[VoltrixDB] getAll fallback:', e);
+      }
+      try {
+        var all = {};
+        var prefix = 'vdb_' + s + '_';
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf(prefix) === 0) {
+            all[k.slice(prefix.length)] = JSON.parse(localStorage.getItem(k));
+          }
+        }
+        return all;
+      } catch (e) {
+        return {};
+      }
+    },
+
+    async delete(key) {
+      var s = getSlug();
+      try { localStorage.removeItem('vdb_' + s + '_' + key); } catch (e) {}
+      try {
+        var res = await fetch(getApiBase() + '?slug=' + encodeURIComponent(s) + '&key=' + encodeURIComponent(key), {
+          method: 'DELETE'
+        });
+        return res.ok;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    async clear() {
+      var s = getSlug();
+      try {
+        var prefix = 'vdb_' + s + '_';
+        var keysToRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf(prefix) === 0) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+      } catch (e) {}
+      try {
+        var res = await fetch(getApiBase() + '?slug=' + encodeURIComponent(s), {
+          method: 'DELETE'
+        });
+        return res.ok;
+      } catch (e) {
+        return false;
+      }
+    }
+  };
+})();
+</script>`;
+}
+
+export function normalizeSiteHtml(rawHtml: string, title = 'Interactive Web Application', slug?: string): string {
   let clean = (rawHtml || '').trim();
 
   // Strip markdown code fences if present
@@ -50,8 +174,19 @@ export function normalizeSiteHtml(rawHtml: string, title = 'Interactive Web Appl
     clean = fenceMatch[1].trim();
   }
 
-  // If already a full HTML5 document, preserve it untouched (allowing full custom frameworks)
+  const scriptTag = getVoltrixDbScript(slug);
+
+  // If already a full HTML5 document, inject Voltrix Edge DB SDK and return
   if (/<(!DOCTYPE|html|body)/i.test(clean)) {
+    if (!clean.includes('id="voltrix-edge-sdk"') && !clean.includes('window.VoltrixDB')) {
+      if (/<\/head>/i.test(clean)) {
+        clean = clean.replace(/<\/head>/i, `${scriptTag}\n</head>`);
+      } else if (/<\/body>/i.test(clean)) {
+        clean = clean.replace(/<\/body>/i, `${scriptTag}\n</body>`);
+      } else {
+        clean = `${scriptTag}\n${clean}`;
+      }
+    }
     return clean;
   }
 
@@ -76,6 +211,7 @@ export function normalizeSiteHtml(rawHtml: string, title = 'Interactive Web Appl
     body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
     code, pre { font-family: 'JetBrains Mono', monospace; }
   </style>
+  ${scriptTag}
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-indigo-500/30">
   <header class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
@@ -126,8 +262,8 @@ export async function publishSiteToStorage(
   params: PublishSiteParams
 ): Promise<PublishSiteResult> {
   const cleanTitle = (params.title || 'Interactive Web Application').trim();
-  const normalizedHtml = normalizeSiteHtml(params.html, cleanTitle);
   const slug = sanitizeSiteSlug(params.slug, cleanTitle);
+  const normalizedHtml = normalizeSiteHtml(params.html, cleanTitle, slug);
   const userId = params.userId || 'anon';
   const authorName = params.authorName || 'Academic Scholar';
   const description = params.description || '';
@@ -244,7 +380,12 @@ export async function getSiteFromStorage(
   const obj = await bucket.get(r2HtmlKey);
   if (!obj) return null;
 
-  const content = await obj.text();
+  let content = await obj.text();
+
+  // If the stored HTML doesn't have VoltrixDB yet, ensure it gets injected
+  if (!content.includes('id="voltrix-edge-sdk"') && !content.includes('window.VoltrixDB')) {
+    content = normalizeSiteHtml(content, undefined, slug);
+  }
 
   // Non-blocking view counter increment
   const incrementView = async () => {
@@ -269,6 +410,114 @@ export async function getSiteFromStorage(
   }
 
   return { content };
+}
+
+// ── Edge Backend Storage & State API for Hosted Apps ──────────────────────────
+
+export interface SiteDataState {
+  [key: string]: any;
+}
+
+export async function getSiteData(
+  bucket: R2Bucket,
+  rawSlug: string,
+  key?: string
+): Promise<{ value?: any; data?: SiteDataState }> {
+  const slug = (rawSlug || '').replace(/[^a-z0-9-_]/gi, '').trim();
+  if (!slug) return key ? { value: null } : { data: {} };
+
+  const dataKey = `sites/data/${slug}.json`;
+  try {
+    const obj = await bucket.get(dataKey);
+    if (!obj) {
+      return key ? { value: null } : { data: {} };
+    }
+    const state: SiteDataState = await obj.json();
+    if (key !== undefined) {
+      return { value: state[key] !== undefined ? state[key] : null };
+    }
+    return { data: state || {} };
+  } catch (err) {
+    console.warn(`[sites.ts] getSiteData error for ${slug}:`, err);
+    return key ? { value: null } : { data: {} };
+  }
+}
+
+export async function setSiteData(
+  bucket: R2Bucket,
+  rawSlug: string,
+  key?: string,
+  value?: any,
+  data?: Record<string, any>
+): Promise<{ value?: any; data?: SiteDataState; updated: boolean }> {
+  const slug = (rawSlug || '').replace(/[^a-z0-9-_]/gi, '').trim();
+  if (!slug) throw new Error("slug is required");
+
+  const dataKey = `sites/data/${slug}.json`;
+  let state: SiteDataState = {};
+
+  try {
+    const obj = await bucket.get(dataKey);
+    if (obj) {
+      state = (await obj.json()) || {};
+    }
+  } catch {}
+
+  if (key !== undefined) {
+    state[key] = value;
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    Object.assign(state, data);
+  }
+
+  await bucket.put(dataKey, JSON.stringify(state, null, 2), {
+    httpMetadata: {
+      contentType: "application/json",
+      cacheControl: "no-cache",
+    },
+    customMetadata: {
+      slug,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
+  return {
+    value: key !== undefined ? state[key] : undefined,
+    data: state,
+    updated: true,
+  };
+}
+
+export async function deleteSiteData(
+  bucket: R2Bucket,
+  rawSlug: string,
+  key?: string
+): Promise<{ deleted: boolean; remaining?: SiteDataState }> {
+  const slug = (rawSlug || '').replace(/[^a-z0-9-_]/gi, '').trim();
+  if (!slug) return { deleted: false };
+
+  const dataKey = `sites/data/${slug}.json`;
+  if (!key) {
+    await bucket.delete(dataKey);
+    return { deleted: true };
+  }
+
+  try {
+    const obj = await bucket.get(dataKey);
+    if (obj) {
+      const state: SiteDataState = (await obj.json()) || {};
+      delete state[key];
+      await bucket.put(dataKey, JSON.stringify(state, null, 2), {
+        httpMetadata: {
+          contentType: "application/json",
+          cacheControl: "no-cache",
+        },
+      });
+      return { deleted: true, remaining: state };
+    }
+  } catch {}
+
+  return { deleted: true };
 }
 
 export async function getSiteMetadata(

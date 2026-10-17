@@ -41,6 +41,9 @@ import {
   getUserSites,
   deleteSiteFromStorage,
   renderSiteNotFoundHtml,
+  getSiteData,
+  setSiteData,
+  deleteSiteData,
 } from "./sites.js";
 import {
   createHyperFramesJob,
@@ -1541,6 +1544,55 @@ async function handleSitesRequest(req: Request, env: Env): Promise<Response> {
     }
     await deleteSiteFromStorage(env.BLUEPRINT_CONTENT, slug, userId);
     return Response.json({ success: true, message: `Site ${slug} unpublished` }, { headers: corsHeaders });
+  }
+
+  // 7. Site Edge Backend Storage & State API: /api/sites/data (or /api/sites/data/:slug)
+  if (url.pathname === "/api/sites/data" || url.pathname.startsWith("/api/sites/data/")) {
+    const pathSlug = url.pathname.startsWith("/api/sites/data/")
+      ? url.pathname.slice("/api/sites/data/".length).replace(/\.json$/i, "").trim()
+      : "";
+
+    // GET /api/sites/data?slug=...&key=...
+    if (req.method === "GET") {
+      const slug = pathSlug || url.searchParams.get("slug") || "";
+      if (!slug) {
+        return Response.json({ success: false, error: "slug is required" }, { status: 400, headers: corsHeaders });
+      }
+      const key = url.searchParams.get("key") || undefined;
+      const res = await getSiteData(env.BLUEPRINT_CONTENT, slug, key);
+      return Response.json({ success: true, slug, ...res }, { headers: corsHeaders });
+    }
+
+    // POST or PUT /api/sites/data
+    if (req.method === "POST" || req.method === "PUT") {
+      try {
+        const body = (await req.json().catch(() => ({}))) as any;
+        const slug = pathSlug || body.slug || url.searchParams.get("slug") || "";
+        if (!slug) {
+          return Response.json({ success: false, error: "slug is required" }, { status: 400, headers: corsHeaders });
+        }
+        const key = body.key !== undefined ? body.key : (url.searchParams.get("key") || undefined);
+        const value = body.value;
+        const data = body.data || (key === undefined && typeof body === "object" && !body.slug && !body.key ? body : undefined);
+
+        const res = await setSiteData(env.BLUEPRINT_CONTENT, slug, key, value, data);
+        return Response.json({ success: true, slug, ...res }, { headers: corsHeaders });
+      } catch (err: any) {
+        return Response.json({ success: false, error: err?.message || "Failed to update site data" }, { status: 500, headers: corsHeaders });
+      }
+    }
+
+    // DELETE /api/sites/data
+    if (req.method === "DELETE") {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const slug = pathSlug || body.slug || url.searchParams.get("slug") || "";
+      if (!slug) {
+        return Response.json({ success: false, error: "slug is required" }, { status: 400, headers: corsHeaders });
+      }
+      const key = body.key || url.searchParams.get("key") || undefined;
+      const res = await deleteSiteData(env.BLUEPRINT_CONTENT, slug, key);
+      return Response.json({ success: true, slug, ...res }, { headers: corsHeaders });
+    }
   }
 
   return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });

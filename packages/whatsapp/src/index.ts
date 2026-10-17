@@ -21,6 +21,7 @@ import { resolveUniversityLogoUrl } from "./institutional.js";
 import {
   extractTextFromImageWithGemini,
   extractDocumentContent,
+  analyzeVideoWithGemini,
 } from "./doc-extract.js";
 
 // ── Env ───────────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ export interface Env {
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
-function formatForWhatsApp(text: string): string {
+export function formatForWhatsApp(text: string): string {
   let out = text;
   out = out.replace(/^#{1,6}\s+(.+)$/gm, "*$1*");
   out = out.replace(/\*\*([^*]+)\*\*/g, "*$1*");
@@ -80,7 +81,7 @@ function splitChunks(text: string, maxLen = 3800): string[] {
 
 // ── Meta Graph API helpers ────────────────────────────────────────────────────
 
-async function sendTextMessage(env: Env, to: string, text: string): Promise<void> {
+export async function sendTextMessage(env: Env, to: string, text: string): Promise<void> {
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
   const accessToken = env.WHATSAPP_ACCESS_TOKEN || "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
   for (const chunk of splitChunks(text)) {
@@ -143,7 +144,7 @@ async function markAsRead(env: Env, messageId: string): Promise<void> {
   await sendTypingIndicator(env, messageId);
 }
 
-function cleanPhoneNumber(to: string): string {
+export function cleanPhoneNumber(to: string): string {
   let clean = String(to).replace(/[^0-9]/g, "");
   if (clean.startsWith("0") && clean.length === 10) {
     clean = "256" + clean.slice(1);
@@ -162,7 +163,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-async function sendWhatsAppAudioMessage(
+export async function sendWhatsAppAudioMessage(
   env: Env,
   to: string,
   audioDataOrBase64: ArrayBuffer | Uint8Array | string,
@@ -170,7 +171,9 @@ async function sendWhatsAppAudioMessage(
   ptt: boolean = true
 ): Promise<boolean> {
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
-  const accessToken = env.WHATSAPP_ACCESS_TOKEN || "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
+  const accessToken =
+    env.WHATSAPP_ACCESS_TOKEN ||
+    "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
 
   try {
     const cleanTo = cleanPhoneNumber(to);
@@ -189,15 +192,42 @@ async function sendWhatsAppAudioMessage(
     }
 
     const lowerMime = (mimeType || "").toLowerCase();
-    const isOgg = lowerMime.includes("ogg") || lowerMime.includes("opus");
-    const effectiveMime = isOgg
-      ? "audio/ogg; codecs=opus"
-      : lowerMime.includes("mp4") || lowerMime.includes("m4a")
-      ? "audio/mp4"
-      : lowerMime.includes("wav")
-      ? "audio/wav"
-      : "audio/mpeg";
-    const ext = isOgg ? "ogg" : effectiveMime.includes("mp4") ? "mp4" : effectiveMime.includes("wav") ? "wav" : "mp3";
+    const isOpusMime = lowerMime.includes("ogg") && lowerMime.includes("opus");
+    const isOpusOnly = lowerMime.includes("opus") && !lowerMime.includes("mp3") && !lowerMime.includes("wav");
+
+    // Check Ogg container magic header 'OggS'
+    const hasOggMagic =
+      audioBytes.length >= 4 &&
+      audioBytes[0] === 0x4f &&
+      audioBytes[1] === 0x67 &&
+      audioBytes[2] === 0x67 &&
+      audioBytes[3] === 0x53;
+
+    // Determine strict effective MIME type
+    let effectiveMime = "audio/mpeg";
+    if (isOpusMime || (isOpusOnly && hasOggMagic)) {
+      effectiveMime = "audio/ogg; codecs=opus";
+    } else if (lowerMime.includes("ogg")) {
+      effectiveMime = hasOggMagic ? "audio/ogg; codecs=opus" : "audio/ogg";
+    } else if (lowerMime.includes("mp4") || lowerMime.includes("m4a")) {
+      effectiveMime = "audio/mp4";
+    } else if (lowerMime.includes("wav")) {
+      effectiveMime = "audio/wav";
+    } else {
+      effectiveMime = "audio/mpeg";
+    }
+
+    // Meta WhatsApp Cloud API strictly drops ptt:true unless audio is audio/ogg; codecs=opus
+    const isOpusOgg = effectiveMime.includes("ogg") && effectiveMime.includes("opus");
+    const sendPtt = Boolean(ptt && isOpusOgg);
+
+    const ext = isOpusOgg
+      ? "ogg"
+      : effectiveMime.includes("mp4")
+      ? "mp4"
+      : effectiveMime.includes("wav")
+      ? "wav"
+      : "mp3";
 
     const formData = new FormData();
     formData.append("messaging_product", "whatsapp");
@@ -225,6 +255,11 @@ async function sendWhatsAppAudioMessage(
       return false;
     }
 
+    const audioPayload: Record<string, unknown> = { id: mediaId };
+    if (sendPtt) {
+      audioPayload.ptt = true;
+    }
+
     const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: "POST",
       headers: {
@@ -236,10 +271,7 @@ async function sendWhatsAppAudioMessage(
         recipient_type: "individual",
         to: cleanTo,
         type: "audio",
-        audio: {
-          id: mediaId,
-          ...(ptt ? { ptt: true } : {}),
-        },
+        audio: audioPayload,
       }),
     });
 
@@ -256,22 +288,186 @@ async function sendWhatsAppAudioMessage(
   }
 }
 
-async function downloadMedia(
+export async function sendWhatsAppImageMessage(
+  env: Env,
+  to: string,
+  imageBytesOrBuffer: ArrayBuffer | Uint8Array,
+  caption?: string
+): Promise<boolean> {
+  const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || "1380923721763579";
+  const accessToken =
+    env.WHATSAPP_ACCESS_TOKEN ||
+    "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
+
+  try {
+    const cleanTo = cleanPhoneNumber(to);
+    const bytes =
+      imageBytesOrBuffer instanceof Uint8Array
+        ? imageBytesOrBuffer
+        : new Uint8Array(imageBytesOrBuffer);
+
+    const formData = new FormData();
+    formData.append("messaging_product", "whatsapp");
+    formData.append("type", "image/png");
+    formData.append("file", new Blob([bytes], { type: "image/png" }), "generated_image.png");
+
+    const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/media`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text().catch(() => "");
+      console.error(`[WhatsApp] Image upload failed (${uploadRes.status}): ${errText}`);
+      return false;
+    }
+
+    const uploadData = (await uploadRes.json()) as { id?: string };
+    const mediaId = uploadData?.id;
+    if (!mediaId) {
+      console.error("[WhatsApp] Image upload returned no media ID");
+      return false;
+    }
+
+    const sendRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: cleanTo,
+        type: "image",
+        image: {
+          id: mediaId,
+          ...(caption ? { caption } : {}),
+        },
+      }),
+    });
+
+    if (!sendRes.ok) {
+      const errText = await sendRes.text().catch(() => "");
+      console.error(`[WhatsApp] Send image message failed (${sendRes.status}): ${errText}`);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[WhatsApp] sendWhatsAppImageMessage error:", err);
+    return false;
+  }
+}
+
+export async function generateImage(env: Env, prompt: string): Promise<Uint8Array | null> {
+  const ai = env.AI || env.WORKERS_AI;
+  if (!ai || typeof ai.run !== "function") return null;
+
+  const models = [
+    "@cf/black-forest-labs/flux-1-schnell",
+    "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+  ];
+
+  for (const model of models) {
+    try {
+      const res: any = await ai.run(model, { prompt });
+      if (!res) continue;
+
+      if (res instanceof Uint8Array) return res;
+      if (res instanceof ArrayBuffer) return new Uint8Array(res);
+      if (typeof res.arrayBuffer === "function") {
+        return new Uint8Array(await res.arrayBuffer());
+      }
+      if (res.image) {
+        if (typeof res.image === "string") {
+          const bin = atob(res.image.replace(/^data:image\/[^;]+;base64,/, ""));
+          const b = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+          return b;
+        } else if (res.image instanceof Uint8Array) {
+          return res.image;
+        } else if (Array.isArray(res.image)) {
+          return new Uint8Array(res.image);
+        }
+      }
+      if (typeof res.getReader === "function") {
+        const reader = res.getReader();
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            total += value.length;
+          }
+        }
+        const merged = new Uint8Array(total);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.length;
+        }
+        return merged;
+      }
+    } catch (e) {
+      console.warn(`[WhatsApp] Workers AI image generation failed with ${model}:`, e);
+    }
+  }
+  return null;
+}
+
+export async function downloadMedia(
   env: Env,
   mediaId: string
 ): Promise<{ data: ArrayBuffer; mimeType: string } | null> {
+  const accessToken =
+    env.WHATSAPP_ACCESS_TOKEN ||
+    "EAAPZA5WPDLfgBShj3ZA0AjVfcgwh6fntTFdfevofMsla8mzidIxKIHC8HewzpatK1ZCImhTvRINvb3YWzOJLtJwRFtUgmMxwzcZAB27uZCgGlUtUk5odDlFLZAJPTzgiubZB7yry7x4eAHgm32RqLOafTSVyVKUbLfblHCFkogLziBQL6ATd3kwVWytuZAeYlQZDZD";
+
   try {
     const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
-      headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "curl/7.64.1",
+      },
     });
-    if (!metaRes.ok) return null;
-    const meta = await metaRes.json() as { url: string; mime_type: string };
+
+    if (!metaRes.ok) {
+      const errText = await metaRes.text().catch(() => "");
+      console.error(`[WhatsApp] Failed to fetch media metadata for ${mediaId} (${metaRes.status}): ${errText}`);
+      return null;
+    }
+
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    if (!meta?.url) {
+      console.error(`[WhatsApp] Media metadata returned no URL for ${mediaId}`);
+      return null;
+    }
+
     const mediaRes = await fetch(meta.url, {
-      headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "curl/7.64.1",
+      },
     });
-    if (!mediaRes.ok) return null;
-    return { data: await mediaRes.arrayBuffer(), mimeType: meta.mime_type };
-  } catch {
+
+    if (!mediaRes.ok) {
+      const errText = await mediaRes.text().catch(() => "");
+      console.error(
+        `[WhatsApp] Failed to download media binary from CDN for ${mediaId} (${mediaRes.status}): ${errText}`
+      );
+      return null;
+    }
+
+    const data = await mediaRes.arrayBuffer();
+    return { data, mimeType: meta.mime_type || "application/octet-stream" };
+  } catch (err) {
+    console.error(`[WhatsApp] downloadMedia error for ${mediaId}:`, err);
     return null;
   }
 }
@@ -357,7 +553,7 @@ async function callGemini(
   return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 }
 
-async function transcribeAudio(
+export async function transcribeAudio(
   env: Env,
   audioData: ArrayBuffer,
   mimeType: string
@@ -452,7 +648,7 @@ async function transcribeAudio(
   return "";
 }
 
-function cleanTextForSpeech(text: string): string {
+export function cleanTextForSpeech(text: string): string {
   let spoken = text
     .replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, " [Code implementation] ")
     .replace(/`([^`]+)`/g, "$1")
@@ -520,7 +716,7 @@ function cleanTextForSpeech(text: string): string {
   return spoken.replace(/\s+/g, " ").trim();
 }
 
-async function generateVoiceScript(
+export async function generateVoiceScript(
   env: Env,
   userQuery: string,
   detailedAnswer: string
@@ -577,7 +773,7 @@ Guidelines:
   return cleanTextForSpeech(detailedAnswer).slice(0, 250);
 }
 
-async function synthesizeSpeech(
+export async function synthesizeSpeech(
   env: Env,
   text: string
 ): Promise<{ data: Uint8Array; mimeType: string } | null> {
@@ -586,7 +782,34 @@ async function synthesizeSpeech(
 
   const spokenText = clean.slice(0, 450).trim();
 
-  // Tier 1: Cloudflare Workers AI Deepgram Aura / MeloTTS (Edge native)
+  // Tier 1: OpenAI TTS (Returns genuine Ogg Opus for native WhatsApp PTT voice notes with waveforms)
+  if (env.OPENAI_API_KEY) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          input: spokenText,
+          voice: "alloy",
+          response_format: "opus",
+        }),
+      });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > 0) {
+          return { data: new Uint8Array(ab), mimeType: "audio/ogg; codecs=opus" };
+        }
+      }
+    } catch (err) {
+      console.warn("[WhatsApp] OpenAI TTS error:", err);
+    }
+  }
+
+  // Tier 2: Cloudflare Workers AI Deepgram Aura / MeloTTS (Edge native)
   const ai = env.AI || env.WORKERS_AI;
   if (ai && typeof ai.run === "function") {
     // Try Deepgram Aura 2 English (ultra-realistic conversational human prosody)
@@ -646,7 +869,7 @@ async function synthesizeSpeech(
     }
   }
 
-  // Tier 2: Gemini Native Audio Synthesis (responseModalities: ["AUDIO"])
+  // Tier 3: Gemini Native Audio Synthesis (responseModalities: ["AUDIO"])
   const geminiKey = env.GEMINI_API_KEY;
   if (geminiKey) {
     try {
@@ -689,33 +912,6 @@ async function synthesizeSpeech(
       }
     } catch (geminiTtsErr) {
       console.warn("[WhatsApp] Gemini audio synthesis attempt:", geminiTtsErr);
-    }
-  }
-
-  // Tier 3: OpenAI TTS (if OPENAI_API_KEY present)
-  if (env.OPENAI_API_KEY) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "tts-1",
-          input: spokenText,
-          voice: "alloy",
-          response_format: "opus",
-        }),
-      });
-      if (res.ok) {
-        const ab = await res.arrayBuffer();
-        if (ab.byteLength > 0) {
-          return { data: new Uint8Array(ab), mimeType: "audio/ogg; codecs=opus" };
-        }
-      }
-    } catch (err) {
-      console.warn("[WhatsApp] OpenAI TTS error:", err);
     }
   }
 
@@ -771,7 +967,7 @@ async function synthesizeSpeech(
   return null;
 }
 
-async function runAI(
+export async function runAI(
   env: Env,
   system: string,
   history: Message[],
@@ -942,7 +1138,7 @@ Topic focus this session: ${topTopics || "General"}
 
 type LinkResponse = { success?: boolean; userId?: string; name?: string; profile?: AcademicProfile };
 
-async function handleCommand(
+export async function handleCommand(
   cmd: string,
   args: string,
   from: string,
@@ -953,14 +1149,32 @@ async function handleCommand(
     case "!help":
       return `*Volt Academic Copilot* ⚡\n\n` +
         `• Send any question — I'll answer with full academic rigour\n` +
-        `• Send a *voice note* — I'll transcribe and answer\n` +
-        `• Send a *PDF or image* — I'll read and analyse it\n\n` +
+        `• Send a *voice note* — I'll transcribe and answer with conversational voice notes\n` +
+        `• Send a *PDF or image* — I'll read and analyse problems, formulas, and diagrams\n` +
+        `• Send a *video* — I'll transcribe speech and analyse visual scenes & questions\n` +
+        `• Type *!image <prompt>* or *draw <prompt>* — I'll generate and send images on the fly\n\n` +
         `*Commands:*\n` +
         `!help — show this menu\n` +
+        `!image <prompt> — generate AI image\n` +
         `!clear — reset conversation\n` +
         `!status — show your session info\n` +
         `!link <6-digit code> — link to your Voltrix account\n\n` +
         `_Upgrade at voltrix.stream for 500 queries/day & flagship models_`;
+
+    case "!image":
+    case "!draw":
+    case "!generate": {
+      const prompt = args.trim();
+      if (!prompt) {
+        return "Please specify what you would like to generate, e.g. `!image quantum computing circuit diagram`";
+      }
+      const imageBytes = await generateImage(env, prompt);
+      if (imageBytes && imageBytes.length > 0) {
+        const ok = await sendWhatsAppImageMessage(env, from, imageBytes, `🎨 ${prompt}`);
+        if (ok) return null;
+      }
+      return "🎨 Image generation service is currently initializing or busy. Please try again shortly!";
+    }
 
     case "!clear": {
       const stub = getSessionStub(env, from);
@@ -1091,7 +1305,7 @@ async function fetchWikibooksContext(query: string): Promise<string> {
 type WaMessage = Record<string, unknown>;
 type WaContact = Record<string, unknown>;
 
-async function processMessage(message: WaMessage, contact: WaContact | undefined, env: Env): Promise<void> {
+export async function processMessage(message: WaMessage, contact: WaContact | undefined, env: Env): Promise<void> {
   const from      = message.from as string;
   const messageId = message.id as string;
   const msgType   = message.type as string;
@@ -1191,9 +1405,51 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
             : `Please analyse the document "${doc?.filename ?? "document"}" that I've sent.`;
         }
       }
+
+    } else if (msgType === "video") {
+      const vid = message.video as { id?: string; caption?: string; mime_type?: string } | undefined;
+      if (vid?.id) {
+        const media = await downloadMedia(env, vid.id);
+        if (media && env.GEMINI_API_KEY) {
+          const videoAnalysis = await analyzeVideoWithGemini(
+            env.GEMINI_API_KEY,
+            media.data,
+            media.mimeType || vid.mime_type || "video/mp4",
+            vid.caption || ""
+          );
+          if (videoAnalysis) {
+            userText = `🎬 [Video Transcription & Analysis]:\n${videoAnalysis}\n\n${
+              vid.caption ? `User Note: ${vid.caption}` : "Please provide a complete, thorough solution and explanation for the video content above."
+            }`;
+          }
+        }
+        if (!userText) {
+          userText = vid?.caption
+            ? `Analyse this video: ${vid.caption}`
+            : "Transcribe all speech verbatim from this video, and thoroughly describe all visual scenes, actions, on-screen text, diagrams, and questions.";
+        }
+      }
     }
 
     if (!userText) return;
+
+    // ── Image Generation Trigger ──────────────────────────────────────────────
+    const isImageGenRequest = /^(?:!image|!draw|!generate|generate image|draw|create an image of|paint|picture of)\b/i.test(userText.trim());
+    if (isImageGenRequest) {
+      const imagePrompt = userText
+        .replace(/^(?:!image|!draw|!generate|generate image|draw|create an image of|paint|picture of)\s*:?\s*/i, "")
+        .trim() || userText;
+
+      const imageBytes = await generateImage(env, imagePrompt);
+      if (imageBytes && imageBytes.length > 0) {
+        const success = await sendWhatsAppImageMessage(env, from, imageBytes, `🎨 ${imagePrompt}`);
+        if (success) {
+          await sessionFetch<{ ok: boolean }>(stub, "/message", { role: "user", content: userText });
+          await sessionFetch<{ ok: boolean }>(stub, "/message", { role: "assistant", content: `[Generated and sent image for: "${imagePrompt}"]` });
+          return;
+        }
+      }
+    }
 
     // ── Commands ───────────────────────────────────────────────────────────────
 
@@ -1255,30 +1511,57 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
     await sessionFetch<{ ok: boolean }>(stub, "/message", { role: "assistant", content: aiReply });
 
     // ── Auto-publish HTML Apps to Edge Hosting ───────────────────────────────
-    let extraSiteLink = "";
-    const htmlMatch = aiReply.match(/```(?:html|web)\s*([\s\S]*?)```/i);
-    if (htmlMatch && htmlMatch[1] && htmlMatch[1].length > 250) {
+    let outgoingReply = aiReply;
+    const htmlBlockRegex = /```(?:html|web|xml)?\s*(<!DOCTYPE[\s\S]*?|<html[\s\S]*?)```/i;
+    const rawHtmlRegex = /(<!DOCTYPE\s+html[\s\S]*?<\/html>|<html[\s\S]*?<\/html>)/i;
+
+    let extractedHtml = "";
+    let matchedBlock = "";
+
+    const fenceMatch = aiReply.match(htmlBlockRegex);
+    if (fenceMatch && fenceMatch[1] && fenceMatch[1].length > 150) {
+      extractedHtml = fenceMatch[1];
+      matchedBlock = fenceMatch[0];
+    } else {
+      const rawMatch = aiReply.match(rawHtmlRegex);
+      if (rawMatch && rawMatch[1] && rawMatch[1].length > 150) {
+        extractedHtml = rawMatch[1];
+        matchedBlock = rawMatch[0];
+      }
+    }
+
+    if (extractedHtml) {
       try {
-        const titleMatch = htmlMatch[1].match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const titleMatch = extractedHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
         const siteTitle = titleMatch ? titleMatch[1].trim() : (contactName ? `${contactName}'s Web App` : "Interactive Web Application");
         const pubRes = await fetch("https://voltrix.stream/api/sites/publish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            html: htmlMatch[1],
+            html: extractedHtml,
             title: siteTitle,
             userId: session.linkedUserId || from,
             authorName: contactName,
           }),
         });
         if (pubRes.ok) {
-          const pubData = await pubRes.json() as any;
+          const pubData = (await pubRes.json()) as any;
           if (pubData.success && pubData.liveUrl) {
-            extraSiteLink = `\n\n🌐 *Your Web App is Live on Global Edge!*\n🔗 ${pubData.liveUrl}\n_Sub-50ms TTFB worldwide. Open to test directly on your phone!_`;
+            const appCard =
+              `\n\n🚀 *Your Web App is Live on Global Edge!*\n` +
+              `📱 *App:* ${siteTitle}\n` +
+              `🔗 *Live URL:* ${pubData.liveUrl}\n` +
+              `💾 *Backend Storage:* \`VoltrixDB\` Enabled (Persistent State)\n` +
+              `⚡ _Sub-50ms TTFB worldwide. Open to test and interact with your app directly on your phone!_`;
+
+            if (matchedBlock) {
+              outgoingReply = outgoingReply.replace(matchedBlock, "").trim();
+            }
+            outgoingReply = outgoingReply ? `${outgoingReply}\n\n${appCard}` : appCard;
           }
         }
-      } catch {
-        // non-blocking
+      } catch (err) {
+        console.warn("[WhatsApp] Auto-publish error:", err);
       }
     }
 
@@ -1301,7 +1584,7 @@ async function processMessage(message: WaMessage, contact: WaContact | undefined
       }
     }
 
-    await sendTextMessage(env, from, formatForWhatsApp(aiReply + extraSiteLink));
+    await sendTextMessage(env, from, formatForWhatsApp(outgoingReply));
   } catch (err) {
     console.error("[WhatsApp] Error processing message from " + from, err);
     try {
@@ -1365,15 +1648,19 @@ export default {
         aiBackend: "TheHive DeepSeek v4.1 Flash → Gemini 3.8 Flash",
         multimodalCapabilities: {
           imageOcr: "Gemini 3.8 Flash Vision (verbatim questions, formulas, diagrams, handwriting)",
+          videoTranscriptionAndAnalysis: "Gemini 3.8 Flash Multimodal (speech verbatim + visual scenes, actions, diagrams)",
+          imageGeneration: "Workers AI @cf/black-forest-labs/flux-1-schnell & SDXL",
           documentReading: "Edge PDF Stream Parser + Gemini Multimodal PDF + DOCX XML + Text/Code UTF-8",
+          appHosting: "Auto-publish to Global Edge (https://voltrix.stream/s/<slug>) with built-in VoltrixDB state persistence & interactive App Cards",
         },
         voiceCapabilities: {
           transcription: "Gemini 3.8 Flash Multimodal (Primary) → Workers AI Whisper → Groq Whisper Large V3 Turbo",
-          voiceReplies: "Conversational Scripting (Human Cadence) → Workers AI Deepgram Aura / MeloTTS → Gemini Native Audio → OpenAI TTS → Google Speech Neural",
+          voiceReplies: "Conversational Scripting (Human Cadence) → OpenAI TTS (Opus PTT) → Workers AI Deepgram Aura / MeloTTS (Audio) → Google Speech Neural (Audio)",
           nativePttVoiceNote: true,
+          pttGating: "Strict Ogg Opus only; MP3/WAV/MP4 dispatched as standard audio to prevent Meta drops",
           typingIndicator: true,
         },
-        version: "1.3.0",
+        version: "1.4.0",
       });
     }
 

@@ -411,6 +411,68 @@ ${caption ? `User Instruction: ${caption}` : ""}`,
   return "";
 }
 
+// ── Gemini Multimodal Video Analysis & Speech Transcription ───────────────────
+
+export async function analyzeVideoWithGemini(
+  geminiKey: string,
+  buffer: ArrayBuffer,
+  mimeType: string = "video/mp4",
+  caption: string = ""
+): Promise<string> {
+  if (!geminiKey || buffer.byteLength === 0) return "";
+  const cleanMime = (mimeType || "video/mp4").split(";")[0].trim().toLowerCase();
+  const b64 = arrayBufferToBase64(buffer);
+
+  try {
+    const prompt = `Transcribe all speech verbatim from this video, and thoroughly describe all visual scenes, actions, on-screen text, diagrams, and questions.${
+      caption ? `\nUser Note/Context: ${caption}` : ""
+    }`;
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt,
+                },
+                {
+                  inlineData: {
+                    mimeType: cleanMime,
+                    data: b64,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2048,
+          },
+        }),
+      }
+    );
+
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (text) return text;
+    } else {
+      const err = await res.text().catch(() => "");
+      console.warn(`[WhatsApp Video OCR] Gemini Video failed (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.warn("[WhatsApp Video OCR] Gemini Video error:", err);
+  }
+
+  return "";
+}
+
+
 // ── Master Universal Document Extractor ───────────────────────────────────────
 
 export async function extractDocumentContent(
