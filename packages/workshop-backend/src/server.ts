@@ -1850,8 +1850,8 @@ ${catalog.map(c => `  <url>
       }
     }
 
-    // WhatsApp Cloud API Webhook
-    if (url.pathname === "/api/webhooks/whatsapp") {
+    // WhatsApp Cloud API Webhook (supports both Voltrix and Coursehero paths)
+    if (url.pathname === "/api/webhooks/whatsapp" || url.pathname === "/api/whatsapp/webhook") {
       if (req.method === "GET") {
         return handleWhatsAppWebhookGet(req, env);
       }
