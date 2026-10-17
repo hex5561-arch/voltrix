@@ -13,6 +13,10 @@ export interface ParsedQuizData {
   questions: ParsedQuizQuestion[];
 }
 
+const OPTION_A_SEARCH = /(?:^|\n|\s+)(?:[-*•+]\s+)?(?:\*{1,2}|_{1,2})?(?:\(A\)|A[\.\):])(?:\*{1,2}|_{1,2})?\s+/;
+const OPTION_REGEX = /(?:^|\n|\s+)(?:[-*•+]\s+)?(?:\*{1,2}|_{1,2})?(?:\(([A-D])\)|([A-D])[\.\):])(?:\*{1,2}|_{1,2})?\s+/g;
+const QUESTION_START_REGEX = /^(?:(?:\*\*|__)?(?:Q\d+[\.\:]?|Question\s*\d+[\.\:]?|\d+[\.\)])(?:\*\*|__)?(?:\s+|$))/i;
+
 /**
  * Extracts multiple options from a question block text.
  * Strictly enforces:
@@ -22,15 +26,14 @@ export interface ParsedQuizData {
  * 4. Rejects options exceeding 180 characters
  */
 function extractOptionsFromText(text: string): { question: string; options: string[] } | null {
-  // STRICT UPPERCASE ONLY: "A)" or "A." or "(A)"
-  const matchA = text.search(/(?:^|\s)(?:A[\.\)]|\(A\))\s/);
+  const matchA = text.search(OPTION_A_SEARCH);
   if (matchA === -1) return null;
 
   const question = text.slice(0, matchA).trim();
   const optionsText = text.slice(matchA).trim();
 
   // Match uppercase letters A through D only
-  const regex = /(?:^|\s+)(?:([A-D])[\.\)]|\(([A-D])\))\s+/g;
+  const regex = new RegExp(OPTION_REGEX);
   const splits: Array<{ letter: string; index: number; matchLen: number }> = [];
   let m: RegExpExecArray | null;
 
@@ -52,7 +55,10 @@ function extractOptionsFromText(text: string): { question: string; options: stri
   for (let i = 0; i < splits.length; i++) {
     const start = splits[i].index + splits[i].matchLen;
     const end = i + 1 < splits.length ? splits[i + 1].index : optionsText.length;
-    const optText = optionsText.slice(start, end).trim();
+    let optText = optionsText.slice(start, end).trim();
+
+    // Clean leading bullets or bold artifacts
+    optText = optText.replace(/^[-*•+]\s+/, '').replace(/^[*_]+|[*_]+$/g, '').trim();
 
     // Reject free-response sub-tasks starting with imperative verbs
     if (
@@ -84,8 +90,8 @@ export function parseMarkdownQuiz(raw: string): ParsedQuizData | null {
   // If already tagged with an explicit quiz code block, do not double-render
   if (/```(?:quiz|assessment|test)\b/i.test(raw)) return null;
 
-  // Title extraction: first heading or default
-  const titleMatch = raw.match(/^#+\s*(.+)$/m);
+  // Title extraction: heading (#), emoji banner (⚡), or default
+  const titleMatch = raw.match(/^(?:#+\s*|⚡\s*)(.+)$/m);
   const title = titleMatch
     ? titleMatch[1].replace(/^[⚡\s]+|[⚡\s]+$/g, '').trim()
     : 'Interactive Knowledge Check';
@@ -98,8 +104,7 @@ export function parseMarkdownQuiz(raw: string): ParsedQuizData | null {
 
   const isQuestionStart = (line: string) => {
     const trimmed = line.trim();
-    // Uppercase question labels: Q1, Question 1, 1.
-    return /^(?:(?:\*\*|__)?(?:Q\d+|Question\s*\d+|\d+[\.\)])\b)/i.test(trimmed);
+    return QUESTION_START_REGEX.test(trimmed);
   };
 
   for (const line of lines) {
@@ -127,7 +132,7 @@ export function parseMarkdownQuiz(raw: string): ParsedQuizData | null {
         .replace(/^[#*_\s]+/, '')
         .replace(/[*_]+$/, '')
         .trim();
-      q = q.replace(/^(?:(?:\*\*|__)?(?:Q\d+|Question\s*\d+|\d+[\.\)])\s*[-—–.:]?\s*)/i, '');
+      q = q.replace(/^(?:(?:\*\*|__)?(?:Q\d+[\.\:]?|Question\s*\d+[\.\:]?|\d+[\.\)])(?:\*\*|__)?\s*[-—–.:]?\s*)/i, '');
       q = q.replace(/^\*\*.*?\*\*\s*[:.—–-]?\s*/, '');
 
       questions.push({
@@ -147,12 +152,15 @@ export function parseMarkdownQuiz(raw: string): ParsedQuizData | null {
 }
 
 /**
- * Removes the raw inline multiple choice text (e.g. "A) ... B) ...") from the rendered markdown
- * so the chat bubble only displays the clean question stem and the interactive card, eliminating
- * confusing horizontal duplicate text.
+ * When an interactive quiz card is rendered, cleanly strips the raw question text from
+ * the outer markdown so the questions are presented exclusively inside the interactive
+ * widget without duplicate outer text, leaving only the introductory context above the card.
  */
 export function stripRawOptionsFromMarkdown(raw: string): string {
   if (!raw || typeof raw !== 'string') return raw;
-  // Replace option sequences A) ... B) ... C) ... D) ...
-  return raw.replace(/(?:^|\n|\s+)(?:A[\.\)]|\(A\))\s+[\s\S]*?(?=(?:\n\n|\n(?:(?:\*\*|__)?(?:Q\d+|Question\s*\d+|\d+[\.\)])\b)|$))/g, '\n');
+  const firstQ = raw.search(/(?:^|\n)(?:(?:\*\*|__)?(?:Q\d+[\.\:]?|Question\s*\d+[\.\:]?|\d+[\.\)])(?:\*\*|__)?(?:\s+|$))/i);
+  if (firstQ !== -1) {
+    return raw.slice(0, firstQ).trim();
+  }
+  return raw;
 }
