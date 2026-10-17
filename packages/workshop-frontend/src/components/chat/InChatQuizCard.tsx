@@ -8,13 +8,13 @@ import {
   Check,
   ListBullets,
   SquaresFour,
-  Trophy,
+  PaperPlaneTilt,
 } from '@phosphor-icons/react';
 
 export interface QuizQuestion {
   question: string;
   options: string[];
-  answer: number; // 0-indexed or 1-indexed, normalized in parsing
+  answer: number;
   explanation?: string;
   hint?: string;
 }
@@ -27,18 +27,22 @@ export interface QuizData {
   questions: QuizQuestion[];
 }
 
-interface InChatQuizCardProps {
+export interface InChatQuizCardProps {
   data: QuizData;
   onComplete?: (score: number, total: number) => void;
+  onSubmitAnswers?: (summary: string) => void;
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete }) => {
+export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({
+  data,
+  onComplete,
+  onSubmitAnswers,
+}) => {
   const questions = useMemo(() => {
     if (!Array.isArray(data?.questions) || data.questions.length === 0) return [];
     return data.questions.map((q) => {
-      // Normalize answer to 0-based index if given as letter or 1-based index
       let answerIdx = 0;
       if (typeof q.answer === 'number') {
         answerIdx = q.answer >= q.options.length ? q.answer - 1 : q.answer;
@@ -56,7 +60,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [showHint, setShowHint] = useState(false);
-  const [mode, setMode] = useState<'card' | 'all'>('card'); // 'card' = 1-by-1 stepper, 'all' = all questions test view
+  const [mode, setMode] = useState<'card' | 'all'>('card'); // 'card' = step-by-step, 'all' = all questions form
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -70,16 +74,17 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
     }, 0);
   }, [questions, selectedAnswers]);
 
-  const handleSelectOption = useCallback(
-    (questionIdx: number, optionIdx: number) => {
-      if (isSubmitted && mode === 'all') return;
-      setSelectedAnswers((prev) => ({
-        ...prev,
-        [questionIdx]: optionIdx,
-      }));
-    },
-    [isSubmitted, mode]
-  );
+  const handleSelectOption = useCallback((questionIdx: number, optionIdx: number) => {
+    setSelectedAnswers((prev) => ({
+      ...prev,
+      [questionIdx]: optionIdx,
+    }));
+  }, []);
+
+  const handleClear = () => {
+    setSelectedAnswers({});
+    setIsSubmitted(false);
+  };
 
   const handleReset = () => {
     setSelectedAnswers({});
@@ -88,8 +93,23 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
     setIsSubmitted(false);
   };
 
+  const handleSubmit = () => {
+    setIsSubmitted(true);
+    onComplete?.(score, total);
+
+    const answerLines = questions.map((q, idx) => {
+      const chosen = selectedAnswers[idx];
+      if (chosen !== undefined && q.options[chosen]) {
+        return `${idx + 1}. ${OPTION_LETTERS[chosen]}) ${q.options[chosen]}`;
+      }
+      return `${idx + 1}. (Skipped)`;
+    });
+    const summary = `${data.title || 'Selected answers'}:\n${answerLines.join('\n')}`;
+    onSubmitAnswers?.(summary);
+  };
+
   const handleShare = () => {
-    const text = `${data.title || 'Quiz'}: ${score}/${total} answered correctly!`;
+    const text = `${data.title || 'Quiz'}: ${answeredCount}/${total} answered.`;
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(text);
       setCopied(true);
@@ -101,7 +121,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
 
   return (
     <div className="my-3 w-full max-w-2xl font-sans text-white">
-      {/* Quiz Top Title Banner (if provided) */}
+      {/* Quiz Top Title Banner */}
       {data.title && (
         <div className="mb-2 flex items-center justify-between text-xs text-zinc-300">
           <div className="flex items-center gap-2">
@@ -117,8 +137,8 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
         </div>
       )}
 
-      {/* Main Interactive Card Container */}
-      <div className="rounded-2xl border border-zinc-800/80 bg-[#18181b] p-5 shadow-2xl backdrop-blur-md">
+      {/* Main Interactive Container */}
+      <div className="rounded-2xl border border-zinc-800/80 bg-[#141416] p-5 shadow-2xl backdrop-blur-md">
         {/* Card Toolbar / Controls */}
         <div className="mb-4 flex items-center justify-between border-b border-zinc-800/60 pb-3">
           <div className="flex items-center gap-2">
@@ -126,7 +146,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
               type="button"
               onClick={() => setMode(mode === 'card' ? 'all' : 'card')}
               className="flex items-center gap-1.5 rounded-lg bg-zinc-800/70 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700/70 hover:text-white transition-colors cursor-pointer"
-              title={mode === 'card' ? 'Show all questions' : 'Show single card'}
+              title={mode === 'card' ? 'Show all questions at once' : 'Step-by-step card view'}
             >
               {mode === 'card' ? <ListBullets size={15} /> : <SquaresFour size={15} />}
               <span>{mode === 'card' ? 'All Questions' : 'Step-by-Step'}</span>
@@ -165,7 +185,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
             )}
 
             {mode === 'all' && (
-              <span className="rounded-full bg-blue-500/10 border border-blue-500/20 px-2.5 py-0.5 text-[11px] font-medium text-blue-400">
+              <span className="rounded-full bg-zinc-800/80 border border-zinc-700/60 px-2.5 py-0.5 text-[11px] font-medium text-zinc-300">
                 {answeredCount}/{total} answered
               </span>
             )}
@@ -191,7 +211,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
               type="button"
               onClick={handleReset}
               className="p-1.5 rounded-lg bg-zinc-800/70 border border-zinc-700/50 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
-              title="Reset Test"
+              title="Reset Selections"
             >
               <ArrowsClockwise size={15} />
             </button>
@@ -201,7 +221,7 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
               type="button"
               onClick={handleShare}
               className="p-1.5 rounded-lg bg-zinc-800/70 border border-zinc-700/50 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
-              title="Copy Score"
+              title="Copy Summary"
             >
               {copied ? <Check size={15} className="text-emerald-400" /> : <ShareNetwork size={15} />}
             </button>
@@ -223,26 +243,19 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
               )}
             </div>
 
-            {/* Options List */}
+            {/* Options List — Neutral Styling, NO red/green */}
             <div className="space-y-2 pt-1">
               {currentQ.options.map((option, optIdx) => {
                 const isSelected = selectedAnswers[currentIndex] === optIdx;
-                const hasAnswered = selectedAnswers[currentIndex] !== undefined;
-                const isCorrect = optIdx === currentQ.answer;
 
-                let btnStyle = 'border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800/80 text-zinc-300';
+                let btnStyle =
+                  'border-zinc-800/80 bg-zinc-900/50 hover:bg-zinc-800/70 text-zinc-300 hover:text-white';
                 let circleStyle = 'bg-zinc-800 text-zinc-400 border border-zinc-700';
 
-                if (hasAnswered) {
-                  if (isCorrect) {
-                    btnStyle = 'border-emerald-500/70 bg-emerald-950/30 text-emerald-200';
-                    circleStyle = 'bg-emerald-500 text-white font-bold';
-                  } else if (isSelected && !isCorrect) {
-                    btnStyle = 'border-rose-500/70 bg-rose-950/30 text-rose-200';
-                    circleStyle = 'bg-rose-500 text-white font-bold';
-                  } else {
-                    btnStyle = 'border-zinc-800/50 bg-zinc-900/30 text-zinc-500 opacity-60';
-                  }
+                if (isSelected) {
+                  btnStyle =
+                    'border-zinc-400/90 bg-zinc-800 text-white shadow-sm ring-1 ring-zinc-400/30';
+                  circleStyle = 'bg-white text-zinc-950 font-bold border-white';
                 }
 
                 return (
@@ -250,63 +263,63 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
                     key={optIdx}
                     type="button"
                     onClick={() => handleSelectOption(currentIndex, optIdx)}
-                    className={`w-full text-left rounded-xl border p-3 transition-all duration-150 flex flex-col gap-1 cursor-pointer ${btnStyle}`}
+                    className={`w-full text-left rounded-xl border p-3 transition-all duration-150 flex items-center gap-3 cursor-pointer ${btnStyle}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${circleStyle}`}
-                      >
-                        {OPTION_LETTERS[optIdx]}
-                      </span>
-                      <span className="text-sm font-medium leading-snug">{option}</span>
-                    </div>
-
-                    {/* Rationale explanation rendered under selected/correct option */}
-                    {hasAnswered && (isCorrect || isSelected) && currentQ.explanation && (
-                      <div className="ml-9 text-xs text-zinc-400 font-normal pt-1 border-t border-zinc-800/40">
-                        {currentQ.explanation}
-                      </div>
-                    )}
+                    <span
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors ${circleStyle}`}
+                    >
+                      {OPTION_LETTERS[optIdx]}
+                    </span>
+                    <span className="text-sm font-medium leading-snug">{option}</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Card Footer: Next / Finish */}
-            <div className="flex items-center justify-between pt-2 border-t border-zinc-800/60 text-xs">
-              <span className="text-zinc-500">
-                Score: <strong className="text-zinc-200">{score}</strong> / {total}
-              </span>
+            {/* Card Footer: Clear / Next / Submit */}
+            <div className="flex items-center justify-between pt-3 border-t border-zinc-800/60 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAnswers((prev) => {
+                    const copy = { ...prev };
+                    delete copy[currentIndex];
+                    return copy;
+                  });
+                }}
+                className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              >
+                Clear choice
+              </button>
 
-              {currentIndex < total - 1 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentIndex((i) => i + 1);
-                    setShowHint(false);
-                  }}
-                  className="rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 font-medium transition-colors cursor-pointer"
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('all');
-                    setIsSubmitted(true);
-                    onComplete?.(score, total);
-                  }}
-                  className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 font-medium transition-colors cursor-pointer"
-                >
-                  View Summary
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {currentIndex < total - 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentIndex((i) => i + 1);
+                      setShowHint(false);
+                    }}
+                    className="rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 font-medium transition-colors cursor-pointer"
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    className="rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold px-5 py-2 text-xs transition-colors cursor-pointer shadow-md flex items-center gap-1.5"
+                  >
+                    <PaperPlaneTilt size={14} weight="bold" />
+                    <span>Submit answers</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* ── MODE 2: ALL QUESTIONS AT ONCE ("YOUR TEST" VIEW) ── */}
+        {/* ── MODE 2: ALL QUESTIONS AT ONCE ("YOUR TEST" VIEW — ChatGPT PARITY) ── */}
         {mode === 'all' && (
           <div className="space-y-6">
             <div>
@@ -316,103 +329,106 @@ export const InChatQuizCard: React.FC<InChatQuizCardProps> = ({ data, onComplete
               </p>
             </div>
 
+            {/* Vertical Questions with Radio Options & Dividers */}
             <div className="space-y-5">
               {questions.map((q, qIdx) => {
                 const selectedOpt = selectedAnswers[qIdx];
 
                 return (
-                  <div key={qIdx} className="space-y-2 border-b border-zinc-800/60 pb-4 last:border-b-0">
-                    <p className="text-sm font-medium text-zinc-100">
+                  <div
+                    key={qIdx}
+                    className="space-y-3 border-b border-zinc-800/60 pb-5 last:border-b-0"
+                  >
+                    <p className="text-sm font-medium text-zinc-100 leading-relaxed">
                       {qIdx + 1}. {q.question}
                     </p>
 
-                    <div className="space-y-1.5 pl-2">
+                    <div className="space-y-1.5 pl-1">
                       {q.options.map((opt, optIdx) => {
                         const isSelected = selectedOpt === optIdx;
-                        const isCorrect = optIdx === q.answer;
-
-                        let textStyle = 'text-zinc-300';
-                        let dotStyle = 'border-zinc-600 bg-transparent';
-
-                        if (isSelected) {
-                          dotStyle = 'border-blue-500 bg-blue-500 ring-4 ring-blue-500/20';
-                        }
-
-                        if (isSubmitted) {
-                          if (isCorrect) {
-                            textStyle = 'text-emerald-400 font-medium';
-                            dotStyle = 'border-emerald-500 bg-emerald-500';
-                          } else if (isSelected && !isCorrect) {
-                            textStyle = 'text-rose-400 line-through';
-                            dotStyle = 'border-rose-500 bg-rose-500';
-                          }
-                        }
 
                         return (
                           <div
                             key={optIdx}
                             onClick={() => handleSelectOption(qIdx, optIdx)}
-                            className="flex items-start gap-2.5 py-1 cursor-pointer group"
+                            className={`flex items-start gap-3 py-1.5 px-2 rounded-lg cursor-pointer transition-colors ${
+                              isSelected
+                                ? 'bg-zinc-800/60 text-white'
+                                : 'text-zinc-300 hover:text-white hover:bg-zinc-800/30'
+                            }`}
                           >
+                            {/* Circular Radio Indicator matching ChatGPT */}
                             <span
-                              className={`w-4 h-4 rounded-full border mt-0.5 flex-shrink-0 transition-colors flex items-center justify-center ${dotStyle}`}
+                              className={`w-4 h-4 rounded-full border mt-0.5 flex-shrink-0 transition-colors flex items-center justify-center ${
+                                isSelected
+                                  ? 'border-white bg-transparent ring-2 ring-white/20'
+                                  : 'border-zinc-600 bg-transparent'
+                              }`}
                             >
-                              {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              {isSelected && (
+                                <span className="w-2 h-2 rounded-full bg-white" />
+                              )}
                             </span>
-                            <span className={`text-xs leading-relaxed ${textStyle}`}>
-                              <span className="font-semibold mr-1">{OPTION_LETTERS[optIdx]}.</span>
+                            <span className="text-xs sm:text-sm leading-relaxed">
+                              <span className="font-semibold mr-1.5">
+                                {OPTION_LETTERS[optIdx]}.
+                              </span>
                               {opt}
                             </span>
                           </div>
                         );
                       })}
                     </div>
-
-                    {isSubmitted && q.explanation && (
-                      <div className="mt-2 rounded-lg bg-zinc-900/60 border border-zinc-800 p-2.5 text-xs text-zinc-400">
-                        <strong className="text-emerald-400 mr-1">Explanation:</strong> {q.explanation}
-                      </div>
-                    )}
                   </div>
                 );
               })}
             </div>
 
-            {/* Submit / Results Bar */}
-            <div className="flex items-center justify-between border-t border-zinc-800/80 pt-4">
-              <span className="text-xs text-zinc-400">
-                Answered: <strong className="text-white">{answeredCount}</strong> / {total}
-              </span>
-
-              {!isSubmitted ? (
+            {/* Submission & Action Bar — Exact Match to Screenshot 16-06-14 */}
+            {!isSubmitted ? (
+              <div className="pt-2 space-y-2.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsSubmitted(true);
-                    onComplete?.(score, total);
-                  }}
-                  className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 text-xs font-semibold transition-colors cursor-pointer"
+                  onClick={handleSubmit}
+                  disabled={answeredCount === 0}
+                  className="w-full rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-semibold py-3 px-6 text-sm transition-all cursor-pointer shadow-lg active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Submit Test
+                  <span>Submit answers</span>
+                  {answeredCount > 0 && (
+                    <span className="text-xs bg-zinc-900/10 px-2 py-0.5 rounded-full font-mono">
+                      {answeredCount}/{total}
+                    </span>
+                  )}
                 </button>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 px-3 py-1.5 text-xs font-semibold text-emerald-300">
-                    <Trophy size={16} />
+
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  disabled={answeredCount === 0}
+                  className="w-full rounded-full border border-zinc-700/80 hover:bg-zinc-800/60 text-zinc-300 font-medium py-2.5 px-6 text-sm transition-colors cursor-pointer active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Clear answers
+                </button>
+              </div>
+            ) : (
+              <div className="pt-2 space-y-3">
+                <div className="flex items-center justify-between rounded-xl bg-zinc-800/80 border border-zinc-700/80 p-3.5 text-xs">
+                  <div className="flex items-center gap-2 text-zinc-200">
+                    <Check size={18} className="text-emerald-400" weight="bold" />
                     <span>
-                      Score: {score} / {total} ({Math.round((score / total) * 100)}%)
+                      Answers submitted (<strong>{answeredCount}</strong> of {total} answered)
                     </span>
                   </div>
                   <button
                     type="button"
-                    onClick={handleReset}
-                    className="rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 text-xs transition-colors cursor-pointer"
+                    onClick={handleClear}
+                    className="rounded-lg bg-zinc-700/70 hover:bg-zinc-600 px-3 py-1 text-zinc-200 font-medium cursor-pointer transition-colors"
                   >
-                    Retake
+                    Edit / Retake
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>

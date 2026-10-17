@@ -1344,11 +1344,12 @@ const MARKDOWN_COMPONENTS_NO_CAPSULES = getMarkdownComponents();
  * `whitespace-pre-wrap` wrapper at the user-message render site renders it as a hard break.
  */
 export const MarkdownMessage = memo(function MarkdownMessage(
-  { message, capsules, formats, allowInteractive = true }: {
+  { message, capsules, formats, allowInteractive = true, onSubmitAnswers }: {
     message: string;
     capsules?: CapsuleSpecifier[];
     formats?: MessageFormatRef[];
     allowInteractive?: boolean;
+    onSubmitAnswers?: (summary: string) => void;
   },
 ): ReactNode {
   const tokenizedMessage = useMemo(
@@ -1394,7 +1395,7 @@ export const MarkdownMessage = memo(function MarkdownMessage(
       </ReactMarkdown>
       {detectedQuiz && detectedQuiz.questions.length > 0 && (
         <div className="my-3 not-prose font-sans">
-          <InChatQuizCard data={detectedQuiz} />
+          <InChatQuizCard data={detectedQuiz} onSubmitAnswers={onSubmitAnswers} />
         </div>
       )}
     </>
@@ -7991,6 +7992,9 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                                     message={msg.message}
                                     capsules={msg.capsules}
                                     formats={msg.formats}
+                                    onSubmitAnswers={(summary) => {
+                                      void handleSend(summary);
+                                    }}
                                   />
                                 </div>
                               )}
