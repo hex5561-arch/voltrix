@@ -86,6 +86,7 @@ export default {
       // WhatsApp webhook is handled by the dedicated worker; all other /api/whatsapp/* go to backend.
       if (env.WHATSAPP && (
         url.pathname === "/api/whatsapp/webhook" ||
+        url.pathname === "/api/webhooks/whatsapp" ||
         url.pathname === "/api/whatsapp/status" ||
         url.pathname === "/api/whatsapp/test"
       )) {

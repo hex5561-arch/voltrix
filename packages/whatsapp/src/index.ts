@@ -25,7 +25,7 @@ import {
   analyzeVideo,
   analyzeVideoWithGemini,
 } from "./doc-extract.js";
-import { transcodeAudioForWhatsApp } from "./voice-transcode.js";
+import { transcodeAudioForWhatsApp, isOggOpus } from "./voice-transcode.js";
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -196,18 +196,33 @@ export async function sendWhatsAppAudioMessage(
       rawBytes = audioDataOrBase64;
     }
 
-    // Always transcode / verify audio into WhatsApp-native Ogg Opus format.
-    // WhatsApp mobile client strictly requires OggS container + Opus codec
-    // with MIME 'audio/ogg; codecs=opus' to render the green voice note waveform player.
-    const { data: opusBytes, mimeType: effectiveMime } = await transcodeAudioForWhatsApp(
-      rawBytes,
-      mimeType
-    );
+    const isOpus = isOggOpus(rawBytes) || (mimeType.includes("ogg") && !mimeType.includes("mpeg") && !mimeType.includes("mp3"));
+    let uploadBytes: Uint8Array = rawBytes;
+    let uploadMime = "audio/mpeg";
+    let filename = "voice_note.mp3";
+
+    if (isOpus) {
+      uploadMime = "audio/ogg";
+      filename = "voice_note.ogg";
+      uploadBytes = rawBytes;
+    } else {
+      // Safe transcoding attempt: only use if it succeeded and produced valid Ogg Opus
+      try {
+        const transcoded = await transcodeAudioForWhatsApp(rawBytes, mimeType);
+        if (transcoded && isOggOpus(transcoded.data)) {
+          uploadBytes = transcoded.data;
+          uploadMime = "audio/ogg";
+          filename = "voice_note.ogg";
+        }
+      } catch (e) {
+        console.warn("[WhatsApp] Transcode to opus skipped, using direct audio format:", e);
+      }
+    }
 
     const formData = new FormData();
     formData.append("messaging_product", "whatsapp");
-    formData.append("type", effectiveMime);
-    formData.append("file", new Blob([opusBytes], { type: effectiveMime }), "voice_note.ogg");
+    formData.append("type", uploadMime);
+    formData.append("file", new Blob([uploadBytes], { type: uploadMime }), filename);
 
     const uploadRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/media`, {
       method: "POST",
@@ -466,7 +481,8 @@ async function callTheHive(
   apiKey: string,
   system: string,
   history: Message[],
-  userText: string
+  userText: string,
+  maxTokens: number = 4096
 ): Promise<string> {
   const messages = [
     { role: "system", content: system },
@@ -481,8 +497,8 @@ async function callTheHive(
     },
     body: JSON.stringify({
       model: "deepseek-ai/deepseek-v4.1-flash",
-      temperature: 0.7,
-      max_tokens: 1024,
+      temperature: 0.6,
+      max_tokens: maxTokens,
       messages,
     }),
   });
@@ -490,15 +506,25 @@ async function callTheHive(
     const errText = await res.text();
     throw new Error(`TheHive ${res.status}: ${errText}`);
   }
-  const data = await res.json() as TheHiveResponse;
-  return data?.choices?.[0]?.message?.content?.trim() ?? "";
+  const data = await res.json() as any;
+  const choice = data?.choices?.[0];
+  const content = choice?.message?.content?.trim();
+  if (content) return content;
+  // If DeepSeek spent completion tokens inside reasoning_content, extract conclusion
+  const reasoning = choice?.message?.reasoning_content?.trim();
+  if (reasoning) {
+    const paragraphs = reasoning.split(/\n\n+/).filter(Boolean);
+    return paragraphs.slice(-4).join("\n\n").trim();
+  }
+  return "";
 }
 
 async function callGemini(
   apiKey: string,
   system: string,
   history: Message[],
-  userText: string
+  userText: string,
+  maxTokens: number = 2048
 ): Promise<string> {
   const contents = [
     ...history.map(h => ({
@@ -515,7 +541,7 @@ async function callGemini(
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents,
-        generationConfig: { maxOutputTokens: 1024 },
+        generationConfig: { maxOutputTokens: maxTokens },
       }),
     }
   );
@@ -718,7 +744,8 @@ Guidelines:
         env.THEHIVE_API_KEY,
         "You write natural, human-sounding conversational voice note scripts for WhatsApp. Output only the spoken words.",
         [],
-        prompt
+        prompt,
+        2048
       );
       if (script && script.trim()) {
         return script.replace(/^["'«“]|["'»”]$/g, "").trim();
@@ -728,13 +755,57 @@ Guidelines:
     console.warn("[WhatsApp] TheHive voice script error:", e);
   }
 
+  // Tier 2: Workers AI Llama-3.3-70b
+  const ai = env.AI || env.WORKERS_AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const res: any = await ai.run("@cf/meta/llama-3.3-70b-instruct", {
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+      });
+      const text = res?.response?.trim() || (typeof res === "string" ? res.trim() : "");
+      if (text && text.length > 0) {
+        return text.replace(/^["'«“]|["'»”]$/g, "").trim();
+      }
+    } catch (e) {
+      console.warn("[WhatsApp] Workers AI voice script error:", e);
+    }
+  }
+
+  // Tier 3: Groq Chat Completion
+  const groqKey = env.GROQ_API_KEY;
+  if (groqKey && groqKey.startsWith("gsk_")) {
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 300,
+        }),
+      });
+      if (res.ok) {
+        const d = (await res.json()) as any;
+        const text = d?.choices?.[0]?.message?.content?.trim();
+        if (text) return text.replace(/^["'«“]|["'»”]$/g, "").trim();
+      }
+    } catch (e) {
+      console.warn("[WhatsApp] Groq voice script error:", e);
+    }
+  }
+
   try {
     if (env.GEMINI_API_KEY) {
       const script = await callGemini(
         env.GEMINI_API_KEY,
         "You write natural, human-sounding conversational voice note scripts for WhatsApp. Output only the spoken words.",
         [],
-        prompt
+        prompt,
+        512
       );
       if (script && script.trim()) {
         return script.replace(/^["'«“]|["'»”]$/g, "").trim();
@@ -821,7 +892,7 @@ export async function synthesizeSpeech(
           bytes = new Uint8Array(0);
         }
         if (bytes && bytes.length > 0) {
-          return await transcodeAudioForWhatsApp(bytes, "audio/mpeg");
+          return { data: bytes, mimeType: "audio/mpeg" };
         }
       }
     } catch (auraErr) {
@@ -837,7 +908,7 @@ export async function synthesizeSpeech(
       if (meloRes?.audio) {
         const audioArr = Array.isArray(meloRes.audio) ? new Uint8Array(meloRes.audio) : meloRes.audio;
         if (audioArr?.byteLength > 0) {
-          return await transcodeAudioForWhatsApp(new Uint8Array(audioArr), "audio/mpeg");
+          return { data: new Uint8Array(audioArr), mimeType: "audio/mpeg" };
         }
       }
     } catch (meloErr) {
@@ -884,7 +955,7 @@ export async function synthesizeSpeech(
           const bin = atob(b64);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          return await transcodeAudioForWhatsApp(bytes, retMime);
+          return { data: bytes, mimeType: retMime };
         }
       }
     } catch (geminiTtsErr) {
@@ -935,7 +1006,7 @@ export async function synthesizeSpeech(
         merged.set(arr, offset);
         offset += arr.byteLength;
       }
-      return await transcodeAudioForWhatsApp(merged, "audio/mpeg");
+      return { data: merged, mimeType: "audio/mpeg" };
     }
   } catch (err) {
     console.warn("[WhatsApp] Google Speech TTS error:", err);
@@ -950,24 +1021,79 @@ export async function runAI(
   history: Message[],
   userText: string
 ): Promise<string> {
+  // Tier 1: TheHive DeepSeek V4.1 Flash (Reasoning model with 4096 maxTokens)
   const hiveKey = env.THEHIVE_API_KEY;
   if (hiveKey) {
     try {
-      const reply = await callTheHive(hiveKey, system, history, userText);
-      if (reply) return reply;
+      const reply = await callTheHive(hiveKey, system, history, userText, 4096);
+      if (reply && reply.trim().length > 0) return reply.trim();
     } catch (err) {
       console.warn("[WhatsApp] TheHive failed:", err);
     }
   }
+
+  // Tier 2: Cloudflare Workers AI @cf/meta/llama-3.3-70b-instruct (Edge-native, zero quota limits)
+  const ai = env.AI || env.WORKERS_AI;
+  if (ai && typeof ai.run === "function") {
+    try {
+      const messages = [
+        { role: "system", content: system },
+        ...history.map((h) => ({ role: h.role, content: h.content })),
+        { role: "user", content: userText },
+      ];
+      const res: any = await ai.run("@cf/meta/llama-3.3-70b-instruct", {
+        messages,
+        max_tokens: 3000,
+      });
+      const reply = res?.response?.trim() || (typeof res === "string" ? res.trim() : "");
+      if (reply && reply.length > 0) return reply;
+    } catch (err) {
+      console.warn("[WhatsApp] Workers AI Llama-3.3-70b failed:", err);
+    }
+  }
+
+  // Tier 3: Groq Chat Completion (Ultra-fast 500+ tok/s Llama 3.3 70B)
+  const groqKey = env.GROQ_API_KEY;
+  if (groqKey && groqKey.startsWith("gsk_")) {
+    try {
+      const messages = [
+        { role: "system", content: system },
+        ...history.map((h) => ({ role: h.role, content: h.content })),
+        { role: "user", content: userText },
+      ];
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages,
+          max_tokens: 3000,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const reply = data?.choices?.[0]?.message?.content?.trim();
+        if (reply) return reply;
+      }
+    } catch (err) {
+      console.warn("[WhatsApp] Groq Llama-3.3-70b failed:", err);
+    }
+  }
+
+  // Tier 4: Gemini 3.8 Flash
   const geminiKey = env.GEMINI_API_KEY;
   if (geminiKey) {
     try {
-      const reply = await callGemini(geminiKey, system, history, userText);
-      if (reply) return reply;
+      const reply = await callGemini(geminiKey, system, history, userText, 2048);
+      if (reply && reply.trim().length > 0) return reply.trim();
     } catch (err) {
       console.warn("[WhatsApp] Gemini fallback failed:", err);
     }
   }
+
   return "⚡ Hello! I am Voltrix AI. I received your message and our engine is online. Ask me anything or type !help for available commands.";
 }
 
@@ -1346,15 +1472,19 @@ export async function processMessage(message: WaMessage, contact: WaContact | un
             env
           );
           if (imgText) {
-            userText = `📸 [Attached Image Analysis & Transcription]:\n${imgText}\n\n${
-              img.caption ? `User Note: ${img.caption}` : "Please solve the problem(s) above and explain clearly."
-            }`;
+            userText = `📸 [Attached Image Problem / Question]:\n${imgText}\n\n` +
+              `[DIRECTIVE]: Solve the questions/problems transcribed above completely with detailed, step-by-step mathematical working, formulas, and clear final answers.${
+                img.caption ? `\nStudent Note/Request: "${img.caption}"` : ""
+              }`;
           }
         }
         if (!userText) {
-          userText = img?.caption
-            ? `Analyse this image: ${img.caption}`
-            : "Transcribe and analyse all text, equations, and academic content in this image.";
+          if (img?.caption) {
+            userText = `Solve the problem shown in this image: ${img.caption}`;
+          } else {
+            await sendTextMessage(env, from, "📸 I received your image, but couldn't clearly read the text or equations. Could you please send a clearer photo or type out the question?");
+            return;
+          }
         }
       }
 
@@ -1542,7 +1672,10 @@ export async function processMessage(message: WaMessage, contact: WaContact | un
       }
     }
 
-    // ── Voice Reply Dispatch ──────────────────────────────────────────────────
+    // 1. ALWAYS send the full formatted text answer FIRST so the student is never left waiting
+    await sendTextMessage(env, from, formatForWhatsApp(outgoingReply));
+
+    // 2. ── Voice Reply Dispatch ──────────────────────────────────────────────────
     const wantsVoiceReply =
       isVoiceInput ||
       /\b(voice\s*reply|voice\s*note|send\s*voice|audio\s*note|read\s*out|speak\s*to\s*me|voice\s*response|send\s*audio)\b/i.test(userText);
@@ -1553,15 +1686,13 @@ export async function processMessage(message: WaMessage, contact: WaContact | un
         const voiceScript = await generateVoiceScript(env, userText, aiReply);
         const speech = await synthesizeSpeech(env, voiceScript);
         if (speech && speech.data.byteLength > 0) {
-          // Send as native WhatsApp Push-To-Talk voice note (ptt = true)
+          // Send as native WhatsApp voice note
           await sendWhatsAppAudioMessage(env, from, speech.data, speech.mimeType, true);
         }
       } catch (voiceErr) {
         console.warn("[WhatsApp] Failed to dispatch voice note reply:", voiceErr);
       }
     }
-
-    await sendTextMessage(env, from, formatForWhatsApp(outgoingReply));
   } catch (err) {
     console.error("[WhatsApp] Error processing message from " + from, err);
     try {

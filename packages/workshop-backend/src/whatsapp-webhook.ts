@@ -2534,7 +2534,10 @@ export async function handleWhatsAppWebhookPost(
                 );
               }
 
-              const prompt = `📸 [Attached Image Analysis & Transcription]:\n${extracted || "Image received."}${caption ? `\n\nUser Note/Context: "${caption}"` : ""}`;
+              const prompt = `📸 [Attached Image Problem / Question]:\n${extracted || "Image received."}\n\n` +
+                `[DIRECTIVE]: Solve the questions/problems transcribed above completely with detailed, step-by-step mathematical working, formulas, and clear final answers.${
+                  caption ? `\nStudent Note/Request: "${caption}"` : ""
+                }`;
               const processedMsg: ProcessedWhatsAppMessage = {
                 id,
                 from,
