@@ -29,6 +29,7 @@ import { listFeaturedBlueprintsFromKv, readBlueprintContent, readBlueprintKvReco
 import { WebFetchEnv } from "./web-fetch";
 import { WebBrowseEnv } from "./web-browse";
 import { AiSearchEnv } from "./ai-search";
+import { TaskScheduler, type TaskStorageAdapter } from "./scheduler.js";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { indexLibraryItem, indexPersonalItem, isKeyInSharedLibrary, searchPersonalLibrary } from "./ai-search";
@@ -1135,6 +1136,8 @@ class OverseerImpl implements AgentHooks {
 
   #autoApprovalDrainer: AutoApprovalDrainer;
 
+  #taskScheduler?: TaskScheduler;
+
   #preparingChatMessages = new Map<number, Promise<void>>();
 
   // Set of chatIds that currently have a running agent turn. Used to manage the DO alarm (held
@@ -1338,6 +1341,11 @@ class OverseerImpl implements AgentHooks {
     let nextDeliveredRecord = [...this.storage.gadgetResponseDeliveries.deliveredByDeliveredAt.list({ limit: 1 })][0];
     if (nextDeliveredRecord?.status === "delivered") {
       this.ctx.storage.setAlarm(nextDeliveredRecord.deliveredAt + AGENT_RESPONSE_DELIVERED_RETENTION_MS);
+      return;
+    }
+
+    if (this.#taskScheduler) {
+      void this.#taskScheduler.refreshAlarm();
       return;
     }
 
@@ -3080,6 +3088,50 @@ class OverseerImpl implements AgentHooks {
   // Returns the Groq API key for high-definition neural speech synthesis.
   getGroqApiKey(): string {
     return this.env.GROQ_API_KEY || "";
+  }
+
+  // Returns the Durable Task Scheduler for managing background tasks and DO alarms
+  getTaskScheduler(): TaskScheduler {
+    if (!this.#taskScheduler) {
+      this.#taskScheduler = new TaskScheduler(this.ctx.storage as unknown as TaskStorageAdapter);
+    }
+    return this.#taskScheduler;
+  }
+
+  // Executes due background tasks when the Durable Object alarm fires
+  async runDueScheduledTasks(): Promise<void> {
+    const scheduler = this.getTaskScheduler();
+    const dueTasks = await scheduler.getDueTasks();
+    if (dueTasks.length === 0) {
+      await scheduler.refreshAlarm();
+      return;
+    }
+
+    for (const task of dueTasks) {
+      await scheduler.markTaskStarted(task.id);
+      try {
+        if (task.taskType === "agent_turn" && task.chatId) {
+          const ownerId = this.ownerId || this.storage.ownerId.get();
+          if (ownerId) {
+            const caller = this.users.get(this.users.idFromString(ownerId));
+            const userContext = await caller.getExternalMessageChatContext(null);
+            if (userContext.aiModel) {
+              await this.sendChatMessage(
+                caller,
+                userContext,
+                task.chatId,
+                `[Scheduled Background Task: ${task.id}]\n${task.prompt}`
+              );
+            }
+          }
+        }
+        await scheduler.markTaskCompleted(task.id, "Executed successfully");
+      } catch (err: any) {
+        await scheduler.markTaskFailed(task.id, err?.message || String(err));
+      }
+    }
+
+    await scheduler.refreshAlarm();
   }
 
   // Returns user identity and student academic profile
@@ -7203,6 +7255,7 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
   async alarm() {
     await this.impl.waitForAllAgentsToComplete();
     await this.impl.deliverReadyExternalMessageResponses();
+    await this.impl.runDueScheduledTasks();
   }
 
   #initializeEmptyCodeSnapshot(): void {

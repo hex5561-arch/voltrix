@@ -37,6 +37,9 @@ import {
 import { generateImage as generateImageImpl } from "./image-engine.js";
 import { transcribeAudio as transcribeAudioImpl } from "./asr-engine.js";
 import { defineGitHubTools } from "./github";
+import { webSearch as webSearchImpl, formatWebSearchResult } from "./web-search.js";
+import { webCrawl as webCrawlImpl, formatWebCrawlResult } from "./web-crawl.js";
+import { TaskScheduler, formatScheduledTasksList } from "./scheduler.js";
 import { classifyDocument } from "./document-classifier";
 import { screenForPII } from "./document-pii-screen";
 import { AgentCatalogSnapshot, formatAlwaysAvailableResourcesPrompt } from "./agent-catalog";
@@ -486,6 +489,11 @@ export interface AgentHooks {
    * Returns a GitHub personal access token or OAuth token for the current user if available.
    */
   getGitHubAccessToken?(): Promise<string | null>;
+
+  /**
+   * Returns the Durable Task Scheduler for managing autonomous background tasks & DO alarms.
+   */
+  getTaskScheduler?(): TaskScheduler;
 
   /**
    * Returns the user's configured default GitHub repository (e.g. 'owner/repo') if available.
@@ -1060,6 +1068,17 @@ You have direct management tools for assets and render jobs stored on Cloudflare
 - \`deleteAsset({ filename })\`: Removes obsolete test badges, scratch files, or transient artifacts from edge storage.
 - \`getRenderJobStatus({ jobId })\`: Queries the status of an asynchronous video rendering job (\`queued\`, \`rendering\`, \`completed\`, \`failed\`), returning percentage progress, target file path, and public CDN URL.
 - \`synthesizeSpeechBatch({ clips })\`: High-throughput multi-clip TTS synthesis. Generates an entire scene's audio narration in parallel from an array of \`{ id, voice, text }\`, saving the audio files to R2 CDN and returning the clips manifest.
+
+# Real-Time Web Search & Multi-Page Crawling
+You have native internet search and recursive crawling tools requiring zero external API keys:
+- \`webSearch({ query, maxResults?, includeAcademic? })\`: Searches the web in real-time via DuckDuckGo and Wikipedia/OpenAlex. Returns titles, URLs, and summaries.
+- \`webCrawl({ url, maxPages?, maxDepth?, sameDomainOnly? })\`: Recursively crawls public websites up to bounded depth and page limits, following internal links, rendering pages via Kitesurf, and returning structured markdown.
+
+# Background Tasks & Durable Alarms
+You can schedule autonomous background tasks that wake up Cloudflare Durable Objects on an alarm:
+- \`scheduleTask({ prompt, delaySeconds?, timestamp?, taskType?, cron? })\`: Schedules an autonomous turn or action to execute in the future.
+- \`listScheduledTasks({ status? })\`: Lists all scheduled tasks, their execution status, and next alarm trigger times.
+- \`cancelScheduledTask({ taskId })\`: Cancels a pending background task and refreshes the DO alarm.
 `.trim();
 
 let SPAWNER_SYSTEM_PROMPT = `
@@ -3344,6 +3363,149 @@ export async function runAgent(
       }
     }),
 
+    webSearch: defineTool({
+      name: "webSearch",
+      label: "Search the Web",
+      description: "Performs real-time internet search across DuckDuckGo and encyclopedic sources (Wikipedia/OpenAlex) with zero external API key requirements. Returns titles, clean markdown snippets, and source URLs.",
+      parameters: Type.Object({
+        query: Type.String({ description: "Search query string." }),
+        maxResults: Type.Optional(Type.Number({ description: "Maximum number of search results to return (1 to 15, default 6)." })),
+        includeAcademic: Type.Optional(Type.Boolean({ description: "Set to true to supplement with encyclopedic / academic research sources." })),
+      }),
+      execute: async (toolCallId, { query, maxResults, includeAcademic }) => {
+        try {
+          const res = await webSearchImpl({ query, maxResults, includeAcademic });
+          const formatted = formatWebSearchResult(res);
+          return toolResult(formatted, { output: formatted, searchResult: res } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
+    webCrawl: defineTool({
+      name: "webCrawl",
+      label: "Crawl Website",
+      description: "Crawls a public HTTPS website recursively up to bounded depth and page limits. Follows outbound links within the same domain, extracting page titles, clean markdown, and link graphs using Kitesurf Browser Run or fetch.",
+      parameters: Type.Object({
+        url: Type.String({ description: "Root HTTPS URL to begin crawling." }),
+        maxPages: Type.Optional(Type.Number({ description: "Maximum pages to crawl (1 to 8, default 3)." })),
+        maxDepth: Type.Optional(Type.Number({ description: "Maximum crawl depth from root URL (1 to 3, default 2)." })),
+        sameDomainOnly: Type.Optional(Type.Boolean({ description: "Restrict crawling strictly to the same hostname/domain (default true)." })),
+      }),
+      execute: async (toolCallId, { url, maxPages, maxDepth, sameDomainOnly }) => {
+        try {
+          const browserEnv = hooks.getBrowserEnv();
+          const res = await webCrawlImpl({ url, maxPages, maxDepth, sameDomainOnly }, browserEnv);
+          const formatted = formatWebCrawlResult(res);
+          return toolResult(formatted, { output: formatted, crawlResult: res } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
+    scheduleTask: defineTool({
+      name: "scheduleTask",
+      label: "Schedule background task",
+      description: "Schedules a delayed or recurring background task using Cloudflare Durable Object Alarms. When the scheduled time arrives, the DO wakes up autonomously to run the task, trigger agent turns, or execute background workflows.",
+      parameters: Type.Object({
+        prompt: Type.String({
+          description: "Instruction, prompt, or scheduled action description to execute.",
+        }),
+        delaySeconds: Type.Optional(Type.Number({
+          description: "Delay in seconds from now before executing (e.g. 60 for 1 minute, 300 for 5 minutes, 3600 for 1 hour).",
+        })),
+        timestamp: Type.Optional(Type.Number({
+          description: "Explicit Unix timestamp in milliseconds for target execution time.",
+        })),
+        taskType: Type.Optional(Type.String({
+          description: "Task type: 'agent_turn', 'render_check', 'whatsapp_digest', or 'custom'. Defaults to 'agent_turn'.",
+        })),
+        cron: Type.Optional(Type.String({
+          description: "Optional cron expression or recurrence pattern (e.g. '0 9 * * *').",
+        })),
+      }),
+      execute: async (toolCallId, { prompt, delaySeconds, timestamp, taskType, cron }) => {
+        try {
+          const scheduler = hooks.getTaskScheduler?.();
+          if (!scheduler) {
+            throw new Error("TaskScheduler is not available in this environment.");
+          }
+          const task = await scheduler.scheduleTask({
+            prompt,
+            delaySeconds,
+            timestamp,
+            taskType: (taskType as any) || "agent_turn",
+            cron,
+            chatId,
+          }, chatId);
+
+          const dateStr = new Date(task.scheduledAt).toISOString().replace("T", " ").slice(0, 19);
+          const out = `Scheduled task \`${task.id}\` (${task.taskType}) set for **${dateStr} UTC** (in ${Math.max(0, Math.round((task.scheduledAt - Date.now()) / 1000))}s).\nPrompt: "${task.prompt}"`;
+          return toolResult(out, { output: out, task } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
+    listScheduledTasks: defineTool({
+      name: "listScheduledTasks",
+      label: "List scheduled tasks",
+      description: "Lists all scheduled and background tasks, alarms, and execution statuses for this workspace.",
+      parameters: Type.Object({
+        status: Type.Optional(Type.String({
+          description: "Optional status filter ('pending', 'running', 'completed', 'failed', 'cancelled').",
+        })),
+      }),
+      execute: async (toolCallId, { status }) => {
+        try {
+          const scheduler = hooks.getTaskScheduler?.();
+          if (!scheduler) {
+            throw new Error("TaskScheduler is not available in this environment.");
+          }
+          const tasks = await scheduler.listTasks({
+            chatId,
+            status: status as any,
+          });
+          const formatted = formatScheduledTasksList(tasks);
+          return toolResult(formatted, { output: formatted, tasks } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
+    cancelScheduledTask: defineTool({
+      name: "cancelScheduledTask",
+      label: "Cancel scheduled task",
+      description: "Cancels a pending background scheduled task by its Task ID and refreshes the DO alarm.",
+      parameters: Type.Object({
+        taskId: Type.String({ description: "The ID of the scheduled task to cancel." }),
+      }),
+      execute: async (toolCallId, { taskId }) => {
+        try {
+          const scheduler = hooks.getTaskScheduler?.();
+          if (!scheduler) {
+            throw new Error("TaskScheduler is not available in this environment.");
+          }
+          const cancelled = await scheduler.cancelTask(taskId);
+          const out = cancelled
+            ? `Task \`${taskId}\` was successfully cancelled.`
+            : `Failed to cancel task \`${taskId}\`: not found or not in pending state.`;
+          return toolResult(out, { output: out } as Partial<AiToolCall>);
+        } catch (error) {
+          toolCallNotes.set(toolCallId, { error: toolErrorText(error) });
+          throw error;
+        }
+      },
+    }),
+
     observeUserChanges: defineTool({
       name: "observeUserChanges",
       label: "Observe user changes",
@@ -4999,6 +5161,8 @@ export async function runAgent(
       describeBinding: tools.describeBinding,
       executeCode: tools.executeCode,
       ...(tools.runPython ? { runPython: tools.runPython } : {}),
+      ...(tools.webSearch ? { webSearch: tools.webSearch } : {}),
+      ...(tools.webCrawl ? { webCrawl: tools.webCrawl } : {}),
       ...(callbackInitiated ? {giveUp: tools.giveUp} : {}),
     };
   }
