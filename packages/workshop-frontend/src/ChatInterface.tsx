@@ -153,7 +153,7 @@ import { CourseworkPortfolioModal } from "./components/academic/CourseworkPortfo
 import type { PastPaperQuestion, PastPaper } from "./data/pastPapersData";
 import { YouTubeChatCard } from "./components/video/YouTubePlayerCard";
 import { InChatQuizCard } from "./components/chat/InChatQuizCard";
-import { parseMarkdownQuiz } from "./components/chat/quiz-parser";
+import { parseMarkdownQuiz, stripRawOptionsFromMarkdown } from "./components/chat/quiz-parser";
 const HyperFramesChatCard = lazy(() =>
   import("./components/video/HyperFramesChatCard").then(m => ({ default: m.HyperFramesChatCard }))
 );
@@ -1344,10 +1344,11 @@ const MARKDOWN_COMPONENTS_NO_CAPSULES = getMarkdownComponents();
  * `whitespace-pre-wrap` wrapper at the user-message render site renders it as a hard break.
  */
 export const MarkdownMessage = memo(function MarkdownMessage(
-  { message, capsules, formats }: {
+  { message, capsules, formats, allowInteractive = true }: {
     message: string;
     capsules?: CapsuleSpecifier[];
     formats?: MessageFormatRef[];
+    allowInteractive?: boolean;
   },
 ): ReactNode {
   const tokenizedMessage = useMemo(
@@ -1370,8 +1371,17 @@ export const MarkdownMessage = memo(function MarkdownMessage(
   );
 
   const detectedQuiz = useMemo(() => {
+    if (!allowInteractive) return null;
     return parseMarkdownQuiz(message);
-  }, [message]);
+  }, [message, allowInteractive]);
+
+  const displayMarkdown = useMemo(() => {
+    const raw = tokenizedMessage?.markdown ?? message;
+    if (detectedQuiz && detectedQuiz.questions.length > 0) {
+      return stripRawOptionsFromMarkdown(raw);
+    }
+    return raw;
+  }, [tokenizedMessage, message, detectedQuiz]);
 
   return (
     <>
@@ -1380,7 +1390,7 @@ export const MarkdownMessage = memo(function MarkdownMessage(
         remarkPlugins={remarkPlugins}
         components={components}
       >
-        {tokenizedMessage?.markdown ?? message}
+        {displayMarkdown}
       </ReactMarkdown>
       {detectedQuiz && detectedQuiz.questions.length > 0 && (
         <div className="my-3 not-prose font-sans">
@@ -1692,7 +1702,7 @@ const ObservationDetails = memo(function ObservationDetails(
             </p>
           )}
           <div className="mt-1.5 text-[12px] leading-[18px] tracking-[-0.2px] text-kumo-subtle">
-            <MarkdownMessage message={log.description.description} />
+            <MarkdownMessage message={log.description.description} allowInteractive={false} />
           </div>
         </div>
       </div>
@@ -1800,7 +1810,7 @@ const ThinkingTraceRow = memo(function ThinkingTraceRow({
   return (
     <div className="min-w-0 py-1 text-kumo-subtle">
       <div className={`min-w-0 text-[13px] leading-[19px] ${styles.markdownContent}`}>
-        <MarkdownMessage message={reasoning} />
+        <MarkdownMessage message={reasoning} allowInteractive={false} />
       </div>
     </div>
   );
@@ -6789,7 +6799,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                 </div>
                 {log.description.description && (
                   <div className={`mt-1 text-[13px] leading-[18px] text-kumo-subtle ${styles.markdownContent}`}>
-                    <MarkdownMessage message={log.description.description} />
+                    <MarkdownMessage message={log.description.description} allowInteractive={false} />
                   </div>
                 )}
                 {log.resourceTitle && (
@@ -6859,7 +6869,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
           </button>
           {open && (
             <div className="themed-surface-inset ml-8 mt-1 rounded-2xl border border-kumo-line/70 bg-kumo-elevated/45 p-3 text-[13px] leading-[19px] text-kumo-subtle">
-              <MarkdownMessage message={log.description.description} />
+              <MarkdownMessage message={log.description.description} allowInteractive={false} />
             </div>
           )}
         </div>
@@ -6971,7 +6981,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                   {resourceMeta}
                 </div>
                 <div className={`chat-panel mt-1 max-h-[200px] overflow-y-auto pr-1 text-[13px] leading-[18px] text-kumo-subtle ${styles.markdownContent}`}>
-                  <MarkdownMessage message={log.description.description} />
+                  <MarkdownMessage message={log.description.description} allowInteractive={false} />
                 </div>
               </div>
               <div className="ml-3 flex flex-shrink-0 items-center gap-1 self-center">
@@ -7031,7 +7041,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
         {showDescription && (
           <div className="themed-surface-inset ml-8 mt-1 space-y-1.5 rounded-2xl border border-kumo-line/70 bg-kumo-elevated/45 p-3 text-[13px] leading-[19px] tracking-[-0.25px] text-kumo-subtle">
             <div className={`chat-panel max-h-[200px] overflow-y-auto pr-1 ${styles.markdownContent}`}>
-              <MarkdownMessage message={log.description.description} />
+              <MarkdownMessage message={log.description.description} allowInteractive={false} />
             </div>
             {resourceMeta}
           </div>
@@ -7671,7 +7681,7 @@ Please give me a Socratic diagnostic clue to help me determine the right startin
                               </p>
                             )}
                             <div className={`min-w-0 text-[13px] leading-[19px] ${styles.markdownContent}`}>
-                              <MarkdownMessage message={entry.boundary.summary} />
+                              <MarkdownMessage message={entry.boundary.summary} allowInteractive={false} />
                             </div>
                           </div>
                         );
