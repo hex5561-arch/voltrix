@@ -3,3 +3,6 @@ packages/*/dist/
 packages/*/.wrangler/
 packages/*/wrangler.prod.jsonc
 deployment.local.jsonc
+.env
+**/.env
+

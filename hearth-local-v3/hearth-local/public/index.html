@@ -1,0 +1,307 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hearth — Multi-Provider Voice Companion</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #090a0f;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 40px;
+    }
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    h1 {
+      font-family: Georgia, serif;
+      font-size: 2.2rem;
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+    }
+    .provider-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255,255,255,0.04);
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    select#provider {
+      background: #181b28;
+      color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* ── 3D Luminous Aura Orb ── */
+    .orb-stage {
+      position: relative;
+      width: 250px;
+      height: 250px;
+      margin: 12px 0 16px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .orb-ambient {
+      position: absolute;
+      width: 210px;
+      height: 210px;
+      border-radius: 50%;
+      filter: blur(48px);
+      opacity: 0.7;
+      transition: all 0.5s ease;
+      pointer-events: none;
+    }
+    .orb-halo {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      border: 2px dashed rgba(245, 158, 11, 0.6);
+      animation: orb-spin 3s linear infinite;
+      pointer-events: none;
+      display: none;
+    }
+    .orb-core {
+      position: relative;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--orb, #06b6d4) 38%, #0b0b12 100%);
+      box-shadow: 0 0 70px 12px var(--glow, rgba(6, 182, 212, 0.45)), inset 0 0 35px rgba(255, 255, 255, 0.45);
+      transition: transform 0.1s ease-out, box-shadow 0.4s ease;
+    }
+    .orb-swirl {
+      position: absolute;
+      inset: -25%;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0%,
+        var(--orb, #06b6d4) 20%,
+        transparent 40%,
+        rgba(255, 255, 255, 0.55) 55%,
+        transparent 70%,
+        var(--orb, #06b6d4) 85%,
+        transparent 100%
+      );
+      filter: blur(20px);
+      opacity: 0.75;
+      mix-blend-mode: screen;
+      animation: orb-spin 9s linear infinite;
+      pointer-events: none;
+    }
+    .orb-swirl-2 {
+      animation-duration: 14s;
+      animation-direction: reverse;
+      opacity: 0.5;
+    }
+    .orb-think .orb-swirl {
+      animation-duration: 2s;
+    }
+    .orb-sheen {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.65), transparent 38%);
+      box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+    @keyframes orb-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Status Pill */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      margin-bottom: 16px;
+      transition: all 0.3s ease;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #06b6d4;
+      transition: all 0.3s ease;
+    }
+
+    /* Voice Chips */
+    .section-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      margin-bottom: 8px;
+      align-self: flex-start;
+    }
+    .voices {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+      width: 100%;
+    }
+    .voices button {
+      padding: 6px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: #131622;
+      color: #cbd5e1;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .voices button:hover {
+      background: #1c2134;
+      color: #fff;
+    }
+    .voices button.on {
+      border-color: #6366f1;
+      background: rgba(99, 102, 241, 0.2);
+      color: #e0e7ff;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+      font-weight: 600;
+    }
+
+    /* Transcript Box */
+    #log {
+      width: 100%;
+      background: #11141f;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px;
+      padding: 16px;
+      min-height: 200px;
+      max-height: 320px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    #log p {
+      padding: 10px 14px;
+      border-radius: 14px;
+      max-width: 85%;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    #log p.assistant {
+      align-self: flex-start;
+      background: #1c2030;
+      color: #e2e8f0;
+      border-bottom-left-radius: 4px;
+    }
+    #log p.you {
+      align-self: flex-end;
+      background: #4338ca;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    /* Call button & controls */
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    #call {
+      padding: 10px 24px;
+      border: 0;
+      border-radius: 999px;
+      background: #4f46e5;
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    #call:hover { background: #4338ca; }
+    #call.active { background: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Hearth</h1>
+      </div>
+      <div class="provider-bar">
+        <span>Provider:</span>
+        <select id="provider"></select>
+      </div>
+    </div>
+
+    <!-- 3D Luminous Aura Orb -->
+    <div class="orb-stage" id="orb" title="Click to start, interrupt, or end conversation">
+      <div class="orb-ambient" id="orb-ambient"></div>
+      <div class="orb-halo" id="orb-halo"></div>
+      <div class="orb-core" id="orb-core">
+        <div class="orb-swirl"></div>
+        <div class="orb-swirl orb-swirl-2"></div>
+        <div class="orb-sheen"></div>
+      </div>
+    </div>
+
+    <!-- Status Indicator -->
+    <div class="status-pill" id="status-pill">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status">Ready (Tap Orb or Press Call)</span>
+    </div>
+
+    <div class="section-label">Voice Persona</div>
+    <div class="voices" id="voices"></div>
+
+    <div class="controls">
+      <button id="call">Call</button>
+    </div>
+
+    <div id="log"></div>
+
+    <div class="input-bar" style="width:100%; display:flex; gap:8px;">
+      <input type="text" id="text-input" placeholder="Type a message or talk through your microphone…" style="flex:1; background:#11141f; border:1px solid rgba(255,255,255,0.1); border-radius:999px; padding:12px 20px; color:#fff; font-size:0.95rem; outline:none;">
+      <button type="button" id="send-btn" style="padding:0 24px; border-radius:999px; background:#4f46e5; border:0; color:#fff; cursor:pointer; font-weight:600; font-size:0.95rem;">Send</button>
+    </div>
+  </div>
+
+  <audio id="audio" autoplay></audio>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
