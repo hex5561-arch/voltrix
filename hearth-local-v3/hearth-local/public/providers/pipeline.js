@@ -1,7 +1,7 @@
 // Listen -> transcribe -> any chat model (streamed) -> speak sentence by sentence. Talking over it interrupts.
 export async function connect(s, { provider, voice, audio, onText, onStatus }) {
   const history = [];
-  let stopped = false, replyAbort, speakQueue = [], speaking = false, audioEl = audio || null, gen = 0;
+  let stopped = false, replyAbort, speakQueue = [], speaking = false, audioEl = null, gen = 0;
 
   function hush() {
     gen++;
@@ -9,11 +9,13 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
     speakQueue = [];
     speaking = false;
     if (audioEl) {
-      audioEl.pause();
-      audioEl.currentTime = 0;
+      try { audioEl.pause(); audioEl.currentTime = 0; } catch (_) {}
+      audioEl = null;
+    }
+    if (audio) {
+      try { audio.pause(); audio.currentTime = 0; } catch (_) {}
     }
     if (window.speechSynthesis) speechSynthesis.cancel();
-    if (!stopped) onStatus("listening");
   }
 
   async function speakNext(g) {
@@ -24,8 +26,8 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
       return;
     }
     speaking = true;
-    onStatus("speaking");
     const text = speakQueue.shift();
+    onStatus("speaking");
     try {
       if (provider.voices) {
         const r = await fetch("/tts", {
@@ -35,20 +37,15 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
         });
         if (!r.ok) throw new Error("Speech synthesis failed");
         const blob = await r.blob();
-        if (g !== gen || stopped) return;
+        if (g !== gen) return;
         const url = URL.createObjectURL(blob);
-        if (!audioEl) audioEl = new Audio();
-        audioEl.src = url;
+        const player = audio || new Audio();
+        audioEl = player;
+        player.src = url;
         await new Promise((resolve) => {
-          audioEl.onended = () => {
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          audioEl.onerror = () => {
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          audioEl.play().catch(resolve);
+          player.onended = () => { URL.revokeObjectURL(url); resolve(); };
+          player.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+          player.play().catch(resolve);
         });
       } else {
         const u = new SpeechSynthesisUtterance(text);
@@ -61,15 +58,12 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
         }
       }
     } catch (e) {
-      console.warn("TTS playback error:", e);
+      console.warn("TTS error:", e);
+      onStatus("error", e.message);
     }
-    if (g !== gen || stopped) return;
+    if (g !== gen) return;
     speaking = false;
-    if (speakQueue.length) {
-      speakNext(g);
-    } else if (!stopped) {
-      onStatus("listening");
-    }
+    speakNext(g);
   }
 
   async function reply(userText, hidden) {
@@ -79,7 +73,7 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
     history.push({ role: "user", content: userText });
     replyAbort = new AbortController();
     let full = "", pending = "";
-    onStatus("processing");
+    onStatus("thinking");
     try {
       const r = await fetch("/chat", {
         method: "POST",
@@ -109,7 +103,7 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
           pending += delta;
           onText("assistant", delta);
           const m = pending.match(/^([\s\S]*?[.!?…])\s+([\s\S]*)$/);
-          if (m && m[1].length > 12) {
+          if (m && m[1].length > 10) {
             speakQueue.push(m[1].trim());
             pending = m[2];
             speakNext(g);
@@ -132,85 +126,66 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
 
   let cleanup;
   if (s.stt === "server" || provider.stt === "server") {
+    // Sensitive voice detection with VAD
     const mic = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const an = ctx.createAnalyser();
-    an.fftSize = 512;
+    an.fftSize = 1024;
     ctx.createMediaStreamSource(mic).connect(an);
     const data = new Float32Array(an.fftSize);
     let rec, chunks = [], lastLoud = 0, startedAt = 0, noise = 0.01;
-
-    // Detect supported recording mimeType
-    let recMimeType = "";
-    if (typeof MediaRecorder !== "undefined") {
-      const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-      recMimeType = candidates.find((t) => MediaRecorder.isTypeSupported(t)) || "";
-    }
 
     const timer = setInterval(() => {
       an.getFloatTimeDomainData(data);
       const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
       const now = performance.now();
       if (!rec) noise = noise * 0.98 + rms * 0.02;
-      const loud = rms > Math.max(0.02, noise * 2.8);
+      const loud = rms > Math.max(0.018, noise * 2.5);
 
       if (loud) {
         lastLoud = now;
-        if (speaking) hush(); // Barge-in
-
+        if (speaking) hush();
         if (!rec) {
+          onStatus("listening", "Listening to you…");
+          rec = new MediaRecorder(mic);
           chunks = [];
           startedAt = now;
-          try {
-            rec = recMimeType ? new MediaRecorder(mic, { mimeType: recMimeType }) : new MediaRecorder(mic);
-          } catch {
-            rec = new MediaRecorder(mic);
-          }
-          rec.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) chunks.push(e.data);
-          };
+          rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
           rec.onstop = async () => {
             if (stopped || performance.now() - startedAt < 350) return;
-            onStatus("processing");
+            onStatus("thinking", "Transcribing speech…");
             try {
-              const mime = rec.mimeType || recMimeType || "audio/webm";
-              const blob = new Blob(chunks, { type: mime });
-              if (blob.size < 400) {
-                if (!stopped) onStatus("listening");
-                return;
-              }
               const r = await fetch("/stt", {
                 method: "POST",
-                headers: { "Content-Type": mime },
-                body: blob
+                headers: { "Content-Type": "audio/webm" },
+                body: new Blob(chunks, { type: "audio/webm" })
               });
-              const resData = r.ok ? await r.json() : {};
-              const text = (resData.text || "").trim();
+              const text = r.ok ? ((await r.json()).text || "").trim() : "";
               if (text && text.split(/\s+/).length >= 1 && !/^(thank you\.?|you)$/i.test(text)) {
                 reply(text);
-              } else if (!stopped) {
+              } else if (!speaking && !speakQueue.length) {
                 onStatus("listening");
               }
             } catch (err) {
               console.error("STT error:", err);
-              if (!stopped) onStatus("listening");
+              onStatus("listening");
             }
           };
           rec.start(100);
         }
       }
 
-      if (rec && now - lastLoud > 800) {
-        try { rec.stop(); } catch {}
+      if (rec && now - lastLoud > 750) {
+        try { rec.stop(); } catch (_) {}
         rec = null;
       }
     }, 50);
 
     cleanup = () => {
       clearInterval(timer);
-      try { rec?.stop(); } catch {}
+      try { rec?.stop(); } catch (_) {}
       mic.getTracks().forEach((t) => t.stop());
       ctx.close().catch(() => {});
     };
@@ -225,7 +200,7 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
       const r = e.results[e.results.length - 1];
       const text = r[0].transcript.trim();
       if (!r.isFinal) {
-        if (speaking && text.split(/\s+/).length >= 2) hush();
+        if (speaking && text.split(/\s+/).length >= 3) hush();
         return;
       }
       if (text) reply(text);
@@ -235,17 +210,13 @@ export async function connect(s, { provider, voice, audio, onText, onStatus }) {
     cleanup = () => sr.stop();
   }
 
-  onStatus("listening");
+  onStatus("live");
   reply(s.greeting || "Say hello warmly in one sentence and ask how my day is going.", true);
   return {
-    reply(text) {
-      reply(text);
-    },
     stop() {
       stopped = true;
       hush();
       cleanup();
-      onStatus("idle");
     }
   };
 }
